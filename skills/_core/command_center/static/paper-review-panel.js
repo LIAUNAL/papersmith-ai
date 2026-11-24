@@ -17,6 +17,11 @@
  * shows its derived overall rating, its five criteria (design validity,
  * calibration and traceability, uncertainty, reproducibility and open
  * materials, agreement or validation) and the gaps against the line's
+ * checklist. A round judged on the data-descriptor rubric
+ * (`rubric: "data-descriptor"`, the data-resource line) shows its derived
+ * overall rating, its five criteria (documentation completeness, collection
+ * and consent, quality and technical validation, access, licence and
+ * persistent identifier, reuse potential) and the gaps against the datasheets
  * checklist. Read-only: nothing here launches the judge or edits the paper.
  *
  * Every value is escaped before insertion. Public surface (window):
@@ -144,9 +149,34 @@
       ${gaps.length ? `<h4 style="margin:0.8rem 0 0.3rem;">${esc(t('review.measurement.gaps'))}${r.checklist ? ` (${esc(r.checklist)})` : ''}</h4>${table([t('review.measurement.item'), t('review.measurement.gap')], gaps)}` : ''}`;
   }
 
-  const summary = (r) => (isMeasurement(r) ? measurementSummary(r)
+  // The data-descriptor rubric: five rated criteria, the derived overall, datasheets gaps.
+  const isDescriptor = (r) => r.rubric === 'data-descriptor';
+  const DESCRIPTOR_CRITERIA = ['documentation_completeness', 'collection_consent', 'technical_validation',
+    'access_licence', 'reuse_potential'];
+  const descriptorText = (v) => t(`review.descriptor.overall.${key(v)}`);
+
+  function descriptorSummary(r) {
+    const criteria = DESCRIPTOR_CRITERIA.map((name) => {
+      const c = obj(r[name]);
+      return `<tr><td>${esc(t(`review.descriptor.criterion.${name}`))}</td>
+      <td>${keyed(RATING_BADGE, 'review.descriptor.rating', c.rating)}</td><td>${esc(c.justification || '')}</td></tr>`;
+    });
+    const gaps = list(r.checklist_gaps).map((g) => `<tr><td>${esc(g.item)}</td><td>${esc(g.gap || '')}</td></tr>`);
+    return `
+      <div class="review-round__head" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;">
+        <strong>${esc(t('review.round'))} ${esc(r.round)}</strong>
+        <span class="panel__meta">${esc(r.date || '')}</span>
+        <span class="badge badge--info">${esc(t('review.rubric.descriptor'))}</span>
+        <span class="badge ${OVERALL_BADGE[r.overall_rating] || 'badge--info'}">${esc(t('review.descriptor.overall'))}: ${esc(descriptorText(r.overall_rating))}</span>
+      </div>
+      <p style="margin:0.4rem 0;"><strong>${esc(t('review.recommendation'))}:</strong> ${esc(r.recommendation || '')}</p>
+      <h4 style="margin:0.8rem 0 0.3rem;">${esc(t('review.descriptor.criteria'))}</h4>${table([t('review.descriptor.criterion'), t('review.descriptor.rating'), t('review.descriptor.justification')], criteria)}
+      ${gaps.length ? `<h4 style="margin:0.8rem 0 0.3rem;">${esc(t('review.descriptor.gaps'))}${r.checklist ? ` (${esc(r.checklist)})` : ''}</h4>${table([t('review.descriptor.item'), t('review.descriptor.gap')], gaps)}` : ''}`;
+  }
+
+  const summary = (r) => (isDescriptor(r) ? descriptorSummary(r) : isMeasurement(r) ? measurementSummary(r)
     : isEmpirical(r) ? empiricalSummary(r) : isReview(r) ? reviewSummary(r) : roundSummary(r));
-  const headline = (r) => (isMeasurement(r) ? esc(measurementText(r.overall_rating))
+  const headline = (r) => (isDescriptor(r) ? esc(descriptorText(r.overall_rating)) : isMeasurement(r) ? esc(measurementText(r.overall_rating))
     : isEmpirical(r) ? esc(biasText(r.overall_risk_of_bias))
     : isReview(r) ? esc(levelText(r.overall_confidence)) : `${esc(r.overall)}/6`);
 

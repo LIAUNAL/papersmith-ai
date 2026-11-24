@@ -2133,8 +2133,9 @@ workspace's line (`paper_kind` in `.papersmith/config.json`, `experimental`
 when unset) and judges a round without `rubric` on that line's rubric:
 `ml-conference` for `experimental`, `systematic-review` for `review`,
 `empirical-study` for the empirical lines (`observational-measurement`,
-`experiment-intervention`, `qualitative-participatory`, `data-resource`),
-`measurement-science` for `hardware` and `lab-simulation`. A round whose rubric does not serve the
+`experiment-intervention`, `qualitative-participatory`),
+`measurement-science` for `hardware` and `lab-simulation`, `data-descriptor`
+for `data-resource`. A round whose rubric does not serve the
 line is refused with `RUBRIC_KIND_MISMATCH`, whose detail names the line's
 rubric, and a line no rubric serves with `RUBRIC_LINE_UNKNOWN`; an unknown
 rubric id stays `REVIEW_ROUND_INVALID`. The mapping is data
@@ -2185,6 +2186,28 @@ scale, an empty justification and a gap without an item number. The shared
 fields keep their rules. The PDF tab's final-judge panel shows the overall
 rating, the five criteria and the checklist gaps.
 
+**A data-resource paper is judged on the data-descriptor rubric.** The
+`paper-reviewer` returns a `"rubric": "data-descriptor"` round: no `overall`,
+`confidence` or `ratings`, but five criteria, each `{"rating",
+"justification"}` with `rating` one of `adequate`, `limited`, `inadequate`
+(none may be `not applicable`): `documentation_completeness` (data records,
+data dictionary and datasheet describe every file, variable and unit),
+`collection_consent` (the collection protocol, and the ethics approval,
+consent or own-data statement and the source licences), `technical_validation`
+(the quality checks and technical validation, baselines labelled),
+`access_licence` (deposited under a licence with a persistent identifier, the
+access conditions stated) and `reuse_potential` (usage notes, code
+availability, the uses the data supports); plus `checklist_gaps`, `{"item",
+"gap"}`, by item number (`4` or `4b`) in `datasheets`. The verb fills
+`checklist` with `datasheets` and refuses a round that names another, and
+derives `overall_rating` by the measurement-science rule: any `inadequate`
+criterion is `major concerns`, else any `limited` is `minor concerns`, else
+`sound`. A round may state it, but one that disagrees with the rule is refused
+(`REVIEW_ROUND_INVALID`), as are a missing criterion, a rating outside the
+scale, an empty justification and a gap without an item number. The shared
+fields keep their rules. The PDF tab's final-judge panel shows the overall
+rating, the five criteria and the datasheets gaps.
+
 **Measure this before delegating (paper-reviewer):** confirm `paper/main.tex`
 exists and no section under `sections/` is empty, and note whether
 `paper/main.pdf` and `sota-pool/candidates.json` exist; a reviewer asked to
@@ -2196,7 +2219,10 @@ empirical line note whether a locked study protocol exists under `protocol/`:
 without it the reviewer answers `no protocol` on adherence. On a hardware or
 lab-simulation line note whether `study/instruments.json` and the registered
 raw measurement files exist: calibration, uncertainty and agreement are judged
-against them.
+against them. On a data-resource line note whether the data dictionary, the
+quality-check results and the deposit record (`datasets_cli.py deposit`) exist
+under `datasets/`: documentation, validation and access are judged against
+them.
 
 **Measure this before delegating (diagram-author):** confirm the block's
 `figure:` declaration is already readable (`contract --file <path>`) and,

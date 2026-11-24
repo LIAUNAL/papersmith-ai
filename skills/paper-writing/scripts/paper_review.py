@@ -56,8 +56,8 @@ key, exactly as before. For a review paper (`paper_kind: review`) it is
   372:n71), `{"item": 1-27, "gap"}`.
 
 The empirical lines (observational-measurement, experiment-intervention,
-qualitative-participatory, data-resource) are judged on `empirical-study`,
-which carries no `overall`, `confidence` or `ratings`:
+qualitative-participatory) are judged on `empirical-study`, which carries no
+`overall`, `confidence` or `ratings`:
 
 - `protocol_adherence`: `{"primary_outcome", "analysis_plan", "deviations",
   "justification"}`, the first two one of `followed`, `deviated`, `no
@@ -100,6 +100,28 @@ either. Five criteria, each `{"rating", "justification"}`, `rating` one of
   for hardware, `gum-reporting` for lab-simulation; a round that names another
   is refused), and `checklist_gaps`, `{"item", "gap"}`, the item by its number
   in that checklist (`7` or `7b`).
+
+The data-resource line is judged on `data-descriptor`, which carries no
+`overall`, `confidence` or `ratings` either. Five criteria, each `{"rating",
+"justification"}`, `rating` one of `adequate`, `limited`, `inadequate` (none
+may be `not applicable`):
+
+- `documentation_completeness`: the data records, the data dictionary and the
+  datasheet describe every file, variable and unit;
+- `collection_consent`: the collection protocol stated, and the ethics
+  approval, consent or own-data statement and the source licences recorded;
+- `technical_validation`: the quality checks and the technical validation
+  that support the data's reliability, with the baselines labelled;
+- `access_licence`: the data deposited in a repository under a licence with a
+  persistent identifier, and the access conditions stated;
+- `reuse_potential`: the usage notes, the code availability and the uses (and
+  misuses) the data supports;
+- `overall_rating`, derived by the measurement-science rule: any `inadequate`
+  criterion is `major concerns`, else any `limited` is `minor concerns`, else
+  `sound`. A round that asserts it must match the rule;
+- `checklist`, filled here with `datasheets` (a round that names another is
+  refused), and `checklist_gaps`, `{"item", "gap"}`, the item by its number in
+  that checklist (`4` or `4b`).
 
 `recommendation`, `items`, `revisions`, `excluded` and `report` apply to every
 rubric.
@@ -161,6 +183,11 @@ MEASUREMENT_CRITERIA = ("design_validity", "calibration_traceability", "uncertai
 MEASUREMENT_OPTIONAL = "agreement"
 MEASUREMENT_OVERALL = ("sound", "minor concerns", "major concerns")
 MEASUREMENT_CHECKLISTS = {"hardware": "hardwarex", "lab-simulation": "gum-reporting"}
+#: The data-descriptor rubric's criteria (in stored order, rated on the
+#: measurement scale, none optional) and the data-resource line's checklist.
+DESCRIPTOR_CRITERIA = ("documentation_completeness", "collection_consent", "technical_validation",
+                       "access_licence", "reuse_potential")
+DESCRIPTOR_CHECKLIST = "datasheets"
 #: A reporting-checklist item number: `12`, `12b`, `6a`.
 CHECKLIST_ITEM = re.compile(r"[1-9][0-9]*[a-z]?")
 CONFIG = Path(".papersmith") / "config.json"
@@ -421,27 +448,32 @@ def _validate_checklist_gaps(gaps) -> list[str]:
             if not isinstance(gap, dict) or not _checklist_item(gap.get("item")) or not _text(gap.get("gap"))]
 
 
-def _validate_measurement_science(data: dict, context: dict) -> list[str]:
+def _validate_rated_criteria(data: dict, context: dict, criteria: tuple[str, ...],
+                             optional: str | None = None) -> list[str]:
+    """A rubric of criteria rated on the measurement scale, its derived overall and checklist gaps.
+
+    `optional` names the one criterion that may also be `not applicable`.
+    """
     errors = []
     if not _text(data.get("recommendation")):
         errors.append("recommendation must be non-empty text")
     rated = True
-    for name in MEASUREMENT_CRITERIA:
+    for name in criteria:
         value = data.get(name)
         if not isinstance(value, dict):
             errors.append(f"{name} must be an object")
             rated = False
             continue
-        scale = MEASUREMENT_RATINGS + (("not applicable",) if name == MEASUREMENT_OPTIONAL else ())
+        scale = MEASUREMENT_RATINGS + (("not applicable",) if name == optional else ())
         if value.get("rating") not in scale:
             errors.append(f"{name}.rating must be one of {', '.join(scale)}")
             rated = False
         if not _text(value.get("justification")):
-            reason = " (the reason when not applicable)" if name == MEASUREMENT_OPTIONAL else ""
+            reason = " (the reason when not applicable)" if name == optional else ""
             errors.append(f"{name} needs a non-empty justification{reason}")
     asserted = data.get("overall_rating")
     if rated and asserted is not None:
-        level = overall_measurement_rating(data[name]["rating"] for name in MEASUREMENT_CRITERIA)
+        level = overall_measurement_rating(data[name]["rating"] for name in criteria)
         if asserted != level:
             errors.append(f'overall_rating "{asserted}" does not match the rule: {level}')
     errors += _validate_checklist_gaps(data.get("checklist_gaps", []))
@@ -452,16 +484,37 @@ def _validate_measurement_science(data: dict, context: dict) -> list[str]:
     return errors
 
 
-def _shape_measurement_science(data: dict, context: dict) -> dict:
-    criteria = {name: {"rating": data[name]["rating"], "justification": data[name]["justification"].strip()}
-                for name in MEASUREMENT_CRITERIA}
+def _shape_rated_criteria(data: dict, context: dict, criteria: tuple[str, ...]) -> dict:
+    rated = {name: {"rating": data[name]["rating"], "justification": data[name]["justification"].strip()}
+             for name in criteria}
     return {
         "recommendation": data["recommendation"].strip(),
-        **criteria,
-        "overall_rating": overall_measurement_rating(c["rating"] for c in criteria.values()),
+        **rated,
+        "overall_rating": overall_measurement_rating(c["rating"] for c in rated.values()),
         "checklist": context["checklist"],
         "checklist_gaps": [{"item": g["item"], "gap": g["gap"].strip()} for g in data.get("checklist_gaps", [])],
     }
+
+
+def _validate_measurement_science(data: dict, context: dict) -> list[str]:
+    return _validate_rated_criteria(data, context, MEASUREMENT_CRITERIA, MEASUREMENT_OPTIONAL)
+
+
+def _shape_measurement_science(data: dict, context: dict) -> dict:
+    return _shape_rated_criteria(data, context, MEASUREMENT_CRITERIA)
+
+
+def descriptor_basis(_paper_dir: Path) -> dict:
+    """The data-resource line's reporting checklist."""
+    return {"checklist": DESCRIPTOR_CHECKLIST}
+
+
+def _validate_data_descriptor(data: dict, context: dict) -> list[str]:
+    return _validate_rated_criteria(data, context, DESCRIPTOR_CRITERIA)
+
+
+def _shape_data_descriptor(data: dict, context: dict) -> dict:
+    return _shape_rated_criteria(data, context, DESCRIPTOR_CRITERIA)
 
 
 def _shape_ml_conference(data: dict, _context: dict) -> dict:
@@ -533,10 +586,11 @@ RUBRICS: dict[str, Rubric] = {
     "systematic-review": Rubric(_validate_systematic_review, _shape_systematic_review, ("review",),
                                 context=amstar2_basis),
     "empirical-study": Rubric(_validate_empirical_study, _shape_empirical_study,
-                              ("observational-measurement", "experiment-intervention", "qualitative-participatory",
-                               "data-resource")),
+                              ("observational-measurement", "experiment-intervention", "qualitative-participatory")),
     "measurement-science": Rubric(_validate_measurement_science, _shape_measurement_science,
                                   tuple(MEASUREMENT_CHECKLISTS), context=measurement_basis),
+    "data-descriptor": Rubric(_validate_data_descriptor, _shape_data_descriptor, ("data-resource",),
+                              context=descriptor_basis),
 }
 
 

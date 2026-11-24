@@ -121,6 +121,25 @@ def measurement_round(**overrides) -> dict:
     return data
 
 
+DESCRIPTOR_CRITERIA = ("documentation_completeness", "collection_consent", "technical_validation",
+                       "access_licence", "reuse_potential")
+
+
+def descriptor_round(**overrides) -> dict:
+    """A data-descriptor round, every criterion `adequate` unless overridden."""
+    data = {
+        "rubric": "data-descriptor",
+        "recommendation": "Minor revision",
+        **{name: criterion(why="Data Records and the datasheet.") for name in DESCRIPTOR_CRITERIA},
+        "checklist_gaps": [{"item": "4b", "gap": "The labelling procedure omits inter-annotator agreement."},
+                           {"item": 2, "gap": "x"}],
+        "revisions": [{"rank": 1, "text": "Report the inter-annotator agreement of the labels."}],
+        "report": "Data-descriptor appraisal: ...",
+    }
+    data.update(overrides)
+    return data
+
+
 class RubricRecordTests(unittest.TestCase):
     def setUp(self) -> None:
         # `paper_cli.py` refuses a paper outside the repository, so the workspace
@@ -391,7 +410,7 @@ class RubricRecordTests(unittest.TestCase):
         self.assertEqual((code, self.rounds()[0]["rubric"]), (0, "systematic-review"))
         self.file.unlink()
         self.assertRefusedUnchanged(ml_round(), "amstar2 must answer each item 1-16 once")
-        self.set_line("data-resource")
+        self.set_line("experiment-intervention")
         data = empirical_round()
         del data["rubric"]
         code, _ = self.record(data)
@@ -408,13 +427,14 @@ class RubricRecordTests(unittest.TestCase):
     def test_the_registry_maps_each_line_to_one_rubric_by_data(self) -> None:
         review = load_paper_review()
         self.assertEqual(list(review.RUBRICS),
-                         ["ml-conference", "systematic-review", "empirical-study", "measurement-science"])
+                         ["ml-conference", "systematic-review", "empirical-study", "measurement-science",
+                          "data-descriptor"])
         self.assertEqual(review.RUBRICS["ml-conference"].lines, ("experimental",))
         self.assertEqual(review.RUBRICS["systematic-review"].lines, ("review",))
         self.assertEqual(review.RUBRICS["empirical-study"].lines,
-                         ("observational-measurement", "experiment-intervention", "qualitative-participatory",
-                          "data-resource"))
+                         ("observational-measurement", "experiment-intervention", "qualitative-participatory"))
         self.assertEqual(review.RUBRICS["measurement-science"].lines, ("hardware", "lab-simulation"))
+        self.assertEqual(review.RUBRICS["data-descriptor"].lines, ("data-resource",))
         for rubric_id, rubric in review.RUBRICS.items():
             for line in rubric.lines:
                 self.assertEqual(review.rubric_for_line(line), rubric_id)
@@ -644,6 +664,116 @@ class RubricRecordTests(unittest.TestCase):
                          "State the coverage factor of every expanded uncertainty.")
 
 
+    # --- the data-descriptor rubric (H5) ---------------------------------------
+
+    def test_data_resource_is_judged_on_data_descriptor(self) -> None:
+        self.set_line("data-resource")
+        self.assertRefusedUnchanged(empirical_round(), 'the line\'s rubric is "data-descriptor"',
+                                    code="RUBRIC_KIND_MISMATCH")
+        self.assertRefusedUnchanged(measurement_round(), 'the line\'s rubric is "data-descriptor"',
+                                    code="RUBRIC_KIND_MISMATCH")
+        data = descriptor_round()
+        del data["rubric"]
+        code, out = self.record(data)
+        self.assertEqual((code, out["status"]), (0, "ok"), out)
+        self.assertEqual(self.rounds()[0]["rubric"], "data-descriptor")
+        self.file.unlink()
+        for line, expected in (("observational-measurement", "empirical-study"), ("hardware", "measurement-science"),
+                               ("review", "systematic-review")):
+            with self.subTest(line=line):
+                self.set_line(line)
+                self.assertRefusedUnchanged(descriptor_round(), f'the line\'s rubric is "{expected}"',
+                                            code="RUBRIC_KIND_MISMATCH")
+        self.set_line("experimental")
+        self.assertRefusedUnchanged(descriptor_round(), 'rubric "data-descriptor" does not serve the line',
+                                    code="RUBRIC_KIND_MISMATCH")
+
+    def test_a_descriptor_round_is_stored_with_its_derived_overall_and_the_datasheets_checklist(self) -> None:
+        self.set_line("data-resource")
+        code, out = self.record(descriptor_round(reuse_potential=criterion("limited", "  No usage notes.  ")))
+        self.assertEqual((code, out["status"], out["round"], out["pending_revisions"]), (0, "ok", 1, 1))
+        entry = self.rounds()[0]
+        self.assertEqual(list(entry), ["round", "date", "rubric", "recommendation", *DESCRIPTOR_CRITERIA,
+                                       "overall_rating", "checklist", "checklist_gaps", "items", "revisions",
+                                       "excluded", "report"])
+        self.assertEqual(entry["rubric"], "data-descriptor")
+        self.assertEqual(entry["documentation_completeness"], criterion(why="Data Records and the datasheet."))
+        self.assertEqual(entry["reuse_potential"], {"rating": "limited", "justification": "No usage notes."})
+        self.assertEqual(entry["overall_rating"], "minor concerns")
+        self.assertEqual(entry["checklist"], "datasheets")
+        self.assertEqual(entry["checklist_gaps"], [
+            {"item": "4b", "gap": "The labelling procedure omits inter-annotator agreement."},
+            {"item": 2, "gap": "x"}])
+        for absent in ("overall", "confidence", "ratings", "amstar2", "risk_of_bias", "protocol_adherence",
+                       "design_validity", "agreement"):
+            self.assertNotIn(absent, entry)
+        self.file.unlink()
+        code, _ = self.record(descriptor_round(checklist="datasheets"))
+        self.assertEqual((code, self.rounds()[0]["checklist"]), (0, "datasheets"))
+
+    def test_the_descriptor_overall_rating_follows_the_stated_rule(self) -> None:
+        self.set_line("data-resource")
+        cases = [
+            ({}, "sound"),
+            ({"access_licence": "limited"}, "minor concerns"),
+            ({"documentation_completeness": "limited", "reuse_potential": "limited"}, "minor concerns"),
+            ({"collection_consent": "inadequate"}, "major concerns"),
+            ({"technical_validation": "inadequate", "access_licence": "limited"}, "major concerns"),
+        ]
+        for ratings, expected in cases:
+            with self.subTest(ratings=ratings):
+                if self.file.exists():
+                    self.file.unlink()
+                code, _ = self.record(descriptor_round(**{k: criterion(v) for k, v in ratings.items()}))
+                self.assertEqual((code, self.rounds()[0]["overall_rating"]), (0, expected))
+
+    def test_an_asserted_descriptor_overall_rating_must_match_the_rule(self) -> None:
+        self.set_line("data-resource")
+        self.assertRefusedUnchanged(
+            descriptor_round(access_licence=criterion("inadequate"), overall_rating="minor concerns"),
+            'overall_rating "minor concerns" does not match the rule: major concerns')
+        code, _ = self.record(descriptor_round(access_licence=criterion("inadequate"),
+                                               overall_rating="major concerns"))
+        self.assertEqual((code, self.rounds()[0]["overall_rating"]), (0, "major concerns"))
+
+    def test_every_descriptor_criterion_needs_a_rating_on_its_scale_and_a_justification(self) -> None:
+        self.set_line("data-resource")
+        for name in DESCRIPTOR_CRITERIA:
+            with self.subTest(name=name):
+                self.assertRefusedUnchanged(descriptor_round(**{name: None}), f"{name} must be an object")
+                self.assertRefusedUnchanged(descriptor_round(**{name: criterion("fine")}),
+                                            f"{name}.rating must be one of adequate, limited, inadequate")
+                self.assertRefusedUnchanged(descriptor_round(**{name: criterion("not applicable")}),
+                                            f"{name}.rating must be one of adequate, limited, inadequate")
+                self.assertRefusedUnchanged(descriptor_round(**{name: criterion(why=" ")}),
+                                            f"{name} needs a non-empty justification")
+
+    def test_descriptor_checklist_gaps_name_an_item_of_datasheets(self) -> None:
+        self.set_line("data-resource")
+        for other in ("STROBE", "hardwarex", ""):
+            with self.subTest(checklist=other):
+                self.assertRefusedUnchanged(descriptor_round(checklist=other),
+                                            'checklist must be the line\'s checklist "datasheets"')
+        self.assertRefusedUnchanged(descriptor_round(checklist_gaps=[{"item": "a12", "gap": "x"}]),
+                                    "checklist_gaps[1] needs an item number")
+        self.assertRefusedUnchanged(descriptor_round(checklist_gaps=[{"item": 2, "gap": ""}]),
+                                    "checklist_gaps[1] needs an item number")
+        self.assertRefusedUnchanged(descriptor_round(checklist_gaps="none"), "checklist_gaps must be a list")
+        code, _ = self.record(descriptor_round(checklist_gaps=[]))
+        self.assertEqual((code, self.rounds()[0]["checklist_gaps"]), (0, []))
+
+    def test_the_shared_fields_still_apply_to_a_descriptor_round(self) -> None:
+        self.set_line("data-resource")
+        self.assertRefusedUnchanged(descriptor_round(report=""), "report must be non-empty text")
+        self.assertRefusedUnchanged(descriptor_round(recommendation=""), "recommendation must be non-empty text")
+        self.record(descriptor_round())
+        self.assertRefusedUnchanged(descriptor_round(), "[1]", code="REVIEW_ITEMS_MISSING")
+        code, out = self.record(descriptor_round(items=[{"rank": 1, "verdict": "partly", "evidence": "Table 2."}],
+                                                 revisions=[]))
+        self.assertEqual((code, out["round"]), (0, 2))
+        self.assertEqual(self.rounds()[1]["items"][0]["item"], "Report the inter-annotator agreement of the labels.")
+
+
 HARNESS = r"""
 const fs = require('fs');
 const els = {};
@@ -757,6 +887,34 @@ class RubricPanelTests(unittest.TestCase):
         older = render({"status": "ok", "rounds": [entry, {**entry, "round": 3}]})
         self.assertIn("review.measurement.overall.major_concerns · Major revision", older)
 
+    def test_a_descriptor_round_renders_its_criteria_escaped(self) -> None:
+        entry = {"round": 2, "rubric": "data-descriptor", "recommendation": "Major revision",
+                 "documentation_completeness": {"rating": "adequate", "justification": "<b>dictionary</b> full"},
+                 "collection_consent": {"rating": "limited", "justification": "Consent form not shared."},
+                 "technical_validation": {"rating": "inadequate", "justification": "<i>No QC</i>"},
+                 "access_licence": {"rating": "adequate", "justification": "CC BY 4.0, DOI minted."},
+                 "reuse_potential": {"rating": "limited", "justification": "No usage notes."},
+                 "overall_rating": "major concerns", "checklist": "datasheets",
+                 "checklist_gaps": [{"item": "4b", "gap": "<script>k</script>"}], "report": "r"}
+        html = render({"status": "ok", "rounds": [entry]})
+        for fragment in ("review.rubric.descriptor", "review.descriptor.overall",
+                         "review.descriptor.overall.major_concerns", "review.descriptor.criteria",
+                         "review.descriptor.criterion.documentation_completeness",
+                         "review.descriptor.criterion.collection_consent",
+                         "review.descriptor.criterion.technical_validation",
+                         "review.descriptor.criterion.access_licence", "review.descriptor.criterion.reuse_potential",
+                         "review.descriptor.rating.adequate", "review.descriptor.rating.limited",
+                         "review.descriptor.rating.inadequate", "review.descriptor.criterion",
+                         "review.descriptor.justification", "review.descriptor.gaps", "review.descriptor.item",
+                         "review.descriptor.gap", "datasheets", "4b",
+                         "&lt;b&gt;dictionary&lt;/b&gt;", "&lt;i&gt;No QC&lt;/i&gt;", "&lt;script&gt;k"):
+            self.assertIn(fragment, html)
+        for absent in ("<b>dictionary", "<script>k", "/6", "review.amstar2", "review.empirical",
+                       "review.measurement"):
+            self.assertNotIn(absent, html)
+        older = render({"status": "ok", "rounds": [entry, {**entry, "round": 3}]})
+        self.assertIn("review.descriptor.overall.major_concerns · Major revision", older)
+
     def test_the_ml_and_review_renderings_are_unchanged(self) -> None:
         ml = {"round": 1, "date": "2026-01-01", "overall": 4, "confidence": 3, "recommendation": "Accept",
               "ratings": {"Quality": 3}, "items": [{"item": "x", "verdict": "resolved", "evidence": "e"}],
@@ -771,6 +929,7 @@ class RubricPanelTests(unittest.TestCase):
         self.assertIn("review.amstar2.level.low", html)
         self.assertNotIn("review.empirical", html)
         self.assertNotIn("review.measurement", html)
+        self.assertNotIn("review.descriptor", html)
 
 if __name__ == "__main__":
     unittest.main()

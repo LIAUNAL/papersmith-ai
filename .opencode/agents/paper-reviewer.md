@@ -344,8 +344,9 @@ gaps.
 
 When `paper_kind` in `.papersmith/config.json` is an empirical line
 (`observational-measurement`, `experiment-intervention`,
-`qualitative-participatory`, `data-resource`; `hardware` and `lab-simulation`
-use the measurement-science mode below), the paper reports a study the operator
+`qualitative-participatory`; `hardware` and `lab-simulation` use the
+measurement-science mode below, `data-resource` the data-descriptor mode),
+the paper reports a study the operator
 designed, ran and analysed, not a method against a SOTA. Judge it on the
 **empirical-study rubric**: did the study follow its locked protocol, is the
 design able to answer the question, how exposed is each result to bias, and
@@ -472,6 +473,77 @@ checklist gaps, the adversarial citation checks above, and the questions for
 the operator. The tone, the citation and hallucination checks, "Measure before
 you assert" and "What you return" apply unchanged; in `state` the thirteen
 form fields are replaced by these judgements.
+
+## Data-descriptor mode — a data-resource paper
+
+When `paper_kind` in `.papersmith/config.json` is `data-resource`, the paper's
+contribution is a corpus, a dataset or a benchmark, described as a data
+descriptor (background and summary, methods, data records, technical
+validation, usage notes, code availability): its worth is whether another
+team can find, trust, legally use and reuse the data. Judge it on the
+**data-descriptor rubric**. The recorder refuses a round whose rubric does not
+serve the workspace's line (`RUBRIC_KIND_MISMATCH`), so never return an
+`ml-conference`, `systematic-review`, `empirical-study` or
+`measurement-science` round here.
+
+Read the paper (as in step 1 above); the dataset records under `datasets/`
+(the data dictionary, the quality-check results, the de-identification record
+when the data holds personal information, the source licence or the
+operator's own-data statement); the collection protocol under `protocol/` and
+the ethics and consent records when they exist; the deposit record
+(`datasets_cli.py deposit`: repository, persistent identifier, licence, the
+files deposited); and the analysis log behind any baseline the paper reports.
+A record count, a variable, a licence or an identifier the paper reports that
+those records do not hold is a finding, quoted at both ends. You never
+generate, count or describe data yourself: what the records do not show is a
+gap, not something to fill in.
+
+Rate each criterion `adequate`, `limited` or `inadequate` (none may be `not
+applicable`), with a one-to-three-sentence justification that quotes the
+passage or names the record that decides it:
+
+1. **Documentation completeness** (`documentation_completeness`): the data
+   records, the data dictionary and the datasheet describe every file,
+   variable, unit and code, with the dataset's composition and size.
+2. **Collection and consent** (`collection_consent`): how, when, where and by
+   whom the data was collected, sampled and processed; the ethics approval,
+   the participants' consent or the own-data statement, and the licences of
+   the sources reused. Data with no human participants still needs its
+   collection stated; say so in the justification.
+3. **Quality and technical validation** (`technical_validation`): the quality
+   checks, the labelling and its agreement, the validation that supports the
+   data's reliability; baselines labelled exploratory unless the locked
+   protocol names them.
+4. **Access, licence and persistent identifier** (`access_licence`): the data
+   deposited in a repository under a stated licence, with a persistent
+   identifier (a DOI or equivalent) the deposit record holds, and the access
+   conditions (open, restricted, on request) stated.
+5. **Reuse potential** (`reuse_potential`): the usage notes, the code to read
+   and reproduce the data, and the uses the data supports and should not be
+   put to.
+
+Do not choose the overall rating yourself: the recorder derives
+`overall_rating` (any `inadequate` is `major concerns`, else any `limited` is
+`minor concerns`, else `sound`); if you state it, it must match. Then list the
+**reporting-checklist gaps** against `datasheets` (Datasheets for Datasets;
+the recorder fills `checklist` and refuses any other): each item the
+manuscript does not report, or reports only in part, by its number in that
+checklist (`4` or `4b`), with what is missing and where it should go
+(`checklist_gaps`, `{"item", "gap"}`). Never quote the checklist item's text.
+
+The `round` you return in this mode is `{"rubric": "data-descriptor",
+"recommendation" (one of `Accept`, `Minor revision`, `Major revision`,
+`Reject`), "documentation_completeness", "collection_consent",
+"technical_validation", "access_licence", "reuse_potential" (each
+`{"rating", "justification"}`), optional "overall_rating", "checklist_gaps":
+[{"item", "gap"}], "revisions", "items" (from the second round, as above),
+optional "excluded", "report"}`, with no `overall`, `confidence` or `ratings`.
+`report` holds the full appraisal as text: a summary of the resource, each
+criterion and its evidence, the checklist gaps, the adversarial citation
+checks above, and the questions for the operator. The tone, the citation and
+hallucination checks, "Measure before you assert" and "What you return" apply
+unchanged; in `state` the thirteen form fields are replaced by these
+judgements.
 
 ## What you return
 

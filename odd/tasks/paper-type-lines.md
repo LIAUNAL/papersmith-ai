@@ -76,9 +76,9 @@ Branch: one branch per task (`feat/paper-type-*`), chained PRs. Delivery: ask-on
     - T8-I1 integration and reviews -- parent, wave 4 -- done (5680decb, 5b4014d8; L87, L88)
   - line 4 data-resource (L90, H1-H6 accepted in L91):
     - T8-C2 `datasheets` checklist -- delegated, wave 1 -- done (L92)
-    - T8-R2 `data-descriptor` rubric -- delegated, wave 1 -- in progress
+    - T8-R2 `data-descriptor` rubric -- delegated, wave 1 -- done (L94)
     - T8-D1 `datasets_cli.py deposit` record (G-DEPOSIT) -- delegated, wave 1 -- done (L93)
-    - T8-L4 data-resource line (registration, contracts, flow, skill) -- wave 2 -- pending
+    - T8-L4 data-resource line (registration, contracts, flow, skill) -- delegated, wave 2 (started alongside R2) -- in progress
     - T8-B4 board table and Study panel deposit section -- wave 3 -- pending
     - T8-I4 integration and reviews -- wave 4 -- pending
   - later lines (experiment-intervention, qualitative-participatory) -- pending
@@ -178,3 +178,4 @@ Branch: one branch per task (`feat/paper-type-*`), chained PRs. Delivery: ask-on
 - L91 (2026-11-23, user): chose "Aceptar defaults (Recommended)" for H1-H6 (L90).
 - L92 (T8-C2, delegated writer): `datasheets.json`, 50 items (one per question of Datasheets for Datasets, arXiv:1803.09010v8, the closing "any other comments" bullets left out; CACM 2021 named as the source, assumed identical, not checked), seven sections in order, every item a judgment question, targets on the data-descriptor ids. 9 tests RED -> GREEN; shipped-guideline pins moved.
 - L93 (T8-D1, delegated writer): `datasets_cli.py deposit --slug --repository --identifier --license --by [--scheme doi|handle|ark|accession] [--url] [--version] [--date]` records `deposit{...files{path: sha256}, history?}` on the registry entry (DOI by default, `doi:`/`https://doi.org/` prefix dropped, no network); refusals `bad-identifier`, `deposit-license-missing` plus reused `operator-missing`, `bad-argument`, `unknown-slug`, `file-missing`, `license-not-allowed`, `pii-not-deidentified`, `dictionary-unreadable`. The entry's licence decision must be exactly `allowed` (own data counts; an `overridden` source is refused because a deposit redistributes it). Reader `deposit_state(root, entry_or_slug)` (current or stale: file-changed, file-added, file-missing); `status` adds `deposit` only to entries that have one. 22 tests RED (21) -> GREEN; differential of the other verbs identical.
+- L94 (T8-R2, delegated writer): `data-descriptor` rubric serves data-resource (removed from empirical-study): documentation completeness, collection and consent, quality and technical validation, access/licence/persistent identifier, reuse potential, each adequate / limited / inadequate; overall derived by the measurement-science rule (shared helpers `_validate_rated_criteria`, `_shape_rated_criteria`); checklist fixed to datasheets, gaps by item. Agent mode and panel rendering (other rubrics byte-identical over 10 cases). 20 i18n keys merged by the parent; projections regenerated; docs/skills.md text deferred until L4 finishes (it edits the same file). Tests RED (20) -> GREEN; two line-mapping tests moved.
