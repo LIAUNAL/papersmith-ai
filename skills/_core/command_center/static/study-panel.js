@@ -14,6 +14,9 @@
  * also answers instruments, measurements (registered raw data files, never a
  * reading), uncertainty (GUM budgets with their components) and agreement
  * (Bland-Altman and ICC(2,1)); the numbers are the core's summary statistics.
+ * A data-resource workspace (or any with a deposit record) also answers deposit:
+ * each dataset's repository, identifier and scheme, licence, landing page,
+ * version, date and who recorded it, current or stale with the reasons.
  * A section the server could not read carries
  * {available: false, code, message} and is drawn as unavailable; the others
  * still render. The variant's checklist is slow (the engine runs paper_cli.py)
@@ -93,6 +96,10 @@
     resolution: 'study.uncertainty.component.resolution',
   };
   const MEASUREMENT_SECTIONS = ['instruments', 'measurements', 'uncertainty', 'agreement'];
+  const DEPOSIT_REASON_KEYS = {
+    'file-changed': 'study.deposit.reason.changed', 'file-added': 'study.deposit.reason.added',
+    'file-missing': 'study.deposit.reason.missing',
+  };
   const STATUS_KEYS = {
     satisfied: 'study.checklist.satisfied', missing: 'study.checklist.missing',
     'needs-judgment': 'study.checklist.needsJudgment',
@@ -380,6 +387,35 @@
       t('study.agreement.state')], rows);
   }
 
+  function depositHtml(d) {
+    const title = `<h4>${esc(d.slug)}${d.title && d.title !== d.slug ? ` · ${esc(d.title)}` : ''}</h4>`;
+    if (!d.recorded) return `${title}<p class="rv-warn">${esc(t('study.deposit.absent'))}</p>`;
+    const stale = list(d.stale);
+    let state;
+    if (d.current) state = `<p class="rv-ok">${esc(t('study.deposit.current'))}</p>`;
+    else if (stale.length) {
+      const reasons = stale.map((r) => (DEPOSIT_REASON_KEYS[r.reason]
+        ? t(DEPOSIT_REASON_KEYS[r.reason], { file: r.file || DASH }) : `${r.reason || ''} ${r.file || ''}`.trim())).join(', ');
+      state = `<p class="rv-warn">${esc(t('study.deposit.stale', { reasons }))}</p>`;
+    } else state = `<p class="rv-warn">${esc(t('study.deposit.malformed'))}</p>`;
+    const url = /^https?:\/\//i.test(d.url || '')
+      ? `<a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.url)}</a>` : esc(fmt(d.url));
+    const identifier = d.identifier ? t('study.deposit.scheme', { identifier: d.identifier, scheme: d.scheme || DASH }) : DASH;
+    const row = [esc(fmt(d.repository)), esc(identifier), esc(fmt(d.license)), url, esc(fmt(d.version)),
+      esc(fmt(d.date)), esc(fmt(list(d.files)))];
+    return `${title}${state}`
+      + table([t('study.deposit.repository'), t('study.deposit.identifier'), t('study.deposit.license'),
+        t('study.deposit.url'), t('study.deposit.version'), t('study.deposit.date'), t('study.deposit.files')], [row])
+      + `<p class="rv-muted">${esc(t('study.deposit.recorded', { by: d.by || DASH, at: d.recorded_on || DASH, n: d.revisions ?? 0 }))}</p>`;
+  }
+
+  function depositBody(p) {
+    const datasets = list(p.datasets);
+    const note = `<p class="rv-muted">${esc(t('study.deposit.note'))}</p>`;
+    if (!datasets.length) return `${note}<p class="rv-muted">${esc(t('study.deposit.empty'))}</p>`;
+    return note + datasets.map(depositHtml).join('');
+  }
+
   function reportingLine(r) {
     r = obj(r);
     const additional = list(r.additional_guidelines).map((g) => `<p>${esc(ADDITIONAL_KEYS[g] ? t(ADDITIONAL_KEYS[g]) : t('study.reporting.additional', { guideline: g }))}</p>`).join('');
@@ -454,6 +490,7 @@
       ${section('data', 'study.data.title', view.data, dataBody)}
       ${MEASUREMENT_SECTIONS.filter((name) => view[name]).map((name) => section(name, MEASUREMENT_TITLES[name], view[name], MEASUREMENT_BODIES[name])).join('')}
       ${section('analysis', 'study.analysis.title', view.analysis, analysisBody)}
+      ${view.deposit ? section('deposit', 'study.deposit.title', view.deposit, depositBody) : ''}
       ${section('flow', 'study.flow.title', view.flow, flowBody)}
       ${checklistHtml(view.reporting)}`;
   }

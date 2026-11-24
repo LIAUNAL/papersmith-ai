@@ -766,8 +766,8 @@ current). A record that cannot be read turns only its section into
 `GET /api/review/checklist`, off the server's event loop.
 
 **The Study tab (empirical workspaces only).** A workspace whose `paper_kind` is an
-empirical line (`observational-measurement`, `hardware`, `lab-simulation`, and the planned
-`experiment-intervention`, `qualitative-participatory` and `data-resource`) shows a
+empirical line (`observational-measurement`, `hardware`, `lab-simulation`, `data-resource`,
+and the planned `experiment-intervention` and `qualitative-participatory`) shows a
 *Study* tab (*Estudio* in Spanish) after *Pipeline and Progress*; an experimental or
 review workspace never shows it, and its routes answer `409` with
 `{"ok": false, "code": "NOT_A_STUDY_WORKSPACE", "paper_kind": ...}`. `GET /api/study`
@@ -792,7 +792,13 @@ registered raw data file, never a reading), `uncertainty` (each GUM budget with 
 A/B components, sensitivity coefficients, combined and expanded uncertainty, effective
 degrees of freedom and coverage, current or stale with why, and any past-due override)
 and `agreement` (bias, limits of agreement and ICC(2,1)), read through
-`skills/_core/measurement/records.py`. A record
+`skills/_core/measurement/records.py`. A `data-resource` workspace, or any workspace
+whose `datasets/registry.json` holds a deposit record, adds `deposit`: each dataset of
+the resource (every registry entry but a toy set) with the repository, the persistent
+identifier and its scheme, the licence, the landing page, the version, the deposit date,
+who recorded it and the files it binds, and whether it is current or stale (a file
+changed, added or missing since), read only through `datasets_cli.py`'s
+`deposit_state`; a data-resource workspace's `reporting` names `datasheets`. A record
 that cannot be read turns only its section into `{"available": false, "code",
 "message"}`. The variant's reporting checklist runs the checklist engine, so it loads
 only when the operator clicks its button, from `GET /api/study/checklist` (another of

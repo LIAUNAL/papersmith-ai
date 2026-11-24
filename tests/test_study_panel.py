@@ -6,7 +6,9 @@ non-empirical workspace's 409 stated, and the variant's checklist fetched only
 on the operator's click ("no checklist data yet" when no guideline applies).
 A hardware workspace adds the measurement sections (instruments, data files,
 uncertainty budgets, agreement) and a second guideline, gum-reporting, run from
-its own button."""
+its own button. A data-resource workspace adds the deposit section (repository,
+identifier with its scheme, licence, landing page, version, date, who recorded
+it, current or stale with the reasons)."""
 
 from __future__ import annotations
 
@@ -22,6 +24,7 @@ from fastapi.testclient import TestClient
 from skills._core.command_center import server
 from tests.test_study_view import KIND, build_study
 from tests.test_study_view_measurement import RAW, agree as agree_type, measurement_records
+from tests.test_study_view_deposit import DOI, deposit as record_deposit, own as own_resource
 from papersmith.core import init as init_module
 
 STATIC = Path(server.__file__).resolve().parent / "static"
@@ -272,6 +275,62 @@ class MeasurementPanelTests(unittest.TestCase):
         out = run(view)["html"]
         self.assertNotIn('data-study-section="instruments"', out)
         self.assertNotIn("<h3>Uncertainty budgets</h3>", out)
+
+
+@unittest.skipUnless(NODE, "node is required to run the panel")
+class DepositPanelTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        holder = tempfile.TemporaryDirectory(prefix="study-panel-dr-", ignore_cleanup_errors=True)
+        cls.addClassCleanup(holder.cleanup)
+        root = Path(holder.name).resolve() / "ws"
+        init_module.initialize(root, tools=("claude",), run_npm=False, run_env=False, kind="data-resource")
+        own_resource(root, "notes")
+        record_deposit(root, "notes", "--url", "https://zenodo.org/records/7654321", "--version", "v1", "--date",
+                       "2026-11-20")
+        own_resource(root, "sensors")
+        cls.view = TestClient(server.create_app(root)).get("/api/study").json()
+        assert cls.view["deposit"]["available"], cls.view["deposit"]
+
+    def test_the_deposit_section_in_english(self) -> None:
+        out = run(self.view)["html"]
+        self.assertIn("<h3>Deposit</h3>", out)
+        self.assertIn("<h4>notes</h4>", out)
+        self.assertIn(f"<td>Zenodo &lt;EU&gt;</td><td>{DOI} (doi)</td><td>CC-BY-4.0</td>", out)
+        self.assertIn('<a href="https://zenodo.org/records/7654321" target="_blank" rel="noopener">', out)
+        self.assertIn("<td>v1</td><td>2026-11-20</td><td>data/notes.csv</td>", out)
+        self.assertIn('<p class="rv-ok">Current: every registered file is the one deposited.</p>', out)
+        self.assertRegex(out, r"Recorded by Ana Ruiz on \d{4}-\d{2}-\d{2}; 0 earlier record\(s\)\.")
+        self.assertIn("<h4>sensors</h4>", out)
+        self.assertIn("No deposit recorded yet (datasets_cli.py deposit --by &lt;name&gt;).", out)
+        self.assertNotIn("Zenodo <EU>", out)
+
+    def test_a_stale_deposit_names_its_reasons(self) -> None:
+        view = json.loads(json.dumps(self.view))
+        view["deposit"]["datasets"][0].update(current=False, stale=[
+            {"reason": "file-changed", "file": "data/notes.csv"}, {"reason": "file-added", "file": "data/<x>.csv"}])
+        out = run(view)["html"]
+        self.assertIn("Stale: data/notes.csv changed since the deposit, data/&lt;x&gt;.csv registered after the "
+                      "deposit. Deposit the new version and record it again.", out)
+        es = run(view, lang="es")["html"]
+        self.assertIn("Desactualizado: data/notes.csv cambió desde el depósito", es)
+
+    def test_spanish(self) -> None:
+        out = run(self.view, lang="es")["html"]
+        self.assertIn("<h3>Depósito</h3>", out)
+        self.assertIn("Vigente: cada archivo registrado es el que se depositó.", out)
+        self.assertIn("<th>Repositorio</th>", out)
+        self.assertNotIn("<h3>Deposit</h3>", out)
+
+    def test_an_unavailable_deposit_and_a_view_without_one(self) -> None:
+        view = json.loads(json.dumps(self.view))
+        view["deposit"] = {"available": False, "code": "UNREADABLE", "message": "bad <registry>"}
+        out = run(view)["html"]
+        self.assertIn('data-study-section="deposit"', out)
+        self.assertIn("bad &lt;registry&gt;", out)
+        self.assertIn('data-study-section="data"', out)
+        without = {key: value for key, value in self.view.items() if key != "deposit"}
+        self.assertNotIn('data-study-section="deposit"', run(without)["html"])
 
 
 if __name__ == "__main__":

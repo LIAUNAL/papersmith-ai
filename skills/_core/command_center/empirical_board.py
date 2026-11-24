@@ -3,8 +3,9 @@
 One board serves every empirical line. A line is a :class:`LineTable`: its
 steps in order (drawn from the shared :data:`STEPS` library), the gates its
 board lists, its phase locks and the step that is transversal. This module
-fills the tables of ``observational-measurement``, ``hardware`` and
-``lab-simulation`` (``src/papersmith/templates/paper-flow-<kind>.md.tpl``); a
+fills the tables of ``observational-measurement``, ``hardware``,
+``lab-simulation`` and ``data-resource``
+(``src/papersmith/templates/paper-flow-<kind>.md.tpl``); a
 later line adds its own table to :data:`LINE_TABLES` (reusing the library's
 steps and adding the ones only it has) and is registered with the rest at the
 end of this module. ``review_board`` stays the review line's own board.
@@ -25,7 +26,14 @@ Every status is read from evidence on disk, never computed from a model:
   quantity has a current uncertainty budget (the measurement core's
   ``instruments_state``, ``data_state`` and ``budget_state``);
 * G-AGREEMENT: an agreement analysis in ``study/agreement.json`` is current
-  (``agreement_state``: bound to the registered device and reference files).
+  (``agreement_state``: bound to the registered device and reference files);
+* data-resource's own G-ETHICS (:data:`RESOURCE_ETHICS`, through
+  ``LineTable.gate_defs``): the ethics record as above, plus the right to
+  release every dataset of the resource (each registry entry but a toy set):
+  the own-data statement, or a source licence decision that is exactly
+  ``allowed`` (a deposit redistributes the data, so an override does not count);
+* G-DEPOSIT: ``datasets_cli.deposit_state`` is current for every dataset of
+  the resource (stale once a registered file changes, is added or goes missing).
 
 The operator records every one of them with ``--by``; the board only reads
 (decision E8). Observational: the analysis actions wait for the protocol, the
@@ -35,7 +43,11 @@ for G-AGREEMENT; the ethics, registration and flow gates are listed only once
 the operator declares a validation with people (an ethics or registration
 record that is not "not applicable", or a participant flow). Lab-simulation:
 the uncertainty step waits for the calibration against known values and the
-writing for G-CALIBRATION, whose budgets that step computes.
+writing for G-CALIBRATION, whose budgets that step computes. Data-resource:
+the baselines wait for G-DATA-QC (their actions and their phase lock) and the
+writing for G-DEPOSIT; the deposit step waits for nothing in the chain (a
+resource is deposited whether or not it has baselines) but its record action
+waits for G-DATA-QC.
 
 Steps a step after them cannot wait for: a step waits for the one before it,
 so a step whose only record appears later must not hold the line. The
@@ -188,6 +200,7 @@ PAPER_CLI = "python skills/paper-writing/scripts/paper_cli.py"
 PROTOCOL_GATE, ETHICS_GATE, REGISTRATION_GATE = "G-STUDY-PROTOCOL", "G-ETHICS", "G-REGISTRATION"
 DATA_GATE, FLOW_GATE = "G-DATA-QC", "G-FLOW"
 SPEC_GATE, CALIBRATION_GATE, AGREEMENT_GATE = "G-SPEC", "G-CALIBRATION", "G-AGREEMENT"
+DEPOSIT_GATE = "G-DEPOSIT"
 #: The gates a hardware board lists only when people take part in its validation.
 PEOPLE_GATES = (ETHICS_GATE, REGISTRATION_GATE, FLOW_GATE)
 #: What an analysis waits for: the protocol, the ethics and registration records and the data QC.
@@ -452,6 +465,104 @@ def _flow_gate(ctx: Context) -> dict[str, str]:
     return {"status": "PASS", "detail": f"Signed off by {signoff.get('by') or '?'} at {signoff.get('at') or '?'}"}
 
 
+# ----- the data resource (data-resource)
+
+
+_NO_RESOURCE = "No dataset registered yet (datasets_cli.py own, or license for a third-party source)"
+
+
+def resource_datasets(dc: Any, root: Path) -> list[dict[str, Any]]:
+    """The registry entries the data resource releases: every one but a toy set."""
+    return [entry for entry in dc.load_registry(root) if isinstance(entry, dict) and entry.get("role") != "toy"]
+
+
+def _combine(*parts: dict[str, str]) -> str:
+    """The status of several parts: FAIL if any fails, PASS if all pass,
+    PENDING if none started, ACTIVE otherwise."""
+    states = [part["status"] for part in parts]
+    if "FAIL" in states:
+        return "FAIL"
+    if all(state == "PASS" for state in states):
+        return "PASS"
+    return "PENDING" if all(state == "PENDING" for state in states) else "ACTIVE"
+
+
+_REDISTRIBUTES = "a data resource redistributes its data, so only an allowed licence counts"
+_REFUSED_LICENCE = {"refused": "{slug}: the licence was refused: " + _REDISTRIBUTES,
+                    "overridden": "{slug}: the licence was accepted by an override: " + _REDISTRIBUTES}
+_NO_LICENCE = "{slug}: no licence decision yet (datasets_cli.py license)"
+
+
+def _release_part(ctx: Context) -> dict[str, str]:
+    """The right to release every resource dataset: the own-data statement, or
+    a source licence decision that is exactly ``allowed`` (a deposit
+    redistributes the data, so an override does not count)."""
+    dc = ctx.module("datasets_cli")
+    if dc is None:
+        return {"status": "PENDING", "detail": _absent(Path(MODULES["datasets_cli"]).name)}
+    entries = resource_datasets(dc, ctx.root)
+    if not entries:
+        return {"status": "PENDING", "detail": _NO_RESOURCE}
+    granted = []
+    for entry in sorted(entries, key=lambda item: str(item.get("slug"))):
+        slug = entry.get("slug")
+        licence = entry.get("license") if isinstance(entry.get("license"), dict) else {}
+        decision = licence.get("decision") or "missing"
+        data_use = entry.get("data_use") if isinstance(entry.get("data_use"), dict) else {}
+        if entry.get("role") == "own":
+            if not data_use.get("statement") or decision != "allowed":
+                return {"status": "ACTIVE", "detail": (f"{slug}: no data-use statement yet "
+                                                       "(datasets_cli.py own --by <name>)")}
+            granted.append(f"{slug}: own data, data-use statement by {data_use.get('by') or '?'}")
+        elif decision != "allowed":
+            return {"status": "ACTIVE", "detail": _REFUSED_LICENCE.get(decision, _NO_LICENCE).format(slug=slug)}
+        else:
+            granted.append(f"{slug}: licence {licence.get('source_name') or '?'} allowed")
+    return {"status": "PASS", "detail": "; ".join(granted)}
+
+
+def _ethics_licence_gate(ctx: Context) -> dict[str, str]:
+    ethics, release = _record_gate(ctx, "ethics"), _release_part(ctx)
+    status = _combine(ethics, release)
+    if status == "PASS":
+        n = len(resource_datasets(ctx.module("datasets_cli"), ctx.root))
+        return {"status": status, "detail": f"{n} dataset(s) with the right to release; ethics: {ethics['detail']}"}
+    return {"status": status, "detail": next(part["detail"] for part in (ethics, release) if part["status"] != "PASS")}
+
+
+_DEPOSIT_REASONS = {"file-changed": "{file} changed since the deposit",
+                    "file-added": "{file} registered after the deposit",
+                    "file-missing": "{file} missing since the deposit"}
+
+
+def _deposit_gate(ctx: Context) -> dict[str, str]:
+    """Every resource dataset's deposit, read through ``datasets_cli.deposit_state``."""
+    dc = ctx.module("datasets_cli")
+    entries = sorted(resource_datasets(dc, ctx.root), key=lambda item: str(item.get("slug")))
+    if not entries:
+        return {"status": "PENDING", "detail": _NO_RESOURCE}
+    current, owed = [], []
+    for entry in entries:
+        slug, state = entry.get("slug"), dc.deposit_state(ctx.root, entry)
+        record = state["deposit"] if isinstance(state.get("deposit"), dict) else {}
+        if state["current"]:
+            current.append(f"{slug} in {record.get('repository') or '?'} "
+                           f"({record.get('scheme') or '?'} {record.get('identifier') or '?'})")
+        elif not state["recorded"]:
+            owed.append((False, f"{slug}: no deposit recorded yet (datasets_cli.py deposit --by <name>)"))
+        elif state["stale"]:
+            reasons = "; ".join(_DEPOSIT_REASONS.get(item.get("reason"), "{file}").format(file=item.get("file"))
+                                for item in state["stale"])
+            owed.append((True, f"{slug}: the deposit is stale ({reasons}): deposit the new version and record it "
+                               "again (datasets_cli.py deposit)"))
+        else:
+            owed.append((True, f"{slug}: the deposit record is malformed: record it again (datasets_cli.py deposit)"))
+    if not owed:
+        return {"status": "PASS", "detail": f"{len(current)} dataset(s) deposited and current: {'; '.join(current)}"}
+    started = bool(current) or any(recorded for recorded, _ in owed)
+    return {"status": "ACTIVE" if started else "PENDING", "detail": owed[0][1]}
+
+
 # ----- the measurement core (hardware and lab-simulation)
 
 
@@ -665,7 +776,27 @@ GATES: dict[str, Gate] = {gate.id: gate for gate in (
          "agreement, ICC(2,1)) in study/agreement.json is current: computed from registered raw data files that "
          "have not changed since (measure_cli.py agreement compute). The writing starts after it.",
          "agreement", _agreement_gate, "measurement"),
+    Gate(DEPOSIT_GATE, "Deposit Record Gate",
+         "The operator deposited every dataset of the resource in a repository and recorded the persistent "
+         "identifier and the licence (datasets_cli.py deposit --by <name>), bound to the sha256 of every registered "
+         "file; a file changed, added or missing since makes it stale until the new version is deposited and "
+         "recorded again. Read from the registry; the board never records it. The writing starts after it.",
+         "deposit", _deposit_gate, "datasets_cli"),
 )}
+
+#: The data-resource line's G-ETHICS: the ethics record plus the right to release the data.
+RESOURCE_ETHICS = Gate(
+    ETHICS_GATE, "Ethics, Consent & Licence Gate",
+    "The operator recorded the ethics approval and the consent route, or why none applies (study_cli.py ethics "
+    "record --by <name>), bound to the current protocol lock, and the right to release every dataset of the "
+    "resource: the own-data statement (datasets_cli.py own --by <name>) or a source licence decision that is "
+    "allowed (datasets_cli.py license); an overridden or refused licence does not count, since a deposit "
+    "redistributes the data.", "ethics_licence", _ethics_licence_gate, "records")
+
+
+def gate_definition(table: "LineTable", gate_id: str) -> Gate:
+    """The gate ``gate_id`` as ``table``'s line defines it: its own, else the shared one."""
+    return table.gate_defs.get(gate_id) or GATES[gate_id]
 
 
 # ----- the steps that read the gates and the records
@@ -760,6 +891,99 @@ def _analysis(ctx: Context) -> dict[str, Any]:
          f"{confirmatory} confirmatory, {exploratory} exploratory; the label is computed, never chosen"),
         ("Interrupted or failed runs", "ACTIVE" if stopped or failed else "PASS",
          f"{len(stopped)} interrupted, {len(failed)} failed"),
+    ]}
+
+
+# ----- the data-resource steps
+
+
+def _ethics_licence(ctx: Context) -> dict[str, Any]:
+    gate, ethics, release = ctx.gates[ETHICS_GATE], _record_gate(ctx, "ethics"), _release_part(ctx)
+    status = "PASS" if gate["status"] == "PASS" else ("PENDING" if gate["status"] == "PENDING" else "ACTIVE")
+    return {"status": status, "detail": gate["detail"], "subfases": [
+        ("Ethics approval and consent (G-ETHICS, operator)", ethics["status"], ethics["detail"]),
+        ("Right to release: own-data statement or allowed licence (G-ETHICS, operator)", release["status"],
+         release["detail"]),
+    ]}
+
+
+def _curation(ctx: Context) -> dict[str, Any]:
+    dc = ctx.module("datasets_cli")
+    entries = sorted(resource_datasets(dc, ctx.root), key=lambda item: str(item.get("slug")))
+    if not entries:
+        return {"status": "PENDING", "detail": _NO_RESOURCE, "subfases": [
+            ("Data files written by the operator", "PENDING", _NO_RESOURCE),
+            ("Data dictionary (datasets/<slug>/dictionary.json)", "PENDING", _NO_RESOURCE)]}
+    problems = []
+    for entry in entries:
+        slug = entry.get("slug")
+        try:
+            found = dc.read_dictionary(ctx.root, slug)
+        except dc.Refusal as refusal:
+            problems.append(f"{slug}: the data dictionary is invalid: {refusal.message}")
+            continue
+        if found is None:
+            problems.append(f"{slug}: no data dictionary (datasets_cli.py dictionary init)")
+    n, valid = len(entries), len(entries) - len(problems)
+    files = sum(1 for entry in entries if entry.get("files"))
+    status = "PASS" if not problems else "ACTIVE"
+    detail = f"{valid} dataset(s) with a valid data dictionary" if not problems else problems[0]
+    return {"status": status, "detail": detail, "subfases": [
+        ("Data files written by the operator", _state(files, n),
+         f"{files} of {n} dataset(s) with a registered data file; the assistant never writes or edits one"),
+        ("Data dictionary (datasets/<slug>/dictionary.json)", status,
+         f"{valid} of {n} dataset(s) with a valid data dictionary"),
+    ]}
+
+
+def _quality(ctx: Context) -> dict[str, Any]:
+    gate = ctx.gates[DATA_GATE]
+    owned = own_datasets(ctx.module("datasets_cli"), ctx.root)
+    n = len(owned)
+    clear = sum(1 for d in owned if d["pii_clear"])
+    status = "PASS" if gate["status"] == "PASS" else ("ACTIVE" if owned else "PENDING")
+    return {"status": status, "detail": gate["detail"], "subfases": [
+        ("Quality check (G-DATA-QC)", gate["status"], gate["detail"]),
+        ("De-identification of personal data", _state(clear, n),
+         f"{clear} of {n} own dataset(s) with no personal data left to de-identify"),
+    ]}
+
+
+def _baselines(ctx: Context) -> dict[str, Any]:
+    log_module = ctx.module("analysis_log")
+    log = log_module.log_state(ctx.root)
+    if log["state"] == "absent":
+        return {"status": "PENDING", "detail": "No analysis logged yet (analysis/log.jsonl)", "subfases": [
+            ("Analysis log (analysis/log.jsonl)", "PENDING", "No analysis logged yet (analysis/log.jsonl)")]}
+    if log["state"] != "ok":
+        detail = f"The analysis log is unreadable: {log['message']}"
+        return {"status": "ACTIVE", "detail": detail,
+                "subfases": [("Analysis log (analysis/log.jsonl)", "ACTIVE", detail)]}
+    entries = log_module.read_log(ctx.root)
+    analyses = log_module.analyses(entries)
+    stopped = log_module.interrupted(entries)
+    failed = [entry for entry in analyses if entry.get("exit_code") not in (None, 0)]
+    confirmatory = sum(1 for entry in analyses if entry.get("label") == "confirmatory")
+    exploratory = len(analyses) - confirmatory
+    status = "PASS" if analyses and not stopped else ("ACTIVE" if entries else "PENDING")
+    return {"status": status,
+            "detail": f"{len(analyses)} analysis entries logged: {confirmatory} confirmatory, {exploratory} exploratory",
+            "subfases": [
+        ("Analysis log (analysis/log.jsonl)", "PASS" if analyses else "ACTIVE",
+         f"{len(entries)} entries, hash chain intact"),
+        ("Baselines labelled by the locked protocol", "PASS" if analyses else "PENDING",
+         f"{confirmatory} confirmatory, {exploratory} exploratory; the label is computed, never chosen"),
+        ("Interrupted or failed runs", "ACTIVE" if stopped or failed else "PASS",
+         f"{len(stopped)} interrupted, {len(failed)} failed"),
+    ]}
+
+
+def _deposit(ctx: Context) -> dict[str, Any]:
+    gate, repository = ctx.gates[DEPOSIT_GATE], _repository_url(ctx)
+    status = "PASS" if gate["status"] == "PASS" else ("PENDING" if gate["status"] == "PENDING" else "ACTIVE")
+    return {"status": status, "detail": gate["detail"], "subfases": [
+        ("Deposit recorded and current (G-DEPOSIT, operator)", gate["status"], gate["detail"]),
+        ("Repository declared (repository-url)", repository["status"], repository["detail"]),
     ]}
 
 
@@ -1484,6 +1708,145 @@ STEPS: dict[str, Step] = {step.id: step for step in (
                  *copy.deepcopy(phase_actions.ACTIONS["audit"]["actions"]),
              ],
          }, phase_actions.EVIDENCE["audit"], _reporting, ("checklists",)),
+    # ----- data-resource (src/papersmith/templates/paper-flow-data-resource.md.tpl)
+    Step("plausibility_resource", "Plausibility and paper type", "Plausibility & Paper Type",
+         "The state of the art and the closest existing resources scouted around the idea, the plausibility report accepted by the operator, and the data-resource paper type agreed with /paper-type; the type names the datasheets checklist.",
+         ("read", "write", "http"), ("sota-pool/candidates.json", ".papersmith/paper_type.json"), "G-PAPER-TYPE", {
+             "skills": ["plausibility", "paper-type"],
+             "agent": "plausibility, paper-type-advisor & operator",
+             "actions": [
+                 _prompt("/plausibility", "Explore the plausibility of the idea", [
+                     "Write the idea in at least two sentences: what the resource holds, how it was collected, and the questions it lets others answer.",
+                     "The agent scouts about 25 SOTA references and the closest existing resources by their abstracts and grades the claims with verbatim quotes.",
+                     "Nothing moves on until you accept the report.",
+                 ], "E.g.: We release a corpus of annotated clinical notes for asthma triage, collected under consent …",
+                     min_sentences=2),
+                 _prompt("/paper-type", "Agree the paper type", [
+                     "The agent scores the idea against the paper types and discusses its suggestion with you.",
+                     "The data-resource type has no variants: its reporting checklist is datasheets (Datasheets for Datasets).",
+                     "The final judge reads the paper on the data-descriptor rubric.",
+                 ], "E.g.: discuss whether this is a data resource or an observational study on the same data.",
+                     optional=True),
+                 _redirect("View the paper types", "papertype", "Every paper type with its score, guideline and variants."),
+             ],
+         }, (("Candidate pool", "sota-pool/candidates.json"), ("Plausibility acceptance", ".papersmith/plausibility.json"),
+             ("Agreed paper type", ".papersmith/paper_type.json")), _plausibility_type),
+    Step("collection_protocol", "Collection protocol", "Collection Protocol (G-STUDY-PROTOCOL)",
+         "The collection protocol as managed revisions: the purpose of the resource, the sources or participants and how they are sampled, the planned records and their size with its justification, the annotation scheme, the primary outcome the resource is built to measure and the analysis plan of any baseline. The operator approves a revision; a later change is an amendment with its reason.",
+         ("read", "write"), ("protocol/study-protocol-<slug>-vNN.md", "study/protocol.lock.json"), PROTOCOL_GATE, {
+             "skills": ["study-protocol-deliberation"],
+             "agent": "study-protocol-deliberation & operator",
+             "actions": [
+                 _prompt("/study-protocol-deliberation", "Deliberate the collection protocol with the agent", [
+                     "The agent drafts the protocol with you as labelled fields: purpose, sources or participants and their sampling, planned records and their size, annotation scheme, primary outcome and the analysis plan of any baseline.",
+                     "The sources, the annotation scheme and the primary outcome are yours; the agent never invents a record or a size from data it has not seen.",
+                     "Each accepted change is published as a new managed revision under protocol/.",
+                 ], "E.g.: draft the first collection protocol of the clinical notes corpus.", optional=True),
+                 _command(f"{STUDY_CLI} protocol status --root .", "Protocol lock status",
+                          "Whether the approved revision is current, changed or absent."),
+                 _command(f"{STUDY_CLI} protocol approve --root . --by {_OPERATOR}",
+                          "Approve the protocol (operator, G-STUDY-PROTOCOL)",
+                          "Only the operator approves; the approval pins the revision's sha256."),
+                 _command(f'{STUDY_CLI} protocol amend --root . --by {_OPERATOR} --reason "<why>"',
+                          "Record an amendment", "A change after the approval, with its reason; the methods report it."),
+             ],
+         }, (("Protocol revisions", "protocol/study-protocol-*.md"),
+             ("Protocol approval (G-STUDY-PROTOCOL)", "study/protocol.lock.json")), _study_protocol, ("records",)),
+    Step("ethics_licence", "Ethics, consent and licence", "Ethics, Consent & Licence (G-ETHICS)",
+         "The ethics approval and the consent route, recorded by the operator against the approved protocol or recorded as not applicable with the reason, and the right to release every dataset: the operator's own-data statement or the allowed licence of a third-party source.",
+         ("read", "write"), ("study/ethics.json", "datasets/registry.json"), ETHICS_GATE, {
+             "skills": ["datasets"],
+             "agent": "operator",
+             "actions": [
+                 _command(f'{STUDY_CLI} ethics record --root . --by {_OPERATOR} --committee "<committee>" '
+                          f'--code "<approval code>" --date <YYYY-MM-DD> --consent "<consent route>"',
+                          "Record the ethics approval (operator, G-ETHICS)",
+                          "The committee, the approval code, its date and the consent route."),
+                 _command(f'{STUDY_CLI} ethics record --root . --by {_OPERATOR} --not-applicable --reason "<why>"',
+                          "Record that no ethics approval applies (operator)", "With the reason, in your words."),
+                 _command(f'{DATASETS_CLI} own --slug <slug> --by {_OPERATOR} --statement "<how the data may be used>"',
+                          "Register your own data (operator)", "Its data-use statement, in your words."),
+                 _command(f'{DATASETS_CLI} license --slug <slug> --source-license "<licence as the source states it>"',
+                          "Record the licence of a third-party source",
+                          "Only an allowed licence lets the resource redistribute it."),
+                 _command(f"{STUDY_CLI} status --root .", "Study records status",
+                          "The protocol, ethics and registration states and their warnings."),
+             ],
+         }, (("Ethics record (G-ETHICS)", "study/ethics.json"), ("Dataset registry", "datasets/registry.json")),
+         _ethics_licence, ("records", "datasets_cli")),
+    Step("curation", "Collection, curation and documentation", "Collection, Curation & Documentation",
+         "The operator collects the records and writes every data file; the assistant never collects, writes or edits one. Each dataset is described by a data dictionary, scaffolded from a file's header and completed by the operator (type, unit, allowed values, missing codes, personal-data flags).",
+         ("read", "write"), ("datasets/<slug>/dictionary.json",), "G-DOCUMENTATION", {
+             "skills": ["datasets"],
+             "agent": "datasets & operator",
+             "actions": [
+                 _command(f"{DATASETS_CLI} dictionary init --slug <slug> --file <data.csv>",
+                          "Scaffold the data dictionary", "One entry per column; you complete every type, unit, range and PII flag."),
+                 _command(f"{DATASETS_CLI} dictionary check --slug <slug>", "Check the data dictionary",
+                          "Validates datasets/<slug>/dictionary.json."),
+                 _command(f"{DATASETS_CLI} status", "Datasets status", "Every registered dataset with its QC status."),
+             ],
+         }, (("Dataset registry", "datasets/registry.json"), ("Data dictionaries", "datasets/*/dictionary.json")),
+         _curation, ("datasets_cli",)),
+    Step("quality", "Quality checks", "Quality Checks (G-DATA-QC)",
+         "Each own dataset measured by a quality check against its current data dictionary, and de-identified where the dictionary flags personal data, with the operator's statement of how.",
+         ("read", "write"), ("datasets/<slug>/qc.json",), DATA_GATE, {
+             "skills": ["datasets"],
+             "agent": "datasets & operator",
+             "actions": [
+                 _command(f"{DATASETS_CLI} qc --slug <slug> --file <data.csv>", "Run the quality check (G-DATA-QC)",
+                          "Measures the data against its dictionary into datasets/<slug>/qc.json."),
+                 _command(f'{DATASETS_CLI} deidentify --slug <slug> --by {_OPERATOR} --statement "<how the PII columns were removed>"',
+                          "Record the de-identification (operator)", "How the columns flagged as personal data were removed or transformed."),
+                 _command(f"{DATASETS_CLI} status", "Datasets status", "Every registered dataset with its QC status."),
+             ],
+         }, (("Quality checks (G-DATA-QC)", "datasets/*/qc.json"),), _quality, ("datasets_cli",)),
+    Step("baselines", "Baselines", "Baselines & Analysis Log",
+         "Every preprocessing step, labeling script, agreement statistic and baseline through the append-only, hash-chained log: a wrapped script or the operator's entry for a GUI tool. A baseline is confirmatory only when the locked protocol names its outcome and plan, exploratory otherwise.",
+         ("read", "bash"), ("analysis/log.jsonl",), "G-ANALYSIS", {
+             "skills": [],
+             "agent": "analysis log & operator",
+             "actions": [
+                 _requires(_command(f"{ANALYSIS_CLI} run --root . --outcome <outcome-id> --input <data-file> "
+                                    "--output <result-file> -- <command>", "Run a logged analysis",
+                                    "Hashes the script, the inputs and the outputs and labels the run."), DATA_GATE),
+                 _requires(_command(f'{ANALYSIS_CLI} record --root . --outcome <outcome-id> --by {_OPERATOR} '
+                                    '--tool "<tool name>"', "Record a GUI analysis (operator)",
+                                    "Your attested entry for an analysis run outside a script."), DATA_GATE),
+                 _command(f"{ANALYSIS_CLI} status --root .", "Analysis log status",
+                          "The runs with their labels and the protocol outcomes still unanalysed."),
+             ],
+         }, (("Analysis log", "analysis/log.jsonl"),), _baselines, ("analysis_log",)),
+    Step("deposit", "Deposit", "Deposit with a Persistent Identifier (G-DEPOSIT)",
+         "The operator deposits the files in a repository and records the persistent identifier and the licence, bound to the sha256 of every registered file; the assistant never uploads. A file changed, added or missing since makes the deposit stale until the new version is deposited and recorded again.",
+         ("read", "write"), ("datasets/registry.json",), DEPOSIT_GATE, {
+             "skills": ["datasets"],
+             "agent": "operator",
+             "actions": [
+                 _requires(_command(f'{DATASETS_CLI} deposit --slug <slug> --repository "<repository>" '
+                                    f'--identifier "<DOI or other identifier>" --license "<licence>" --by {_OPERATOR}',
+                                    "Record the deposit (operator, G-DEPOSIT)",
+                                    "After you deposited the files: the repository, the persistent identifier and the licence; add --scheme for a non-DOI identifier."),
+                           DATA_GATE),
+                 _command(f"{DATASETS_CLI} status", "Datasets status",
+                          "Every registered dataset with its deposit, current or stale."),
+                 _command(f'{PAPER_CLI} declare --declaration repository-url --value "<DOI or URL>"',
+                          "Declare the data repository (operator)",
+                          "The DOI or URL of the deposit, named in the data and code availability statement."),
+             ],
+         }, (("Deposit records (G-DEPOSIT)", "datasets/registry.json"), ("Declarations (repository-url)", "paper/main.tex")),
+         _deposit, ("datasets_cli",)),
+    Step("reporting_resource", "Reporting check and audit", "Reporting Check, Final Judge & Audit",
+         "The datasheets checklist the type names (item by item: satisfied, missing or needs judgment), the study checks of paper_cli.py verify, the data-descriptor final judge and the cross-cutting audit; audits report, they never repair.",
+         ("read", "bash"), (".papersmith/audit.json",), "G-AUDIT", {
+             "skills": ["skill-audit"],
+             "agent": "checklist engine, skill-audit & smith audit",
+             "actions": [
+                 _command(f"{CHECKLIST_CLI} check --guideline datasheets --root .", "Datasheets checklist",
+                          "Datasheets for Datasets item by item: satisfied, missing or needs judgment."),
+                 *copy.deepcopy(phase_actions.ACTIONS["audit"]["actions"]),
+             ],
+         }, phase_actions.EVIDENCE["audit"], _reporting, ("checklists",)),
 )}
 
 
@@ -1512,6 +1875,8 @@ class LineTable:
     gate_steps: Mapping[str, str] = field(default_factory=dict)
     #: Reporting checklists the line names beside the agreed type's own.
     extra_checklists: tuple[str, ...] = ()
+    #: gate id -> the line's own definition of a shared gate id (see :func:`gate_definition`).
+    gate_defs: Mapping[str, Gate] = field(default_factory=dict)
 
 
 #: kind -> its table. A later line adds its own here.
@@ -1552,6 +1917,20 @@ LINE_TABLES: dict[str, LineTable] = {
         transversal="reporting_lab",
         gate_steps={PROTOCOL_GATE: "lab_protocol", CALIBRATION_GATE: "uncertainty"},
     ),
+    # G-ETHICS is the line's own (the ethics record plus the right to release).
+    # The deposit waits for nothing in the chain but its record waits for
+    # G-DATA-QC: a resource is deposited whether or not it has baselines.
+    "data-resource": LineTable(
+        kind="data-resource",
+        steps=("harness", "plausibility_resource", "collection_protocol", "ethics_licence", "curation", "quality",
+               "baselines", "deposit", "writing", "paper", "reporting_resource"),
+        gates=(PROTOCOL_GATE, ETHICS_GATE, DATA_GATE, DEPOSIT_GATE),
+        phase_gates={"baselines": DATA_GATE, "writing": DEPOSIT_GATE},
+        ungated=frozenset({"harness", "deposit", "reporting_resource"}),
+        transversal="reporting_resource",
+        gate_steps={PROTOCOL_GATE: "collection_protocol", DATA_GATE: "quality"},
+        gate_defs={ETHICS_GATE: RESOURCE_ETHICS},
+    ),
 }
 
 
@@ -1571,7 +1950,7 @@ def _failure(exc: BaseException) -> str:
 
 def _read_gates(ctx: Context) -> None:
     for gate_id in ctx.table.gates:
-        gate = GATES[gate_id]
+        gate = gate_definition(ctx.table, gate_id)
         if gate.module and ctx.module(gate.module) is None:
             ctx.gates[gate_id] = {"status": "PENDING", "detail": _absent(Path(MODULES[gate.module]).name)}
             continue
@@ -1627,9 +2006,10 @@ def board(table: LineTable, root: Path, facts: dict[str, Any]) -> tuple[list[dic
 def _gates(ctx: Context) -> list[dict[str, Any]]:
     table, facts = ctx.table, ctx.facts
     position = {stage: f"Fase {number}" for number, stage in enumerate(table.steps, 1)}
-    out = [{"id": gate_id, "name": GATES[gate_id].name, "status": ctx.gates[gate_id]["status"],
-            "criteria": GATES[gate_id].criteria, "reviewer": "operator",
-            "phase": position[table.gate_steps.get(gate_id, GATES[gate_id].step)]}
+    defined = {gate_id: gate_definition(table, gate_id) for gate_id in table.gates}
+    out = [{"id": gate_id, "name": defined[gate_id].name, "status": ctx.gates[gate_id]["status"],
+            "criteria": defined[gate_id].criteria, "reviewer": "operator",
+            "phase": position[table.gate_steps.get(gate_id, defined[gate_id].step)]}
            for gate_id in table.gates if ctx.people or gate_id not in table.conditional_gates]
     done, total = facts["blocks_written"], facts["blocks_total"]
     writing, paper = position.get("writing"), position.get("paper")
@@ -1797,6 +2177,7 @@ for _table in LINE_TABLES.values():
         lines.register(board_for(_table))
 
 
-__all__ = ["ANALYSIS_GATES", "DASHBOARD_SKILLS", "GATES", "LINE_TABLES", "LineTable", "MODULES", "PEOPLE_GATES", "STEPS",
-           "Step", "TELEMETRY_NOTE", "agreed_type", "artifacts", "board", "board_for", "checklist_detail",
-           "load_module", "own_datasets", "section_metadata", "stage_for", "telemetry", "with_people"]
+__all__ = ["ANALYSIS_GATES", "DASHBOARD_SKILLS", "GATES", "LINE_TABLES", "LineTable", "MODULES", "PEOPLE_GATES",
+           "RESOURCE_ETHICS", "STEPS", "Step", "TELEMETRY_NOTE", "agreed_type", "artifacts", "board", "board_for",
+           "checklist_detail", "gate_definition", "load_module", "own_datasets", "resource_datasets",
+           "section_metadata", "stage_for", "telemetry", "with_people"]

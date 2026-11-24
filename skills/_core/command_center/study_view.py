@@ -27,6 +27,13 @@
   past-due override) and ``agreement`` (device and reference files, n,
   Bland-Altman bias and limits, ICC(2,1), current or stale). The numbers are
   the summary statistics the measurement core computed, never a reading.
+  A ``data-resource`` workspace, and any workspace whose registry holds a
+  deposit record, also gets ``deposit`` (decision H6): every dataset of the
+  resource (each registry entry but a toy set; elsewhere only the deposited
+  ones) with its deposit record (repository, identifier and scheme, licence,
+  landing page, version, date, who recorded it and when, the files it binds,
+  earlier records) and whether it is current or stale with the reasons, read
+  only through ``datasets_cli.deposit_state``.
 * ``checklist(root, guideline=None)``: the reporting guideline (or another of
   the line's guidelines, ``checklist_refusal`` refusing any other) evaluated by
   the checklist engine, served on demand only (the engine runs ``paper_cli.py``
@@ -81,6 +88,8 @@ MEASUREMENT_MODULE = "measurement.records"
 #: present shows the measurement sections in a workspace of another line.
 MEASUREMENT_RECORDS = ("study/instruments.json", "study/measurements.json", "study/uncertainty",
                        "study/agreement.json")
+#: The lines whose Study tab always shows the deposit section (decision H6).
+DEPOSIT_KINDS: tuple[str, ...] = ("data-resource",)
 
 #: Shared ``skills/_core`` modules, relative to that package.
 MODULES: dict[str, str] = {
@@ -503,6 +512,44 @@ def _agreement(mods: dict[str, Any], root: Path) -> dict[str, Any]:
     return {"state": state["state"], "path": MEASUREMENT_RECORDS[3], "analyses": rows}
 
 
+# --------------------------------------------------------------------------- deposit (decision H6)
+
+
+_DEPOSIT_KEYS = ("repository", "identifier", "scheme", "license", "url", "version", "date", "by")
+
+
+def _deposit_shown(dc: Any, root: Path, line: str) -> bool:
+    if line in DEPOSIT_KINDS:
+        return True
+    try:
+        return any(isinstance(entry, dict) and entry.get("deposit") is not None for entry in dc.load_registry(root))
+    except Exception:  # noqa: BLE001 - an unreadable registry is the data section's to report
+        return False
+
+
+def _deposit(mods: dict[str, Any], root: Path, line: str) -> dict[str, Any]:
+    """Every resource dataset's deposit, as ``datasets_cli.deposit_state`` reads it."""
+    dc = mods["datasets_cli"]
+    rows = []
+    for entry in sorted(dc.load_registry(root), key=lambda item: _text(_object(item).get("slug"))):
+        if not isinstance(entry, dict) or entry.get("role") == "toy":
+            continue
+        if line not in DEPOSIT_KINDS and entry.get("deposit") is None:
+            continue
+        state = dc.deposit_state(root, entry)
+        record = _object(state.get("deposit"))
+        rows.append({"slug": _text(entry.get("slug")), "title": _text(entry.get("title")),
+                     "role": _text(entry.get("role")), "recorded": bool(state.get("recorded")),
+                     "current": bool(state.get("current")),
+                     "stale": [{"reason": _text(_object(item).get("reason")), "file": _text(_object(item).get("file"))}
+                               for item in _list(state.get("stale"))]}
+                    | {key: (_text(record.get(key)) if record.get(key) is not None else None) for key in _DEPOSIT_KEYS}
+                    | {"recorded_on": _text(record.get("recorded")) or None,
+                       "files": sorted(_text(rel) for rel in _object(record.get("files"))),
+                       "revisions": len(_list(record.get("history")))})
+    return {"datasets": rows}
+
+
 _MEASUREMENT_BUILDERS: dict[str, Callable[[dict[str, Any], Path], dict[str, Any]]] = {
     "instruments": _instruments, "measurements": _measurements, "uncertainty": _uncertainty,
     "agreement": _agreement,
@@ -622,6 +669,12 @@ def view(root: Path) -> dict[str, Any]:
                 out[name] = _unavailable(MODULE_UNAVAILABLE, why or "the measurement core did not load")
             else:
                 out[name] = _section(lambda build=_MEASUREMENT_BUILDERS[name]: build({"measurement": module}, root))
+    dc = mods.get("datasets_cli")
+    if dc is None:
+        if line in DEPOSIT_KINDS:
+            out["deposit"] = _unavailable(MODULE_UNAVAILABLE, missing.get("datasets_cli", "datasets_cli did not load"))
+    elif _deposit_shown(dc, root, line):
+        out["deposit"] = _section(lambda: _deposit(mods, root, line))
     return out
 
 
@@ -672,6 +725,6 @@ def checklist(root: Path, guideline: str | None = None) -> dict[str, Any]:
     return _section(build)
 
 
-__all__ = ["EMPIRICAL_KINDS", "GUIDELINE_NOT_THIS_LINE", "MEASUREMENT_KINDS", "MEASUREMENT_MODULE",
+__all__ = ["DEPOSIT_KINDS", "EMPIRICAL_KINDS", "GUIDELINE_NOT_THIS_LINE", "MEASUREMENT_KINDS", "MEASUREMENT_MODULE",
            "MEASUREMENT_RECORDS", "MEASUREMENT_SECTIONS", "MODULE_UNAVAILABLE", "MODULES", "NOT_A_STUDY_WORKSPACE",
            "NO_CHECKLIST", "SECTIONS", "checklist", "checklist_refusal", "load_datasets_cli", "refusal", "view"]
