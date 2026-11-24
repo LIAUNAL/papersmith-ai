@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import io
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -33,7 +34,10 @@ class TorchChoiceInstallTests(unittest.TestCase):
         calls: list[list[str]] = []
         args = argparse.Namespace(cpu=cpu, cuda=cuda, rocm=rocm, no_ingestion=False, name="papersmith")
         out = io.StringIO()
+        root = tempfile.TemporaryDirectory(prefix="setup-env-gpu-")  # never the real .micromamba
+        self.addCleanup(root.cleanup)
         with mock.patch.object(setup_env, "find_micromamba", return_value=Path("/mm")), \
+                mock.patch.object(setup_env, "MAMBA_ROOT", Path(root.name)), \
                 mock.patch.object(setup_env, "run", side_effect=lambda _mm, a, _env: calls.append(list(a))), \
                 mock.patch.object(setup_env, "env_exists", return_value=exists), \
                 mock.patch.object(setup_env, "detect_cuda", return_value=nvidia), \
@@ -92,7 +96,8 @@ class TorchChoiceInstallTests(unittest.TestCase):
         # `create -y` replaces the environment, so a conda torch an earlier
         # build left cannot sit under the ROCm wheels (`install` would keep it).
         calls, out = self._install(gpu=facts(), exists=True)
-        self.assertEqual(calls[0][:2], ["create", "-y"])
+        self.assertEqual(calls[0][:3], ["create", "-y", "--download-only"])
+        self.assertEqual(calls[1][:4], ["create", "-y", "-n", "papersmith"])
         self.assertEqual(self._lock(calls), "rocm.conda-lock.yml")
         self.assertFalse([c for c in calls if c[:1] in (["remove"], ["install"])], calls)
         self.assertLess(0, calls.index(self._rocm_pip(calls)[0]))

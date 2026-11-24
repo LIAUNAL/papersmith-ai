@@ -581,8 +581,12 @@ Works outside a workspace (the probe then comes from the kit). Always exits `0`.
 `smith env install` takes `--rocm` to force AMD's ROCm PyTorch wheels and
 `--cpu` to forbid every GPU build; without either it picks CUDA on NVIDIA,
 ROCm on a supported AMD target and the CPU build otherwise, and prints why.
-It builds the environment from that build's lock, `env/<cpu|cuda|rocm>.conda-lock.yml`,
-replacing an existing environment so it holds exactly the lock's packages; on
+It builds the environment from that build's lock, `env/<cpu|cuda|rocm>.conda-lock.yml`.
+An environment already built from the same lock bytes (recorded in its
+`conda-meta/papersmith-environment.json`) is left as it is; any other existing
+environment is rebuilt so it holds exactly the lock's packages, after every
+package has been downloaded, so a failed download leaves it untouched (packages
+added to it by hand are not kept); on
 a platform the lock does not cover (`env/locks.json`) it solves
 `env/environment.yml` live and warns that the result is not reproducible. The
 ROCm wheels and, unless `--no-ingestion`, `env/ingestion.txt` go in on top.

@@ -66,18 +66,20 @@ def ui_env_packages(kit_root: Path | None = None) -> tuple[str, ...]:
     """`UI_ENV_DISTRIBUTIONS` as pip requirements with the bounds the kit's
     `env/environment.yml` declares; a distribution the file does not name (or
     a kit without the file) is installed unbounded rather than not at all."""
-    if kit_root is None:
-        from ..kit import resolve_kit_root
-
-        kit_root = resolve_kit_root()
     declared: dict[str, str] = {}
+    # Computed at import (UI_ENV_PACKAGES), so nothing here may fail the import:
+    # an unresolvable kit or an unreadable file leaves the names unbounded.
     try:
+        if kit_root is None:
+            from .. import kit
+
+            kit_root = kit.resolve_kit_root()
         for name, constraint, _ in manifest.conda_dependencies(kit_root / manifest.ENV_SOURCE):
             requirement = manifest.pip_requirement(name, constraint)
             if requirement is not None:
                 declared[manifest.PIP_DISTRIBUTIONS.get(name, name)] = requirement
-    except OSError:
-        pass
+    except Exception:  # noqa: BLE001 - see above
+        declared = {}
     return tuple(declared.get(name, name) for name in UI_ENV_DISTRIBUTIONS)
 
 

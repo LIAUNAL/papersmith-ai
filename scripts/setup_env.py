@@ -386,6 +386,34 @@ def environment_args(kind: str, asset: str) -> list[str]:
     return args
 
 
+#: Written inside the environment after it is built: which kind and which file
+#: bytes built it, so `install` does not rebuild an environment that already
+#: matches its lock.
+STAMP = Path("conda-meta") / "papersmith-environment.json"
+
+
+def environment_fingerprint(kind: str, files: list[str]) -> dict:
+    """The kind plus the sha256 of every file the build reads (lock or sources)."""
+    paths = [Path(arg) for arg, before in zip(files, ["", *files]) if before == "-f"]
+    return {"kind": kind, "files": {path.name: _sha256(path) for path in paths}}
+
+
+def read_stamp(path: Path) -> dict | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def write_stamp(path: Path, fingerprint: dict) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(fingerprint, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError as exc:  # the environment is built; only the next install's shortcut is lost
+        print(f"[setup] could not record the build in {path} ({exc}); the next install rebuilds")
+
+
 def cmd_install(args: argparse.Namespace) -> int:
     kind, gfx, why = torch_choice(args, gpu_facts())
     label = {"cuda": "CUDA (GPU)", "rocm": f"ROCm ({gfx})", "cpu": "CPU"}[kind]
@@ -393,15 +421,29 @@ def cmd_install(args: argparse.Namespace) -> int:
 
     mm = find_micromamba() or bootstrap_micromamba()
 
-    # `create -y` over an existing environment removes it and builds it again,
-    # so it holds exactly the lock's packages: `install -f <lock>` would keep a
-    # conda torch an earlier build left there (measured with micromamba 2.9.0,
-    # 2026-11-24), under the ROCm wheels below. The pip layers that follow are
-    # installed again.
-    if env_exists(args.name):
-        print(f"[setup] rebuilding the existing environment '{args.name}' from the lock")
-    run(mm, ["create", "-y", "-n", args.name, *environment_args(kind, platform_asset())],
-        mamba_env())
+    files = environment_args(kind, platform_asset())
+    fingerprint = environment_fingerprint(kind, files)
+    stamp = MAMBA_ROOT / "envs" / args.name / STAMP
+    existed = env_exists(args.name)
+    if existed and read_stamp(stamp) == fingerprint:
+        print(f"[setup] the environment '{args.name}' already matches its lock; not rebuilt")
+    else:
+        if existed:
+            # `create -y` over an existing environment removes it and builds it
+            # again, so it holds exactly the lock's packages (`install -f <lock>`
+            # kept a conda torch an earlier build left there, measured with
+            # micromamba 2.9.0 on 2026-11-24). Because it removes the working
+            # environment first, every package is fetched into a throwaway prefix
+            # before: a failed download (offline, a dropped mirror) stops here and
+            # leaves the environment as it was. Packages added by hand are not kept.
+            print(f"[setup] rebuilding the existing environment '{args.name}' from the lock")
+            staging = MAMBA_ROOT / "envs" / f".{args.name}-download"
+            try:
+                run(mm, ["create", "-y", "--download-only", "-p", str(staging), *files], mamba_env())
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
+        run(mm, ["create", "-y", "-n", args.name, *files], mamba_env())
+        write_stamp(stamp, fingerprint)
 
     if kind == "rocm":
         print(f"[setup] installing AMD's ROCm PyTorch wheels for {gfx} (runtime bundled; "

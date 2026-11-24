@@ -120,17 +120,41 @@ class LockFreshnessTests(unittest.TestCase):
             self.assertNotIn(dropped, names)
 
 
+class PipRequirementTests(unittest.TestCase):
+    def test_conda_constraints_become_valid_pip_requirements(self) -> None:
+        from papersmith.core import manifest
+
+        self.assertEqual(manifest.pip_requirement("pyyaml", ">=6.0"), "PyYAML>=6.0")
+        self.assertEqual(manifest.pip_requirement("kagglesdk", "==0.1.37"), "kagglesdk==0.1.37")
+        # conda's single `=` means "this version or any build of it"; pip spells it `==X.*`.
+        self.assertEqual(manifest.pip_requirement("numpy", "=1.26"), "numpy==1.26.*")
+        self.assertEqual(manifest.pip_requirement("numpy", "=1.26.*"), "numpy==1.26.*")
+        self.assertIsNone(manifest.pip_requirement("llama.cpp", ""))
+
+
 class LockedInstallTests(unittest.TestCase):
+    def setUp(self) -> None:
+        holder = tempfile.TemporaryDirectory(prefix="env-locks-root-")
+        self.addCleanup(holder.cleanup)
+        self.root = Path(holder.name)
+
     def install(self, *, kind: str = "cpu", asset: str = "linux-64", exists: bool = False,
-                no_ingestion: bool = False):
+                no_ingestion: bool = False, fail=lambda call: False):
         calls: list[list[str]] = []
+
+        def run(_mm, a, _env):
+            calls.append(list(a))
+            if fail(a):
+                raise subprocess.CalledProcessError(1, ["micromamba", *a])
+
         args = argparse.Namespace(cpu=kind == "cpu", cuda=kind == "cuda", rocm=kind == "rocm",
                                   no_ingestion=no_ingestion, name="papersmith")
         gpu = {"vendor": "amd", "gfx_targets": ["gfx1150"]} if kind == "rocm" else \
             {"vendor": "none", "gfx_targets": []}
         out = io.StringIO()
         with mock.patch.object(setup_env, "find_micromamba", return_value=Path("/mm")), \
-                mock.patch.object(setup_env, "run", side_effect=lambda _mm, a, _env: calls.append(list(a))), \
+                mock.patch.object(setup_env, "MAMBA_ROOT", self.root), \
+                mock.patch.object(setup_env, "run", side_effect=run), \
                 mock.patch.object(setup_env, "env_exists", return_value=exists), \
                 mock.patch.object(setup_env, "detect_cuda", return_value=False), \
                 mock.patch.object(setup_env, "gpu_facts", return_value=gpu), \
@@ -139,16 +163,42 @@ class LockedInstallTests(unittest.TestCase):
             self.assertEqual(setup_env.cmd_install(args), 0)
         return calls, out.getvalue()
 
-    def test_each_kind_builds_from_its_lock_even_over_an_existing_env(self) -> None:
+    def conda(self, calls):
+        return [c for c in calls if c[0] in ("create", "install", "remove")]
+
+    def test_a_new_env_builds_from_its_lock_and_records_which(self) -> None:
         for kind in ("cpu", "cuda", "rocm"):
-            for exists in (False, True):
-                with self.subTest(kind=kind, exists=exists):
-                    calls, out = self.install(kind=kind, exists=exists)
-                    conda = [c for c in calls if c[0] in ("create", "install", "remove")]
-                    lock = str(REPO / "env" / f"{kind}.conda-lock.yml")
-                    self.assertEqual(conda, [["create", "-y", "-n", "papersmith", "-f", lock,
-                                              "--category", "main"]])
-                    self.assertNotIn("not locked", out)
+            with self.subTest(kind=kind):
+                calls, out = self.install(kind=kind)
+                lock = str(REPO / "env" / f"{kind}.conda-lock.yml")
+                self.assertEqual(self.conda(calls), [["create", "-y", "-n", "papersmith", "-f", lock,
+                                                      "--category", "main"]])
+                self.assertNotIn("not locked", out)
+                stamp = json.loads((self.root / "envs" / "papersmith" / setup_env.STAMP).read_text())
+                self.assertEqual(stamp["kind"], kind)
+
+    def test_an_env_that_already_matches_its_lock_is_not_rebuilt(self) -> None:
+        self.install(kind="cpu")
+        calls, out = self.install(kind="cpu", exists=True)
+        self.assertEqual(self.conda(calls), [])
+        self.assertIn("already matches", out)
+        self.assertTrue([c for c in calls if "-r" in c], "the pip layers still run")
+
+    def test_an_existing_env_is_rebuilt_only_after_every_package_is_downloaded(self) -> None:
+        """`create -y` over an env wipes it first, so the packages are fetched into a
+        throwaway prefix before; a failed download leaves the working env untouched."""
+        self.install(kind="cpu")
+        lock = str(REPO / "env" / "rocm.conda-lock.yml")
+        calls, out = self.install(kind="rocm", exists=True)
+        staging = str(self.root / "envs" / ".papersmith-download")
+        self.assertEqual(self.conda(calls), [
+            ["create", "-y", "--download-only", "-p", staging, "-f", lock, "--category", "main"],
+            ["create", "-y", "-n", "papersmith", "-f", lock, "--category", "main"]])
+        self.assertIn("rebuilding", out)
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.install(kind="cpu", exists=True, fail=lambda a: "--download-only" in a)
+        self.assertEqual(json.loads((self.root / "envs" / "papersmith" / setup_env.STAMP)
+                                    .read_text())["kind"], "rocm", "the failed rebuild changed nothing")
 
     def test_an_unlocked_platform_solves_the_sources_live_with_a_warning(self) -> None:
         cases = (("cpu", "linux-aarch64", "torch-cpu.yml"), ("cpu", "win-arm64", "torch-cpu.yml"),

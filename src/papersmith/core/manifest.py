@@ -257,6 +257,10 @@ def pip_requirement(name: str, constraint: str) -> str | None:
     conda-only package (``CONDA_ONLY``)."""
     if name in CONDA_ONLY:
         return None
+    if constraint.startswith("=") and not constraint.startswith("=="):
+        # conda's `=X` matches any version that starts with X (X.*); pip spells that `==X.*`.
+        version = constraint[1:].strip()
+        constraint = "==" + (version if version.endswith("*") else version + ".*")
     return PIP_DISTRIBUTIONS.get(name, name) + constraint
 
 # Paths ``upgrade`` must never overwrite or delete. ``papersmith.yaml`` and

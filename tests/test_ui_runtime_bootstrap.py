@@ -41,6 +41,17 @@ class UiRuntimeBootstrapTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.broken = str(_fake_python(self.root / "pipx" / "python", importable=False))
 
+    def test_an_unresolvable_kit_leaves_the_names_unbounded_instead_of_failing(self) -> None:
+        """`UI_ENV_PACKAGES` is computed at import: a kit that cannot be resolved, or an
+        unreadable environment file, must never break importing the dashboard module."""
+        from papersmith import kit
+        from papersmith.core import ui as ui_module
+
+        with mock.patch.object(kit, "resolve_kit_root", side_effect=RuntimeError("no kit")):
+            self.assertEqual(ui_module.ui_env_packages(), ui_module.UI_ENV_DISTRIBUTIONS)
+        with mock.patch.object(ui_module.manifest, "conda_dependencies", side_effect=ValueError("bad yml")):
+            self.assertEqual(ui_module.ui_env_packages(Path("/nowhere")), ui_module.UI_ENV_DISTRIBUTIONS)
+
     def test_the_cache_environment_lives_outside_the_workspace(self) -> None:
         env_dir = ui.ui_env_dir()
         self.assertTrue(str(env_dir).startswith(str(self.root / "cache" / "papersmith")))
