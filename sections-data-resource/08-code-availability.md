@@ -38,7 +38,8 @@ its location, version and licence.
 
 ## Block `ca-code`
 
-The code is the scripts of the analysis log and the collection tools, with their repository, version and licence. The repository of the code (the `repository-url` declaration), the version
+The code is the scripts of the analysis log and the collection tools, with their repository, version and licence. The repository of the code (the `repository-url` declaration, which names
+where the code lives, never the data deposit), the version
 or commit, the licence, and the scripts the analysis log hashes for the
 preprocessing, the quality checks and the baselines, with the language and
 library versions. When no custom code was used, say so.

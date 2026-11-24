@@ -13,15 +13,7 @@
     {
       "id": "dr-deposit",
       "requires_facts": [],
-      "requires_declarations": [
-        {
-          "value": "repository-url",
-          "source": {
-            "file": "sections/05-data-records.md",
-            "quote": "The deposit is the repository, the persistent identifier and the licence of the operator's deposit record."
-          }
-        }
-      ],
+      "requires_declarations": [],
       "citations": "none"
     },
     {
@@ -66,7 +58,9 @@ deposit --by`): the repository, the DOI or other persistent identifier with
 its scheme, the licence, the version and the date, and the data citation in
 the reference list. A deposit whose record is stale (a file changed, added or
 missing since it was recorded) is not described until the operator records
-it again.
+it again. The deposit record is the only source of the repository, the
+identifier and the licence: no declaration of the paper stands in for it, and
+the code's repository (code availability) is a separate place.
 
 ## Block `dr-files-formats`
 
@@ -114,9 +108,7 @@ No data descriptor of this line has been measured yet: the rules below carry the
 
 ### External inputs
 
-| Input | Unblocks |
-|---|---|
-| `repository-url` — The deposit is the repository, the persistent identifier and the licence of the operator's deposit record. | `dr-deposit` |
+None: the deposit is read from the operator's deposit record (`datasets_cli.py --root . status`), the files and the dictionary from the line's records.
 
 ### Internal chain
 

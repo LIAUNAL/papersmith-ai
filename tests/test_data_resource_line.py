@@ -25,7 +25,7 @@ from pathlib import Path
 
 from papersmith import render
 from papersmith.cli import main
-from papersmith.core import init as init_module, manifest
+from papersmith.core import init as init_module, kind as kind_module, manifest
 from papersmith.kit import resolve_and_validate
 from skills._core.checklists import engine
 from skills._core.paper_types import decision, registry
@@ -53,13 +53,13 @@ STUDY_BINDINGS = {
     "methods.m-sources-consent": (["sample"], ["ethics-approval"], False),
     "methods.m-curation-documentation": ([], [], False),
     "methods.m-preprocessing-labeling": ([], [], False),
-    "data-records.dr-deposit": ([], ["repository-url"], False),
+    "data-records.dr-deposit": ([], [], False),
     "data-records.dr-files-formats": ([], [], False),
     "data-records.dr-dictionary": ([], [], False),
     "technical-validation.tv-quality-checks": ([], [], False),
     "technical-validation.tv-annotator-agreement": ([], [], True),
     "technical-validation.tv-baselines": (["outcomes", "analysis-plan"], [], False),
-    "usage-notes.un-access-conditions": ([], ["repository-url"], False),
+    "usage-notes.un-access-conditions": ([], [], False),
     "code-availability.ca-code": ([], ["repository-url"], False),
 }
 #: Block -> what its rule must name: the record it reads and the command that writes or reads it.
@@ -70,6 +70,8 @@ RECORD_BINDINGS = {
     ("04-methods.md", "m-preprocessing-labeling"): ("analysis/log.jsonl", "datasets_cli.py --root . deidentify"),
     ("05-data-records.md", "dr-deposit"): ("datasets_cli.py --root . status", "deposit", "DOI", "licence"),
     ("05-data-records.md", "dr-dictionary"): ("datasets/<slug>/dictionary.json",),
+    ("07-usage-notes.md", "un-access-conditions"): ("datasets_cli.py --root . status", "deposit", "licence"),
+    ("08-code-availability.md", "ca-code"): ("repository-url", "code"),
     ("06-technical-validation.md", "tv-quality-checks"): ("datasets/<slug>/qc.json", "datasets_cli.py --root . qc"),
     ("06-technical-validation.md", "tv-annotator-agreement"): ("analysis/log.jsonl", "optional"),
     ("06-technical-validation.md", "tv-baselines"): ("analysis/log.jsonl", "exploratory", "confirmatory"),
@@ -290,6 +292,48 @@ class KindSetTests(LineCase):
             self.assertIn(name, names)
 
 
+    def scored_line(self) -> Path:
+        workspace = self.init(KIND)
+        decision.record_acceptance(workspace, CORPUS_IDEA, by="Ana")
+        decision.record_scores(workspace, CORPUS_IDEA)
+        return workspace
+
+    def test_leaving_the_line_is_refused_once_a_protocol_revision_exists(self) -> None:
+        workspace = self.scored_line()
+        revision = workspace / "protocol" / "study-protocol-corpus-v01.md"
+        revision.parent.mkdir(parents=True, exist_ok=True)
+        revision.write_text("draft\n", encoding="utf-8")
+        self.assertEqual(kind_module.started_markers(workspace), ["protocol/study-protocol-corpus-v01.md"])
+        before = self.config(workspace)
+        code, out, err = self.smith("kind", "set", "applied-ai", "--by", "Ana", str(workspace))
+        self.assertNotEqual(code, 0)
+        self.assertIn("protocol/study-protocol-corpus-v01.md", err)
+        self.assertIn("--force", err)
+        self.assertNotIn("Paper line:", out)
+        self.assertEqual(self.config(workspace), before)
+        self.assertTrue((workspace / LINE_SKILL / "SKILL.md").is_file())
+        self.assertEqual(revision.read_text(encoding="utf-8"), "draft\n")
+
+    def test_the_protocol_lock_alone_refuses_leaving_and_force_moves_it(self) -> None:
+        workspace = self.scored_line()
+        lock = workspace / "study" / "protocol.lock.json"
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("{}\n", encoding="utf-8")
+        self.assertEqual(kind_module.started_markers(workspace), ["study/protocol.lock.json"])
+        code, _, err = self.smith("kind", "set", "applied-ai", "--by", "Ana", str(workspace))
+        self.assertNotEqual(code, 0)
+        self.assertIn("study/protocol.lock.json", err)
+        self.assertIn("--force", err)
+        self.assertEqual(self.config(workspace)["paper_kind"], KIND)
+        self.assertTrue((workspace / LINE_SKILL / "SKILL.md").is_file())
+
+        code, out, err = self.smith("kind", "set", "applied-ai", "--by", "Ana", "--force", str(workspace))
+        self.assertEqual(code, 0, err)
+        self.assertIn(f"Paper line: {KIND} -> experimental", out)
+        self.assertEqual(self.config(workspace)["paper_kind"], "experimental")
+        self.assertFalse((workspace / "skills" / "data-resource").exists())
+        self.assertEqual(lock.read_text(encoding="utf-8"), "{}\n")
+
 class CatalogueTests(unittest.TestCase):
     def test_the_type_is_available_on_its_line_with_the_datasheets_checklist(self) -> None:
         item = registry.get(KIND)
@@ -354,6 +398,20 @@ class ContractTests(CorpusCase):
             for needle in needles:
                 with self.subTest(block=block, needle=needle):
                     self.assertIn(needle, rule)
+
+    def test_only_the_code_block_reads_the_repository_url_declaration(self) -> None:
+        """The data deposit and the code repository are two places: the deposit is read from the
+        operator's deposit record, never from the code's `repository-url` declaration (R3 advisory)."""
+        corpus = paper_graph.assemble_corpus(self.corpus_root() / "sections")
+        readers = sorted(qualified for qualified, record in corpus.blocks.items()
+                         if qualified.split(".", 1)[0] in SECTIONS
+                         and "repository-url" in record.requires_declarations)
+        self.assertEqual(readers, ["code-availability.ca-code"])
+        for name, block in (("05-data-records.md", "dr-deposit"), ("07-usage-notes.md", "un-access-conditions")):
+            with self.subTest(block=block):
+                self.assertNotIn("repository-url", block_rule(name, block))
+                inputs = body_of(CONTRACTS / name).split("\n### External inputs\n", 1)[1].split("\n### ", 1)[0]
+                self.assertNotIn("repository-url", inputs)
 
     def test_every_contract_states_the_human_boundaries(self) -> None:
         from skills._core.command_center import state_extractor

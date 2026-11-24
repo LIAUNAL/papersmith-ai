@@ -10,7 +10,6 @@ asserted on the exit code, the refusal code and the persisted JSON.
 from __future__ import annotations
 
 import csv
-import datetime
 import hashlib
 import importlib.util
 import io
@@ -20,6 +19,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skills" / "datasets"
@@ -36,6 +36,9 @@ def load_cli():
 
 CLI = load_cli()
 DOI = "10.5281/zenodo.1234567"
+#: The date every test runs under, through the CLI's own `today()` seam, so no assertion
+#: depends on the wall clock (a run that crosses midnight would otherwise flake).
+FROZEN_TODAY = "2026-03-14"
 
 
 class Run:
@@ -64,6 +67,9 @@ class Base(unittest.TestCase):
         holder = tempfile.TemporaryDirectory()
         self.addCleanup(holder.cleanup)
         self.root = Path(holder.name).resolve()
+        frozen = mock.patch.object(CLI, "today", return_value=FROZEN_TODAY)
+        frozen.start()
+        self.addCleanup(frozen.stop)
 
     def cli(self, *argv: str, runner=None, http=None) -> Run:
         return Run(self.root, list(argv), runner=runner, http=http)
@@ -124,7 +130,7 @@ class RecordTests(Base):
                          {"repository": "Zenodo", "identifier": DOI, "scheme": "doi", "license": "CC-BY-4.0",
                           "url": "https://zenodo.org/records/1234567", "version": "v1.0",
                           "date": "2026-11-20", "by": "Dr. Operator"})
-        self.assertEqual(record["recorded"], datetime.date.today().isoformat())
+        self.assertEqual(record["recorded"], FROZEN_TODAY)
         self.assertEqual(record["files"], {"data/cohort.csv": self.sha(data)})
         self.assertNotIn("history", record)
         self.assertEqual(result.json["deposit"], record)
@@ -142,7 +148,7 @@ class RecordTests(Base):
         self.assertEqual(record["identifier"], "10.5281/ZENODO.42")
         self.assertEqual(record["url"], "")
         self.assertEqual(record["version"], "")
-        self.assertEqual(record["date"], datetime.date.today().isoformat())
+        self.assertEqual(record["date"], FROZEN_TODAY)
         self.assertEqual(self.deposit(identifier="doi:10.1000/xyz.9").code, 0)
         self.assertEqual(self.entry("cohort")["deposit"]["identifier"], "10.1000/xyz.9")
 
@@ -269,7 +275,7 @@ class StalenessTests(Base):
         item = self.status_item()
         self.assertEqual(item["deposit"], {"repository": "Zenodo", "identifier": DOI, "scheme": "doi",
                                            "license": "CC-BY-4.0", "url": "https://zenodo.org/records/1234567",
-                                           "version": "", "date": datetime.date.today().isoformat(), "by": "Dr. Operator",
+                                           "version": "", "date": FROZEN_TODAY, "by": "Dr. Operator",
                                            "current": True, "stale": []})
 
     def test_a_changed_file_makes_the_deposit_stale(self) -> None:
@@ -332,6 +338,47 @@ class ReaderTests(Base):
             state = CLI.deposit_state(self.root, entry)
             self.assertTrue(state["recorded"])
             self.assertFalse(state["current"])
+            self.assertEqual(state["reason"], "deposit-malformed")
+
+    def test_a_corrupt_registry_reads_as_not_current_with_a_reason(self) -> None:
+        """The reader never refuses: an unreadable registry reads as no deposit, with its reason."""
+        registry = self.root / "datasets" / "registry.json"
+        registry.parent.mkdir(parents=True, exist_ok=True)
+        for corrupt in (b"{not json", b"\xff\xfe\x00garbage", b"[" * 100000):
+            with self.subTest(corrupt=corrupt[:12]):
+                registry.write_bytes(corrupt)
+                self.assertEqual(CLI.deposit_state(self.root, "cohort"),
+                                 {"recorded": False, "current": False, "stale": [], "deposit": None,
+                                  "reason": "registry-unreadable"})
+                self.assertEqual(registry.read_bytes(), corrupt)
+
+    def test_a_malformed_entry_or_record_is_never_current_and_never_raises(self) -> None:
+        self.own_with_file()
+        self.assertEqual(self.deposit().code, 0)
+        good = self.entry("cohort")
+        cases = {
+            "files-not-a-list": {**good, "files": 3},
+            "files-a-mapping": {**good, "files": {"data/cohort.csv": 1}},
+            "recorded-key-not-text": {**good, "deposit": {**good["deposit"], "files": {7: "x", "a": "y"}}},
+            "recorded-hash-not-text": {**good, "deposit": {**good["deposit"], "files": {"data/cohort.csv": 5}}},
+        }
+        for name, entry in cases.items():
+            with self.subTest(case=name):
+                state = CLI.deposit_state(self.root, entry)
+                self.assertTrue(state["recorded"])
+                self.assertFalse(state["current"])
+                self.assertEqual(state["reason"], "deposit-malformed")
+        for entry in (["cohort"], 42, None):
+            with self.subTest(entry=entry):
+                self.assertEqual(CLI.deposit_state(self.root, entry),
+                                 {"recorded": False, "current": False, "stale": [], "deposit": None})
+        registry = json.loads(self.registry_text())
+        for item in registry:
+            item["files"] = 3
+        (self.root / "datasets" / "registry.json").write_text(json.dumps(registry), encoding="utf-8")
+        state = CLI.deposit_state(self.root, "cohort")
+        self.assertEqual((state["recorded"], state["current"], state["reason"]), (True, False, "deposit-malformed"))
+        self.assertEqual(self.cli("status").code, 0)
 
 
 # ------------------------------------------------------------- unchanged

@@ -1383,21 +1383,33 @@ def deposit_state(root: Path, entry: dict | str) -> dict:
     ``{"recorded", "current", "stale": [{"reason", "file"}], "deposit"}``,
     ``reason`` one of ``file-changed``, ``file-added``, ``file-missing``.
 
-    Reads only; never writes, never refuses. An unknown slug, an unreadable
-    registry or a malformed record reads as not current."""
+    Reads only; never writes, never refuses, never raises. An unknown slug
+    reads as no deposit. An unreadable or corrupt registry reads as no deposit
+    with ``"reason": "registry-unreadable"``; a malformed record or entry (the
+    record's ``files`` not a non-empty mapping of path to sha256, the entry's
+    ``files`` not a list of paths) reads as recorded, not current, with
+    ``"reason": "deposit-malformed"``."""
+    absent = {"recorded": False, "current": False, "stale": [], "deposit": None}
     if isinstance(entry, str):
         try:
-            entry = next((item for item in load_registry(root)
-                          if isinstance(item, dict) and item.get("slug") == entry), {})
-        except (OSError, ValueError):
-            entry = {}
+            registry = load_registry(root)
+        except (OSError, ValueError, RecursionError):
+            return {**absent, "reason": "registry-unreadable"}
+        entry = next((item for item in registry if isinstance(item, dict) and item.get("slug") == entry), {})
     record = entry.get("deposit") if isinstance(entry, dict) else None
     if record is None:
-        return {"recorded": False, "current": False, "stale": [], "deposit": None}
+        return absent
+    malformed = {"recorded": True, "current": False, "stale": [], "deposit": record, "reason": "deposit-malformed"}
     recorded = record.get("files") if isinstance(record, dict) else None
-    if not isinstance(recorded, dict) or not recorded:
-        return {"recorded": True, "current": False, "stale": [], "deposit": record}
-    files = [rel for rel in (entry.get("files") or []) if isinstance(rel, str)]
+    if (not isinstance(recorded, dict) or not recorded
+            or not all(isinstance(rel, str) and isinstance(digest, str) for rel, digest in recorded.items())):
+        return malformed
+    files = entry.get("files")
+    if files is None:
+        files = []
+    if not isinstance(files, list):
+        return malformed
+    files = [rel for rel in files if isinstance(rel, str)]
     stale = []
     for rel in sorted(set(recorded) | set(files)):
         if rel not in recorded:
@@ -1405,7 +1417,7 @@ def deposit_state(root: Path, entry: dict | str) -> dict:
             continue
         try:
             digest = sha256(root / rel) if rel in files and (root / rel).is_file() else None
-        except OSError:
+        except (OSError, ValueError):
             digest = None
         if digest is None:
             stale.append({"reason": "file-missing", "file": rel})

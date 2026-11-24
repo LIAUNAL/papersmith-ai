@@ -34,15 +34,7 @@
     {
       "id": "un-access-conditions",
       "requires_facts": [],
-      "requires_declarations": [
-        {
-          "value": "repository-url",
-          "source": {
-            "file": "sections/07-usage-notes.md",
-            "quote": "The access conditions are the licence and any restriction the deposit and the consent impose."
-          }
-        }
-      ],
+      "requires_declarations": [],
       "citations": "none"
     },
     {
@@ -78,9 +70,11 @@ participants or decisions about individuals).
 
 ## Block `un-access-conditions`
 
-The access conditions are the licence and any restriction the deposit and the consent impose. The licence of the deposit record, the repository's access route, and any
-controlled-access condition the consent or the ethics approval imposes, with
-who grants access and how.
+The access conditions are the licence and any restriction the deposit and the consent impose. The licence, the repository and the
+persistent identifier of the deposit record that `datasets_cli.py --root .
+status` prints for the dataset (a stale deposit is not described), the
+repository's access route, and any controlled-access condition the consent or
+the ethics approval imposes, with who grants access and how.
 
 ## Block `un-maintenance`
 
@@ -120,9 +114,7 @@ No data descriptor of this line has been measured yet: the rules below carry the
 
 ### External inputs
 
-| Input | Unblocks |
-|---|---|
-| `repository-url` — The access conditions are the licence and any restriction the deposit and the consent impose. | `un-access-conditions` |
+None: the access conditions read the operator's deposit record (`datasets_cli.py --root . status`) and the ethics record.
 
 ### Internal chain
 
