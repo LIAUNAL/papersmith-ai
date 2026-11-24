@@ -107,7 +107,10 @@ it, in section 26. Section 27, `data-resource`, is the data-resource line's own
 skill; it routes to the shared empirical modules and to the `datasets` skill.
 Section 28, `experiment-intervention`, is the experiment-intervention line's
 own skill; it routes to the shared empirical modules, the allocation record
-included.
+included. Section 29, `qualitative-participatory`, is the
+qualitative-participatory line's own skill; it routes to the shared empirical
+modules and to the qualitative core (transcripts, codebook, theme sign-off,
+verbatim quotes, consensus rounds and MICMAC).
 
 ---
 
@@ -3620,12 +3623,20 @@ satisfied.
 
 **What it never does.** It never generates measurements or data and never generates, reads out or alters the allocation sequence: it never opens the allocation list or prints an assignment. It never enrols participants, delivers the intervention or collects data: ethics, consent, data collection and the choice of primary outcome stay human. It never records a protocol approval, registration, ethics record, allocation, own-data statement, de-identification or flow sign-off on the operator's behalf, never presents a retrospective registration as prospective, never relabels an exploratory analysis and never marks a `needs-judgment` item satisfied.
 
+### 29. `qualitative-participatory` — a qualitative, participatory or consensus study, quoted verbatim
+
+**When.** Only in a qualitative-participatory workspace (`smith init --kind qualitative-participatory`, or `smith kind set qualitative-participatory` after `/paper-type`): a study built on people's accounts and judgement. Other workspaces never receive this skill.
+
+**How it runs.** `/qualitative-participatory` owns no script and no record; the agreed variant chooses the checklist: `qualitative-mixed` reports on `srqr` (SRQR), or on `coreq` (COREQ) for a study of interviews or focus groups, `consensus-foresight` on `accord` (ACCORD), and `experience-report` has none. The overview comes from `study_cli.py status`, `qual_cli.py status`, `consensus_cli.py status`, `consensus_cli.py round status`, `consensus_cli.py micmac status` and `checklist_cli.py check --guideline <id>`. The stages are the case, panel or experience and its framework (G-STUDY-PROTOCOL, optional for an experience report; a consensus study records its plan, threshold and rounds against the lock with `consensus_cli.py plan record --by`); ethics and consent (G-ETHICS, not applicable allowed for an experience report without participant data); fieldwork, rounds or implementation (`qual_cli.py transcripts add --by`, G-TRANSCRIPTS; `consensus_cli.py panel add` and `round record --by`, G-ROUNDS); coding, consensus or reflection (`qual_cli.py codebook record` and `themes signoff --by`, G-ANALYSIS; `consensus_cli.py round status` and `micmac compute --by`); integration with prior work; writing from the SRQR-shaped contracts, every participant quote written `\pquote{<code>}{<text>}`; `qual_cli.py quotes check`, `paper_cli.py verify` (`quote-not-verbatim`), the checklist and the `qualitative-study` final judge.
+
+**What it never does.** It never generates data, never writes or edits a transcript, never invents or polishes a quote and never enters a rating: it never transcribes, prints a transcript or a member's comment, or writes a quote that is not the transcript's own words. It never recruits participants or panel members or collects material: ethics, consent, data collection and the analytic sign-off stay human. It never records a protocol approval, consensus plan, ethics record, transcript registration, panel member, round, codebook version, theme sign-off or MICMAC computation on the operator's behalf, never presents an item below the pre-specified threshold as consensus, never claims an effect for an experience report and never marks a `needs-judgment` item satisfied.
+
 ### Shared empirical modules (for the empirical paper lines)
 
 These modules live under `skills/_core/` and serve the empirical lines of the
 paper-type catalogue: the observational and measurement, hardware,
-lab-simulation, data-resource and experiment-intervention lines today, and the
-planned one (qualitative work). No applied-AI or review flow calls them.
+lab-simulation, data-resource, experiment-intervention and
+qualitative-participatory lines. No applied-AI or review flow calls them.
 
 **Participant flow** (`skills/_core/participant_flow/`, `flow_cli.py template|check|render|signoff|status`): the operator enters the counts of a CONSORT 2025, STROBE or STARD 2015 flow in `study/flow.json`; `check` validates the arithmetic (each stage equals the previous one minus its exclusions, arms sum to the randomised total, analysed never exceeds followed); `render` draws `paper/Figures/participant-flow.svg` only from valid counts; `signoff --by <operator>` records in `study/flow-signoffs.json` a sign-off bound to the hash of the counts and the figure, stale after any edit. An agent never enters a count or signs.
 

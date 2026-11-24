@@ -18,16 +18,26 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from papersmith.core import init as init_module
+from papersmith.core import init as init_module, manifest
 from skills._core.checklists import engine
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "skills" / "_core" / "checklists" / "checklist_cli.py"
 README = ROOT / "skills" / "_core" / "checklists" / "README.md"
 
-# The line's contracts do not exist yet (T8-L6 creates them); T8-L6 switches this to derive the ids from them.
-LINE_SECTION_IDS = {"title-and-keywords", "abstract", "introduction", "methods", "results", "discussion",
-                    "limitations", "conclusions", "back-matter"}
+
+def line_contract_ids(kind: str = "qualitative-participatory") -> dict[str, set[str]]:
+    """Section id -> block ids of the contracts a line registers: its own ``sections_dir`` plus
+    the shared sections (the back matter), read from each contract's JSON front matter."""
+    line = manifest.LINES[kind]
+    paths = sorted((ROOT / line.sections_dir).glob("*.md")) + [ROOT / name for name in line.shared_sections]
+    sections: dict[str, set[str]] = {}
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        head = json.loads(text.split("\n---\n", 1)[0].removeprefix("---\n"))
+        sections.setdefault(head["section"], set()).update(block["id"] for block in head.get("blocks", []))
+    return sections
+
 
 #: SRQR's six sections and the items each holds, in order.
 SRQR_SECTIONS = (("Title and abstract", 2), ("Introduction", 2), ("Methods", 11), ("Results", 2),
@@ -104,13 +114,19 @@ class QualitativeGuidelineDataTests(unittest.TestCase):
                     self.assertTrue(entry.get("question", "").strip().endswith("?"))
                     self.assertEqual(entry.get("evidence", []), [])
 
-    def test_targets_are_only_the_line_section_ids(self):
+    def test_targets_are_only_the_line_contract_ids(self):
+        sections = line_contract_ids()
+        self.assertIn("back-matter", sections)
         for gid in GUIDELINES:
             for entry in engine.load_guideline(gid)["items"]:
                 with self.subTest(gid=gid, item=entry["number"]):
                     self.assertEqual(set(entry["targets"]), {"default"})
                     self.assertTrue(entry["targets"]["default"])
-                    self.assertLessEqual(set(entry["targets"]["default"]), LINE_SECTION_IDS)
+                    for target in entry["targets"]["default"]:
+                        section, _, block = target.partition(".")
+                        self.assertIn(section, sections, target)
+                        if block:
+                            self.assertIn(block, sections[section], target)
 
     def test_reflexivity_and_ethics_go_to_methods_funding_and_conflicts_to_back_matter(self):
         srqr = targets_of("srqr")

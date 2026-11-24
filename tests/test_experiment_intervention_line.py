@@ -42,8 +42,10 @@ SKILL_PATH = ROOT / LINE_SKILL / "SKILL.md"
 FLOW_HEADING = "## Paper construction flow (experiment-intervention line)"
 EXPERIMENTAL_ONLY = sorted(p.name for p in (ROOT / "sections").glob("*.md")
                            if f"sections/{p.name}" != "sections/10-back-matter.md")
-OTHER_LINES = ("experimental", "review", "observational-measurement", "hardware", "lab-simulation", "data-resource")
-OTHER_SKILLS = ("systematic-review", "observational-measurement", "hardware", "lab-simulation", "data-resource")
+OTHER_LINES = ("experimental", "review", "observational-measurement", "hardware", "lab-simulation", "data-resource",
+               "qualitative-participatory")
+OTHER_SKILLS = ("systematic-review", "observational-measurement", "hardware", "lab-simulation", "data-resource",
+                "qualitative-participatory")
 TRIAL_IDEA = ("We run a randomised controlled trial in two schools: a control group and an intervention group "
               "receive a reading programme. The primary outcome is the reading score after twelve weeks.")
 
@@ -209,7 +211,7 @@ class TableEntryTests(LineCase):
         self.assertTrue(line.empirical)
         self.assertTrue(line.label and line.summary)
         self.assertIn("sections-experiment-intervention", manifest.KIT_ENTRIES)
-        self.assertEqual(manifest.PAPER_KINDS, OTHER_LINES + (KIND,))
+        self.assertEqual(manifest.PAPER_KINDS, OTHER_LINES[:6] + (KIND,) + OTHER_LINES[6:])
         self.assertEqual(registry.LINES, tuple(manifest.LINES))
 
     def test_no_other_line_receives_the_line_files(self) -> None:

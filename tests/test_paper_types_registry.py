@@ -57,7 +57,8 @@ class ShippedCatalogueTests(unittest.TestCase):
                                      "observational-measurement": "observational-measurement",
                                      "hardware": "hardware", "lab-simulation": "lab-simulation",
                                      "data-resource": "data-resource",
-                                     "experiment-intervention": "experiment-intervention"})
+                                     "experiment-intervention": "experiment-intervention",
+                                     "qualitative-participatory": "qualitative-participatory"})
         self.assertEqual(set(available.values()), set(manifest.PAPER_KINDS))
         self.assertEqual(registry.by_line(manifest.DEFAULT_PAPER_KIND)["id"], "applied-ai")
 

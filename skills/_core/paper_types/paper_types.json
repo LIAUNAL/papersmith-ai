@@ -284,8 +284,8 @@
     {
       "id": "qualitative-participatory",
       "name": "Qualitative, participatory and consensus study",
-      "status": "planned",
-      "line": null,
+      "status": "available",
+      "line": "qualitative-participatory",
       "summary": "Studies built on people's accounts and judgement: case studies and mixed methods, expert consensus, foresight and guidelines, and experience reports.",
       "novelty": "The case, the agreed judgement of experts, or the experience and what it teaches.",
       "stages": [
@@ -303,6 +303,8 @@
           "id": "qualitative-mixed",
           "name": "Qualitative or mixed methods",
           "summary": "Case studies, interviews, focus groups, participatory research and mixed-methods designs.",
+          "checklist": "srqr",
+          "flow_template": null,
           "guidelines": [
             {
               "name": "SRQR",
@@ -338,7 +340,13 @@
           "id": "consensus-foresight",
           "name": "Consensus, foresight and guidelines",
           "summary": "Expert panels: Delphi, structural foresight (MICMAC, MACTOR), scenarios, and clinical practice guidelines agreed by consensus.",
+          "checklist": "accord",
+          "flow_template": null,
           "guidelines": [
+            {
+              "name": "ACCORD (consensus methods)",
+              "url": "https://doi.org/10.1371/journal.pmed.1004326"
+            },
             {
               "name": "AGREE II (practice guidelines)",
               "url": "https://www.agreetrust.org/"
@@ -366,6 +374,8 @@
           "id": "experience-report",
           "name": "Experience report",
           "summary": "A teaching innovation or a programme described with what it taught, without a formal evaluation of its effect.",
+          "checklist": null,
+          "flow_template": null,
           "guidelines": [],
           "signals": [
             "experience report",

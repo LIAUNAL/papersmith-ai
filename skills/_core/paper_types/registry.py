@@ -9,9 +9,11 @@ signal it in an idea, and whether smith already has a flow (``line``) for it:
 
 * ``available`` types map to a workspace line (``experimental``, ``review``,
   ``observational-measurement``, ``hardware``, ``lab-simulation``,
-  ``data-resource`` or ``experiment-intervention``, the ``paper_kind`` values
-  ``smith init --kind`` accepts);
-* ``planned`` types have no line yet (``line`` is null).
+  ``data-resource``, ``experiment-intervention`` or
+  ``qualitative-participatory``, the ``paper_kind`` values ``smith init
+  --kind`` accepts);
+* ``planned`` types have no line yet (``line`` is null); every shipped type
+  has one today, and a new type may enter the catalogue as planned.
 
 A type may group ``variants`` (each with its own name, summary, guidelines
 and signals): the family is one flow and the variant chooses its checklist.
@@ -39,7 +41,7 @@ from typing import Any
 CATALOGUE = Path(__file__).resolve().parent / "paper_types.json"
 STATUSES = ("available", "planned")
 LINES = ("experimental", "review", "observational-measurement", "hardware", "lab-simulation", "data-resource",
-         "experiment-intervention")
+         "experiment-intervention", "qualitative-participatory")
 GUIDELINES = Path(__file__).resolve().parent.parent / "checklists" / "guidelines"
 MAX_NAME = 48
 MAX_SUMMARY = 200

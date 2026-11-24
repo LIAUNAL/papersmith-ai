@@ -94,7 +94,12 @@ class PanelRenderTests(unittest.TestCase):
         self.assertIn("encuesta", html)
         self.assertIn("La idea no muestra señales de este tipo", html)
         self.assertIn("flujo disponible", html)
-        self.assertIn("flujo planificado", html)
+        # Every shipped type has a line since the qualitative-participatory line; a planned entry still says so.
+        self.assertNotIn("flujo planificado", html)
+        planned = view()
+        planned["catalogue"] = [dict(t, status="planned", line=None) if t["id"] == "qualitative-participatory" else t
+                                for t in planned["catalogue"]]
+        self.assertIn("flujo planificado", run(planned, lang="es")["html"])
         self.assertIn("Coincidencia 100/100", html)
 
     def test_every_value_is_escaped(self) -> None:

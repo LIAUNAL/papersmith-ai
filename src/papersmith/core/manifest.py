@@ -150,6 +150,22 @@ LINES: dict[str, PaperLine] = {
                  "analysis, flow of units"),
         empirical=True,
     ),
+    # A qualitative or mixed study, an expert consensus or foresight study, or
+    # an experience report; the transcripts, the codebook, the theme sign-off
+    # and the consensus rounds are the operator's records (`qual_cli.py`,
+    # `consensus_cli.py`), and every participant quote is checked verbatim.
+    "qualitative-participatory": PaperLine(
+        sections_dir="sections-qualitative-participatory/",
+        only_prefixes=("sections-qualitative-participatory/", "skills/qualitative-participatory/"),
+        shared_sections=("sections/10-back-matter.md",),
+        flow_template="paper-flow-qualitative-participatory.md.tpl",
+        topology="empirical",
+        label="qualitative, participatory or consensus study (SRQR, COREQ, ACCORD)",
+        summary=("a qualitative or mixed study, an expert consensus or foresight study, or an experience report: "
+                 "protocol, ethics and consent, the operator's transcripts or consensus rounds, codebook and theme "
+                 "sign-off, verbatim quotes"),
+        empirical=True,
+    ),
 }
 DEFAULT_PAPER_KIND = "experimental"
 

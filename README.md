@@ -745,6 +745,56 @@ its flow never blocks writing. The board shows the allocation record's method,
 row count and concealment, never the list. Details in
 [skills/experiment-intervention/SKILL.md](skills/experiment-intervention/SKILL.md).
 
+### The qualitative-participatory line
+
+A study built on people's accounts and judgement is the
+qualitative-participatory line: a qualitative or mixed-methods study (case
+studies, interviews, focus groups, participatory research), reported against
+SRQR (`srqr`, or COREQ, `coreq`, for interviews and focus groups); an expert
+consensus or foresight study (Delphi, MICMAC, MACTOR, scenarios), reported
+against ACCORD (`accord`); or an experience report (a teaching innovation or a
+programme), which has no reporting checklist.
+
+```bash
+smith init ~/papers/panela-chain --kind qualitative-participatory \
+  --title "Selling together: a qualitative case study of a panela cooperative"
+```
+
+An existing workspace moves to it with `smith kind set qualitative-participatory
+--by "<operator>"` once `/paper-type` has scored the idea. The workspace has
+the empirical folders (`protocol/`, `study/`, `analysis/`, `datasets/`), the
+SRQR-shaped section contracts in `sections/` (with optional consensus blocks
+for the panel, the pre-specified threshold, the rounds and the MICMAC map, and
+optional experience-report blocks), the `/qualitative-participatory` skill,
+and its `CLAUDE.md` states the line's flow:
+
+1. **Case, panel or experience and its framework** with
+   `/study-protocol-deliberation`, approved and locked by the operator
+   (G-STUDY-PROTOCOL, optional for an experience report); a consensus study
+   records its threshold and rounds against the locked protocol.
+2. **Ethics and consent** (G-ETHICS), recorded by the operator; an experience
+   report without participant data records it as not applicable.
+3. **Fieldwork, rounds or implementation**: the operator registers each
+   de-identified transcript or field note (`qual_cli.py transcripts add
+   --by`, G-TRANSCRIPTS), or the panel and each round's responses
+   (`consensus_cli.py panel add|round record --by`, G-ROUNDS).
+4. **Coding, consensus or reflection** (G-ANALYSIS): the operator records each
+   codebook version and signs the themes off (`qual_cli.py themes signoff
+   --by`); a consensus study reads its agreement per round and may compute a
+   MICMAC map from the operator's influence matrix.
+5. **Integration with prior work**, then **writing** with `/paper-writing`:
+   every participant quote is written `\pquote{<code>}{<text>}` and must be
+   found verbatim in a registered transcript (`qual_cli.py quotes check`,
+   and `paper_cli.py verify`), the variant's checklist and the final judge on
+   the qualitative-study rubric.
+
+The assistant never generates data, never writes or edits a transcript, never
+invents or polishes a quote and never enters a rating; ethics, consent, data
+collection and the analytic sign-off stay human.
+`/qualitative-participatory status` reports where the study stands. Details
+in
+[skills/qualitative-participatory/SKILL.md](skills/qualitative-participatory/SKILL.md).
+
 ### Open the dashboard from another device
 
 `smith ui` listens on `127.0.0.1` only, so only the machine that runs it can open

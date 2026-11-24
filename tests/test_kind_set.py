@@ -248,7 +248,6 @@ class KindSetTests(KindCase):
 
     def test_refusals_write_nothing(self) -> None:
         cases = (
-            (("qualitative-participatory", "--by", "Ana"), "has no flow in smith yet"),
             (("no-such-type", "--by", "Ana"), "TYPE_UNKNOWN"),
             (("review",), "--by"),
         )
@@ -260,6 +259,28 @@ class KindSetTests(KindCase):
                 self.assertIn(expected, err)
                 self.assertNotIn("paper_kind", self.config(workspace))
                 self.assertIsNone(self.paper_type(workspace)["agreed"])
+
+    def test_no_catalogue_type_is_planned_and_a_planned_entry_still_refuses(self) -> None:
+        """Every shipped type has a line (the qualitative-participatory line was the last one); an entry
+        a workspace's catalogue still marks planned refuses like an unknown id, writing nothing."""
+        from skills._core.paper_types import registry
+        self.assertEqual([t["id"] for t in registry.load() if t["status"] == "planned"], [])
+        self.assertEqual({t["line"] for t in registry.load()}, set(manifest.PAPER_KINDS))
+        workspace = self.init()
+        catalogue = workspace / "skills" / "_core" / "paper_types" / "paper_types.json"
+        document = json.loads(catalogue.read_text(encoding="utf-8"))
+        entry = next(t for t in document["types"] if t["id"] == "qualitative-participatory")
+        entry.update(status="planned", line=None)
+        catalogue.write_text(json.dumps(document), encoding="utf-8")
+        for argv, expected in ((("qualitative-participatory", "--by", "Ana"), "has no flow in smith yet"),
+                               (("qualitative", "--by", "Ana"), "TYPE_UNKNOWN")):
+            with self.subTest(argv=argv):
+                code, _, err = self.smith("kind", "set", *argv, str(workspace))
+                self.assertNotEqual(code, 0)
+                self.assertIn(expected, err)
+                self.assertNotIn("paper_kind", self.config(workspace))
+                self.assertIsNone(self.paper_type(workspace)["agreed"])
+                self.assertFalse((workspace / "skills" / "qualitative-participatory").exists())
 
     def test_an_unscored_idea_refuses_before_any_move(self) -> None:
         workspace = self.init(scored=False)
