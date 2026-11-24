@@ -3291,6 +3291,36 @@ def _study_inputs(paper_dir: Path) -> dict | None:
                 if _looks_like_study(root) else None)
 
 
+#: The qualitative module's verify-side disk read (S8, decision K3), loaded like the
+#: empirical one from the kit root that holds this script.
+QUALITATIVE_RECORDS = Path(__file__).resolve().parents[2] / "_core" / "qualitative" / "records.py"
+
+
+def _quote_check(paper_dir: Path) -> dict | None:
+    """`records.check_quotes` of the workspace holding `paper_dir`: None when the
+    workspace has no `study/transcripts.json`, so no other line gets the check;
+    `{"unavailable": <why>}` when the module is not shipped or raises, which
+    `paper_verify.qualitative_entries` reports unmeasured, never dropped."""
+    root = Path(paper_dir).resolve().parent
+    try:
+        if not (root / "study" / "transcripts.json").is_file():
+            return None
+    except OSError:
+        return None
+    if not QUALITATIVE_RECORDS.is_file():
+        return {"unavailable": "skills/_core/qualitative/records.py is not shipped in this kit"}
+    try:
+        import importlib  # noqa: PLC0415
+
+        kit_root = str(QUALITATIVE_RECORDS.parents[3])
+        if kit_root not in sys.path:
+            sys.path.insert(0, kit_root)
+        module = importlib.import_module("skills._core.qualitative.records")
+        return module.check_quotes(root, Path(paper_dir).resolve())
+    except Exception as exc:  # noqa: BLE001 - reported unmeasured, never fails the verb
+        return {"unavailable": f"the qualitative module failed ({type(exc).__name__}: {exc})"[:300]}
+
+
 def _outcomes_fact(paper_dir: Path) -> str | None:
     """The paper's fixed `outcomes` fact, or None (never declared, reopened, or unreadable)."""
     try:
@@ -3335,6 +3365,8 @@ def cmd_verify(args: argparse.Namespace) -> dict:
     study = _study_inputs(paper_dir)
     report = paper_verify.attach_study(report, paper_coherence.run_study_guarded(
         evidence.main_tex_bytes, None if study is None else _outcomes_fact(paper_dir), study))
+    # S8, K3: every participant quote found verbatim in a registered, current transcript.
+    report = paper_verify.attach_qualitative(report, paper_verify.qualitative_entries(_quote_check(paper_dir)))
     # #182 item 1: a cited source with no title or abstract on disk is a visible warning, never a failure.
     report = paper_verify.attach_reference_warnings(report)
     # #182 items 2-3: the cite-once policy, quotes that share no term with their claim,

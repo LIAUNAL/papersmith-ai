@@ -59,6 +59,14 @@ Public surface:
                              run_study` computes, for a study workspace only
     attach_study(report, study) -> dict -- `report` plus `study`; a failed
                              `primary-outcome-switch` makes `clean` false
+    QUALITATIVE_CHECKS   -> the qualitative check (S8, decision K3), for a
+                             workspace with `study/transcripts.json` only
+    qualitative_entries(result) -> list -- the `quote-not-verbatim` entry
+                             built from `skills/_core/qualitative/records.
+                             check_quotes`, `[]` for None (no transcripts)
+    attach_qualitative(report, entries) -> dict -- `report` plus
+                             `qualitative`; a failed `quote-not-verbatim`
+                             makes `clean` false
 """
 from __future__ import annotations
 
@@ -1291,3 +1299,59 @@ def attach_study(report: dict, study: list) -> dict:
         if entry.get("verdict") not in _COHERENCE_VERDICTS or entry.get("severity") != "warning":
             raise AssertionError(f"study entry {entry.get('check')!r} is not an advisory warning")
     return {**report, "study": list(study), "clean": report.get("clean", False) and hard["verdict"] != "fail"}
+
+
+#: The qualitative check (S8, decision K3): every participant quote of the
+#: paper (`\\pquote{<code>}{<text>}`) is found verbatim in a registered,
+#: current transcript of that participant (`skills/_core/qualitative/
+#: records.check_quotes`, read one level up in `cmd_verify` because this
+#: module touches disk never). Reported under its own `qualitative` key and
+#: only for a workspace with `study/transcripts.json`, so every other line's
+#: report is byte-identical to before. A hard check: a `fail` makes `clean`
+#: false; `unmeasured` (the register unreadable, the module missing) does not,
+#: as with the study checks.
+QUALITATIVE_CHECKS: tuple[str, ...] = ("quote-not-verbatim",)
+QUALITATIVE_UNMEASURED_REASONS: tuple[str, ...] = ("TRANSCRIPTS_CORRUPT", "CHECK_FAILED")
+_QUOTE_FINDING_KEYS = ("file", "line", "participant", "reason", "quote")
+
+
+def qualitative_entries(result: dict | None) -> list:
+    """The `quote-not-verbatim` entry from `check_quotes`'s result: `[]` for
+    None (the workspace has no transcripts register), `unmeasured` for
+    `{"corrupt": why}` (`TRANSCRIPTS_CORRUPT`) or `{"unavailable": why}`
+    (`CHECK_FAILED`), else `fail` with one finding per failing quote (file,
+    line, participant, reason and the paper's own words) or `pass`."""
+    if result is None:
+        return []
+    rule = ("every \\pquote{<participant code>}{<text>} of the paper is found verbatim (whitespace and "
+            "quote ligatures normalised) in a registered, current transcript of that participant")
+    base = {"check": QUALITATIVE_CHECKS[0], "classification": "mechanical", "severity": "error", "rule": rule}
+    for key, reason in (("corrupt", "TRANSCRIPTS_CORRUPT"), ("unavailable", "CHECK_FAILED")):
+        if result.get(key):
+            return [{**base, "verdict": "unmeasured", "findings": [], "evidence": {key: str(result[key])[:300]},
+                     "unmeasured_reason": reason}]
+    findings = [{key: failure.get(key) for key in _QUOTE_FINDING_KEYS} for failure in result.get("failures") or []]
+    evidence = {key: result.get(key) for key in ("quotes", "verified", "transcripts", "files")}
+    return [{**base, "verdict": "fail" if findings else "pass", "findings": findings, "evidence": evidence,
+             "unmeasured_reason": None}]
+
+
+def attach_qualitative(report: dict, entries: list) -> dict:
+    """`report` plus `qualitative` (one entry per `QUALITATIVE_CHECKS`
+    member) when the workspace has a transcripts register; `report`
+    unchanged for an empty list. A failed `quote-not-verbatim` makes `clean`
+    false and leaves `holds`/`fails`/`unmeasured` (the `CHECKS` roster)
+    untouched. A malformed list is a programming error, raised rather than
+    shipped."""
+    if not entries:
+        return report
+    if [entry.get("check") for entry in entries] != list(QUALITATIVE_CHECKS):
+        raise AssertionError("qualitative entries must follow QUALITATIVE_CHECKS exactly")
+    entry = entries[0]
+    if entry.get("severity") != "error" or entry.get("verdict") not in _VERDICTS:
+        raise AssertionError("quote-not-verbatim is a hard check: severity error, verdict pass|fail|unmeasured")
+    if (entry["verdict"] == "unmeasured") != (entry.get("unmeasured_reason") in QUALITATIVE_UNMEASURED_REASONS):
+        raise AssertionError("unmeasured_reason is a declared qualitative reason exactly when unmeasured")
+    if (entry["verdict"] == "fail") != bool(entry.get("findings")):
+        raise AssertionError("quote-not-verbatim fails exactly when it names a finding")
+    return {**report, "qualitative": list(entries), "clean": report.get("clean", False) and entry["verdict"] != "fail"}
