@@ -1,0 +1,31 @@
+# The single source of the provisioned environment's dependencies (issue #58).
+# scripts/setup_env.py installs the workspace environment from the locks
+# conda-lock builds from this file and its two companions (scripts/lock-env.py);
+# requirements.txt and the dashboard venv's list are derived from it. Edit the
+# dependencies here, then refresh the locks (docs/releasing.md).
+name: papersmith
+category: main
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pytest>=8.0
+  - pytest-xdist>=3.5        # npm run test:py:par: -n 8 --dist loadfile
+  - python-build             # PyPI artifact tests run `python -m build`
+  - requests>=2.31           # remote-execution adapter wire tests; forge gate imports
+  - numpy>=1.26
+  - pypdfium2>=4.30          # paper-ingestion fast path and page probe
+  - pillow>=10.0             # figure extraction and the page cache
+  - pyyaml>=6.0
+  - jsonschema>=4.0
+  - kagglesdk==0.1.37        # pinned: DoctrinePinTests (tests/test_remote_execution.py), #108
+  - llama.cpp
+  - nbformat>=5.9            # remote-execution parses notebooks
+  - nbclient>=0.9            # and drives them
+  - ipykernel>=6.29          # the kernel that runs the cells
+  - fastapi>=0.110           # Paper Command Center (smith ui)
+  - uvicorn>=0.27
+  - watchfiles>=0.21
+  - pydantic>=2.0
+  - httpx2>=2.0              # fastapi.testclient, the static snapshot export

@@ -1,0 +1,8 @@
+# Paper ingestion's pip-only layer, installed by scripts/setup_env.py after the
+# locked conda environment unless --no-ingestion. Pinned so a new release cannot
+# change the converter API under a workspace. Not locked by conda-lock: docling
+# has no win-64 build on conda-forge, and conda-lock cannot solve its pip
+# requirements against conda's torch, so its transitive pip dependencies resolve
+# at install time against the locked environment (docs/releasing.md).
+docling==2.141.0
+mlx-vlm==0.7.10; sys_platform == 'darwin' and platform_machine == 'arm64'

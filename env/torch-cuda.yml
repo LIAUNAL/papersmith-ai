@@ -1,0 +1,8 @@
+# The CUDA torch build (linux-64, win-64), locked with environment.yml.
+name: papersmith
+category: main
+channels:
+  - conda-forge
+dependencies:
+  - pytorch-gpu
+  - torchvision
