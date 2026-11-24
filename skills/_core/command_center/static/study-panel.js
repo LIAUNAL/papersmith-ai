@@ -23,6 +23,16 @@
  * rows and short sha256, the protocol revision, who recorded it), current,
  * stale with the reasons, or corrupt. The list itself stays concealed: the
  * server never sends a value of it.
+ * A qualitative-participatory workspace (or any holding the matching record)
+ * also answers transcripts (gate G-TRANSCRIPTS: each registered transcript's
+ * participant code, kind, file, character count, short sha256, consent and
+ * de-identification, current or stale, and the totals), themes (gate
+ * G-ANALYSIS: the codebook versions and the operator's theme sign-off with the
+ * codebook version and the transcripts it covers) and consensus (gate
+ * G-ROUNDS: the panel, the plan, per round and item the agreement computed
+ * from the operator's response files, and the MICMAC ranking and quadrant per
+ * variable). Transcripts, codes, themes and ratings are the operator's: the
+ * server never sends a transcript's text, a comment or an individual rating.
  * A section the server could not read carries
  * {available: false, code, message} and is drawn as unavailable; the others
  * still render. The variant's checklist is slow (the engine runs paper_cli.py)
@@ -116,6 +126,31 @@
     simple: 'study.allocation.method.simple', block: 'study.allocation.method.block',
     stratified: 'study.allocation.method.stratified', minimisation: 'study.allocation.method.minimisation',
     cluster: 'study.allocation.method.cluster',
+  };
+  const QUAL_REASON_KEYS = {
+    'file-changed': 'study.qual.reason.changed', 'file-missing': 'study.qual.reason.missing',
+    'file-unreadable': 'study.qual.reason.unreadable', 'file-outside': 'study.qual.reason.outside',
+    'file-invalid': 'study.qual.reason.invalid',
+    'themes-file-changed': 'study.qual.reason.changed', 'themes-file-missing': 'study.qual.reason.missing',
+    'themes-file-unreadable': 'study.qual.reason.unreadable', 'themes-file-outside': 'study.qual.reason.outside',
+    'codebook-changed': 'study.qual.reason.codebookChanged', 'codebook-stale': 'study.qual.reason.codebookStale',
+    'transcript-changed': 'study.qual.reason.transcriptChanged',
+    'transcript-added': 'study.qual.reason.transcriptAdded',
+    'protocol-amended': 'study.qual.reason.protocolAmended', 'protocol-changed': 'study.qual.reason.protocolChanged',
+    'protocol-absent': 'study.qual.reason.protocolAbsent', 'protocol-corrupt': 'study.qual.reason.protocolCorrupt',
+    'plan-changed': 'study.qual.reason.planChanged', 'plan-stale': 'study.qual.reason.planStale',
+    'plan-missing': 'study.qual.reason.planMissing', 'beyond-plan': 'study.qual.reason.beyondPlan',
+  };
+  const TRANSCRIPT_KIND_KEYS = {
+    interview: 'study.transcripts.kind.interview', 'focus-group': 'study.transcripts.kind.focusGroup',
+    'field-note': 'study.transcripts.kind.fieldNote', document: 'study.transcripts.kind.document',
+  };
+  const QUADRANT_KEYS = {
+    influential: 'study.consensus.quadrant.influential', relay: 'study.consensus.quadrant.relay',
+    dependent: 'study.consensus.quadrant.dependent', autonomous: 'study.consensus.quadrant.autonomous',
+  };
+  const POWER_MODE_KEYS = {
+    'until-stable': 'study.consensus.powerMode.untilStable', fixed: 'study.consensus.powerMode.fixed',
   };
   const STATUS_KEYS = {
     satisfied: 'study.checklist.satisfied', missing: 'study.checklist.missing',
@@ -462,6 +497,193 @@
       + `<p class="rv-muted">${esc(t('study.allocation.recorded', { by: a.by || DASH, at: a.at || DASH, n: a.records ?? 1 }))}</p>`;
   }
 
+  // ------------------------------------------------------------------ qualitative (K8)
+
+  const qualReasons = (reasons, file) => list(reasons).map((r) => (QUAL_REASON_KEYS[r]
+    ? t(QUAL_REASON_KEYS[r], { file: file || DASH }) : String(r))).join(', ');
+  const yesNo = (v) => t(v ? 'study.data.yes' : 'study.data.no');
+  const signed = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? `+${num(v)}` : num(v));
+
+  function qualState(item, file) {
+    return item.state === 'current'
+      ? `<span class="rv-ok">${esc(t('study.qual.current'))}</span>`
+      : `<span class="rv-warn">${esc(t('study.qual.stale', { reasons: qualReasons(item.reasons, file) || DASH }))}</span>`;
+  }
+
+  function corruptLine(key, part, fallback) {
+    return `<p class="rv-error" role="alert">${esc(t(key, { path: part.path || fallback, message: part.message || '' }))}</p>`;
+  }
+
+  function transcriptsBody(p) {
+    const note = `<p class="rv-muted">${esc(t('study.transcripts.note'))}</p>`;
+    const gate = p.gate || 'G-TRANSCRIPTS';
+    if (p.state === 'corrupt') return note + corruptLine('study.transcripts.corrupt', p, 'study/transcripts.json');
+    const rows = list(p.transcripts);
+    if (p.state === 'absent' || !rows.length) return `${note}<p class="rv-warn">${esc(t('study.transcripts.absent', { gate }))}</p>`;
+    const counts = obj(p.counts);
+    const state = p.state === 'current'
+      ? `<p class="rv-ok">${esc(t('study.transcripts.current', { gate }))}</p>`
+      : `<p class="rv-warn">${esc(t('study.transcripts.stale', { gate, n: counts.stale ?? 0 }))}</p>`;
+    const totals = `<p>${esc(t('study.transcripts.totals', {
+      participants: counts.participants ?? 0, transcripts: counts.transcripts ?? 0, stale: counts.stale ?? 0,
+    }))}</p>`;
+    const body = rows.map((r) => [esc(fmt(r.participant)),
+      esc(TRANSCRIPT_KIND_KEYS[r.kind] ? t(TRANSCRIPT_KIND_KEYS[r.kind]) : fmt(r.kind)), esc(fmt(r.file)),
+      esc(fmt(r.characters)), esc(fmt(r.sha256)), esc(fmt(r.consent)), esc(fmt(r.deidentified)),
+      esc(t('study.qual.byAt', { by: r.by || DASH, at: r.at || DASH })), qualState(r, r.file)]);
+    return `${note}${state}${totals}`
+      + table([t('study.transcripts.participant'), t('study.transcripts.kind'), t('study.transcripts.file'),
+        t('study.transcripts.characters'), t('study.qual.sha256'), t('study.transcripts.consent'),
+        t('study.transcripts.deidentified'), t('study.qual.recorded'), t('study.qual.state')], body)
+      + `<p class="rv-muted">${esc(t('study.transcripts.records', { n: p.records ?? rows.length }))}</p>`;
+  }
+
+  function codebookHtml(c) {
+    c = obj(c);
+    const head = `<h4>${esc(t('study.themes.codebook'))}</h4>`;
+    if (c.state === 'corrupt') return head + corruptLine('study.themes.codebookCorrupt', c, 'study/codebook.json');
+    if (c.state !== 'current' && c.state !== 'stale') return `${head}<p class="rv-warn">${esc(t('study.themes.codebookAbsent'))}</p>`;
+    const state = c.state === 'current'
+      ? `<p class="rv-ok">${esc(t('study.themes.codebookCurrent', { version: c.version ?? DASH, file: c.file || DASH }))}</p>`
+      : `<p class="rv-warn">${esc(t('study.themes.codebookStale', { version: c.version ?? DASH, reasons: qualReasons(c.reasons, c.file) || DASH }))}</p>`;
+    const rows = list(c.versions).map((v) => [esc(fmt(v.version)), esc(fmt(v.file)), esc(fmt(v.sha256)),
+      esc(t('study.qual.byAt', { by: v.by || DASH, at: v.at || DASH }))]);
+    return head + state + (rows.length ? table([t('study.themes.version'), t('study.themes.file'), t('study.qual.sha256'),
+      t('study.qual.recorded')], rows) : '');
+  }
+
+  function signoffHtml(s, gate) {
+    s = obj(s);
+    const head = `<h4>${esc(t('study.themes.signoff'))}</h4>`;
+    if (s.state === 'corrupt') return head + corruptLine('study.themes.signoffCorrupt', s, 'study/themes.json');
+    if (s.state !== 'current' && s.state !== 'stale') return `${head}<p class="rv-warn">${esc(t('study.themes.signoffAbsent', { gate }))}</p>`;
+    const state = s.state === 'current'
+      ? `<p class="rv-ok">${esc(t('study.themes.signoffCurrent', { gate }))}</p>`
+      : `<p class="rv-warn">${esc(t('study.themes.signoffStale', { gate, reasons: qualReasons(s.reasons, s.file) || DASH }))}</p>`;
+    const row = [esc(fmt(s.file)), esc(fmt(s.sha256)), esc(fmt(s.codebook_version)), esc(fmt(s.transcripts)),
+      esc(t('study.qual.byAt', { by: s.by || DASH, at: s.at || DASH }))];
+    return head + state
+      + table([t('study.themes.file'), t('study.qual.sha256'), t('study.themes.codebookVersion'),
+        t('study.themes.transcripts'), t('study.themes.signedBy')], [row])
+      + `<p class="rv-muted">${esc(t('study.themes.signoffs', { n: s.signoffs ?? 1 }))}</p>`;
+  }
+
+  function themesBody(p) {
+    const gate = p.gate || 'G-ANALYSIS';
+    return `<p class="rv-muted">${esc(t('study.themes.note'))}</p>${codebookHtml(p.codebook)}${signoffHtml(p.signoff, gate)}`;
+  }
+
+  function panelHtml(m) {
+    m = obj(m);
+    const head = `<h4>${esc(t('study.consensus.panel'))}</h4>`;
+    if (m.state === 'corrupt') return head + corruptLine('study.consensus.panelCorrupt', m, 'study/consensus/panel.json');
+    const members = list(m.members);
+    if (!members.length) return `${head}<p class="rv-warn">${esc(t('study.consensus.panelAbsent'))}</p>`;
+    return `${head}<p>${esc(t('study.consensus.panelSize', { n: m.size ?? members.length }))}</p>`
+      + table([t('study.consensus.member'), t('study.consensus.expertise')],
+        members.map((x) => [esc(fmt(x.member)), esc(fmt(x.expertise))]));
+  }
+
+  function planHtml(p) {
+    p = obj(p);
+    const head = `<h4>${esc(t('study.consensus.plan'))}</h4>`;
+    if (p.state === 'corrupt') return head + corruptLine('study.consensus.planCorrupt', p, 'study/consensus/plan.json');
+    if (p.state !== 'current' && p.state !== 'stale') return `${head}<p class="rv-warn">${esc(t('study.consensus.planAbsent'))}</p>`;
+    const state = p.state === 'current'
+      ? `<p class="rv-ok">${esc(t('study.consensus.planCurrent', { revision: p.protocol_revision || DASH }))}</p>`
+      : `<p class="rv-warn">${esc(t('study.consensus.planStale', { reasons: qualReasons(p.reasons) || DASH }))}</p>`;
+    const scale = obj(p.scale);
+    const row = [esc(fmt(p.rounds)), esc(t('study.consensus.percentOnly', { value: num(p.threshold) })),
+      esc(t('study.consensus.scaleRange', { min: fmt(scale.min), max: fmt(scale.max) })), esc(fmt(p.agree_from)),
+      esc(fmt(p.protocol_revision))];
+    return head + state
+      + table([t('study.consensus.rounds'), t('study.consensus.threshold'), t('study.consensus.scale'),
+        t('study.consensus.agreeFrom'), t('study.consensus.revision')], [row])
+      + `<p class="rv-muted">${esc(t('study.consensus.planRecorded', { by: p.by || DASH, at: p.at || DASH, n: p.changes ?? 0 }))}</p>`;
+  }
+
+  function changeCell(c) {
+    if (!c) return esc(DASH);
+    return esc(t('study.consensus.change', {
+      round: fmt(c.previous_round), agreement: signed(c.agreement_percent), median: signed(c.median),
+      iqr: signed(c.iqr), before: yesNo(c.consensus_previous),
+    }));
+  }
+
+  function roundHtml(r) {
+    const head = `<h4>${esc(t('study.consensus.round', { round: fmt(r.round) }))}</h4>`;
+    const state = r.state === 'current'
+      ? `<p class="rv-ok">${esc(t('study.consensus.roundCurrent', { consensus: r.consensus_items ?? 0, items: r.items_count ?? 0 }))}</p>`
+      : `<p class="rv-warn">${esc(t('study.consensus.roundStale', { reasons: qualReasons(r.reasons, r.file) || DASH }))}</p>`;
+    const meta = `<p class="rv-muted">${esc(t('study.consensus.roundMeta', {
+      file: r.file || DASH, sha256: r.sha256 || DASH, responders: fmt(r.responders), responses: fmt(r.responses),
+      by: r.by || DASH, at: r.at || DASH,
+    }))}</p>`;
+    if (!Array.isArray(r.items)) return `${head}${state}${meta}<p class="rv-muted">${esc(t('study.consensus.itemsUnavailable'))}</p>`;
+    const rows = r.items.map((i) => [esc(fmt(i.item)), esc(fmt(i.n)),
+      esc(t('study.consensus.agreement', { value: num(i.agreement_percent), agree: fmt(i.agree), n: fmt(i.n) })),
+      esc(num(i.median)), esc(t('study.consensus.iqrCell', { iqr: num(i.iqr), q1: num(i.q1), q3: num(i.q3) })),
+      `<span class="${i.consensus ? 'rv-ok' : 'rv-warn'}">${esc(yesNo(i.consensus))}</span>`, changeCell(i.change)]);
+    return head + state + meta
+      + table([t('study.consensus.item'), t('study.consensus.n'), t('study.consensus.agreementCol'),
+        t('study.consensus.median'), t('study.consensus.iqr'), t('study.consensus.consensusCol'),
+        t('study.consensus.changeCol')], rows);
+  }
+
+  function roundsHtml(r) {
+    r = obj(r);
+    if (r.state === 'corrupt') return `<h4>${esc(t('study.consensus.roundsTitle'))}</h4>${corruptLine('study.consensus.roundsCorrupt', r, 'study/consensus/rounds.json')}`;
+    const rounds = list(r.rounds);
+    if (!rounds.length) return `<h4>${esc(t('study.consensus.roundsTitle'))}</h4><p class="rv-warn">${esc(t('study.consensus.roundsNone'))}</p>`;
+    return rounds.map(roundHtml).join('');
+  }
+
+  function micmacHtml(m) {
+    m = obj(m);
+    const head = `<h4>${esc(t('study.consensus.micmac'))}</h4>`;
+    if (m.state === 'corrupt') return head + corruptLine('study.consensus.micmacCorrupt', m, 'study/consensus/micmac.json');
+    if (m.state !== 'current' && m.state !== 'stale') return `${head}<p class="rv-muted">${esc(t('study.consensus.micmacAbsent'))}</p>`;
+    const mode = POWER_MODE_KEYS[m.power_mode] ? t(POWER_MODE_KEYS[m.power_mode]) : fmt(m.power_mode);
+    const state = m.state === 'current'
+      ? `<p class="rv-ok">${esc(t('study.consensus.micmacCurrent', { file: m.file || DASH }))}</p>`
+      : `<p class="rv-warn">${esc(t('study.consensus.micmacStale', { reasons: qualReasons(m.reasons, m.file) || DASH }))}</p>`;
+    const power = `<p>${esc(t('study.consensus.micmacPower', {
+      power: fmt(m.power), mode, stable: yesNo(m.stable), p: fmt(m.p_entries), value: fmt(m.p_value),
+    }))}</p>`;
+    const quadrant = (q) => esc(QUADRANT_KEYS[q] ? t(QUADRANT_KEYS[q]) : fmt(q));
+    const rows = list(m.variables).map((v) => {
+      const d = obj(v.direct);
+      const i = obj(v.indirect);
+      return [esc(fmt(v.name)), esc(fmt(d.influence_rank)), esc(fmt(d.dependence_rank)), quadrant(d.quadrant),
+        esc(fmt(i.influence_rank)), esc(fmt(i.dependence_rank)), quadrant(i.quadrant)];
+    });
+    const k = fmt(m.power);
+    return head + state + power
+      + table([t('study.consensus.variable'), t('study.consensus.directInfluence'), t('study.consensus.directDependence'),
+        t('study.consensus.directQuadrant'), t('study.consensus.indirectInfluence', { power: k }),
+        t('study.consensus.indirectDependence', { power: k }), t('study.consensus.indirectQuadrant', { power: k })], rows)
+      + `<p class="rv-muted">${esc(t('study.qual.recordedLine', { by: m.by || DASH, at: m.at || DASH, sha256: m.sha256 || DASH }))}</p>`;
+  }
+
+  function consensusBody(p) {
+    const gate = p.gate || 'G-ROUNDS';
+    let state;
+    if (p.state === 'passed') state = `<p class="rv-ok">${esc(t('study.consensus.passed', { gate, planned: fmt(p.planned) }))}</p>`;
+    else if (p.state === 'open') {
+      const missing = list(p.missing).length ? t('study.consensus.missing', { rounds: list(p.missing).join(', ') }) : '';
+      state = `<p class="rv-warn">${esc(`${t('study.consensus.open', { gate, planned: fmt(p.planned) })}${missing ? ` ${missing}` : ''}`)}</p>`;
+    } else if (p.state === 'corrupt') state = `<p class="rv-error">${esc(t('study.consensus.corrupt', { gate }))}</p>`;
+    else state = `<p class="rv-warn">${esc(t('study.consensus.absent', { gate }))}</p>`;
+    return `<p class="rv-muted">${esc(t('study.consensus.note'))}</p>${state}`
+      + panelHtml(p.panel) + planHtml(p.plan) + roundsHtml(p.rounds) + micmacHtml(p.micmac);
+  }
+
+  const QUALITATIVE_SECTIONS = ['transcripts', 'themes', 'consensus'];
+  const QUALITATIVE_TITLES = {
+    transcripts: 'study.transcripts.title', themes: 'study.themes.title', consensus: 'study.consensus.title',
+  };
+  const QUALITATIVE_BODIES = { transcripts: transcriptsBody, themes: themesBody, consensus: consensusBody };
+
   function reportingLine(r) {
     r = obj(r);
     const additional = list(r.additional_guidelines).map((g) => `<p>${esc(ADDITIONAL_KEYS[g] ? t(ADDITIONAL_KEYS[g]) : t('study.reporting.additional', { guideline: g }))}</p>`).join('');
@@ -535,6 +757,7 @@
       ${section('registration', 'study.registration.title', view.registration, registrationBody)}
       ${view.allocation ? section('allocation', 'study.allocation.title', view.allocation, allocationBody) : ''}
       ${section('data', 'study.data.title', view.data, dataBody)}
+      ${QUALITATIVE_SECTIONS.filter((name) => view[name]).map((name) => section(name, QUALITATIVE_TITLES[name], view[name], QUALITATIVE_BODIES[name])).join('')}
       ${MEASUREMENT_SECTIONS.filter((name) => view[name]).map((name) => section(name, MEASUREMENT_TITLES[name], view[name], MEASUREMENT_BODIES[name])).join('')}
       ${section('analysis', 'study.analysis.title', view.analysis, analysisBody)}
       ${view.deposit ? section('deposit', 'study.deposit.title', view.deposit, depositBody) : ''}

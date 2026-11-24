@@ -43,6 +43,24 @@
   short sha256, the protocol revision it is bound to, the stale reasons and the
   number of records. The allocation list is the operator's and stays
   concealed: the view never opens it and carries none of its values.
+  A ``qualitative-participatory`` workspace, and any workspace holding the
+  matching record, also gets the qualitative sections (decision K8), read only
+  through the qualitative core's side-effect-free readers
+  (``skills/_core/qualitative/records.py`` and ``consensus.py``):
+  ``transcripts`` (gate G-TRANSCRIPTS, ``transcripts_state``: per registered
+  transcript or field note its participant code, kind, file, character count,
+  short sha256, consent and de-identification statements, who registered it and
+  when, current or stale with the reasons; the totals), ``themes`` (gate
+  G-ANALYSIS, ``codebook_state``, ``read_codebook`` and ``themes_state``: every
+  codebook version with who, when and its short sha256, and the operator's theme
+  sign-off with the codebook version and the number of transcripts it covers,
+  current or stale with the reasons) and ``consensus`` (gate G-ROUNDS,
+  ``consensus_status`` over ``panel_state``, ``plan_state``, ``rounds_state``
+  and ``micmac_state``, plus ``round_results``: the panel's codes and
+  expertise, the plan, per round and item n, agreement, median, quartiles, IQR,
+  consensus and the change from the previous round, and the MICMAC ranking and
+  quadrant per variable, direct and at the power used). Never a transcript's
+  text, a response comment, an individual rating or an operator's note.
 * ``checklist(root, guideline=None)``: the reporting guideline (or another of
   the line's guidelines, ``checklist_refusal`` refusing any other) evaluated by
   the checklist engine, served on demand only (the engine runs ``paper_cli.py``
@@ -81,7 +99,7 @@ from ..paper_types import decision, registry
 NOT_A_STUDY_WORKSPACE = "NOT_A_STUDY_WORKSPACE"
 MODULE_UNAVAILABLE = "STUDY_MODULE_UNAVAILABLE"
 NO_CHECKLIST = "NO_CHECKLIST_DATA"
-#: The empirical kinds, in catalogue order: line 1 and the planned ones.
+#: The empirical kinds, in catalogue order (every one an available line).
 EMPIRICAL_KINDS: tuple[str, ...] = (
     "observational-measurement", "experiment-intervention", "qualitative-participatory", "hardware",
     "lab-simulation", "data-resource",
@@ -101,6 +119,21 @@ MEASUREMENT_RECORDS = ("study/instruments.json", "study/measurements.json", "stu
 DEPOSIT_KINDS: tuple[str, ...] = ("data-resource",)
 #: The lines whose Study tab always shows the allocation section (decision J2).
 ALLOCATION_KINDS: tuple[str, ...] = ("experiment-intervention",)
+#: The lines whose Study tab always shows the qualitative sections (decision K8).
+QUALITATIVE_KINDS: tuple[str, ...] = ("qualitative-participatory",)
+QUALITATIVE_SECTIONS = ("transcripts", "themes", "consensus")
+#: The qualitative core's reader modules, relative to ``skills/_core``.
+QUALITATIVE_MODULES: dict[str, str] = {"qualitative": "qualitative.records", "consensus": "qualitative.consensus"}
+#: The module each qualitative section reads.
+QUALITATIVE_NEEDS: dict[str, str] = {"transcripts": "qualitative", "themes": "qualitative", "consensus": "consensus"}
+#: The qualitative records (a test holds them equal to the modules' constants): in a
+#: workspace of another line, a section shows once one of its records exists.
+QUALITATIVE_RECORDS = ("study/transcripts.json", "study/codebook.json", "study/themes.json",
+                       "study/consensus/panel.json", "study/consensus/plan.json", "study/consensus/rounds.json",
+                       "study/consensus/micmac.json")
+_QUALITATIVE_SHOWN_BY: dict[str, tuple[str, ...]] = {
+    "transcripts": QUALITATIVE_RECORDS[:1], "themes": QUALITATIVE_RECORDS[1:3], "consensus": QUALITATIVE_RECORDS[3:],
+}
 
 #: Shared ``skills/_core`` modules, relative to that package.
 MODULES: dict[str, str] = {
@@ -594,6 +627,194 @@ def _allocation(mods: dict[str, Any], root: Path) -> dict[str, Any]:
         "warnings": _warnings(state.get("warnings"))}
 
 
+# --------------------------------------------------------------------------- qualitative (decision K8)
+
+
+def _int(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _number(value: Any) -> int | float | None:
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def _short(value: Any) -> str | None:
+    return _text(value)[:SHORT_SHA256] or None
+
+
+def _opt(value: Any) -> str | None:
+    return None if value is None else _text(value)
+
+
+def _reasons(value: Any) -> list[str]:
+    return [_text(reason) for reason in _list(value)]
+
+
+def _corrupt_part(out: dict[str, Any], code: str, state: dict[str, Any]) -> dict[str, Any]:
+    return out | {"code": code, "message": _text(state.get("message"))}
+
+
+_TRANSCRIPT_TEXT = ("participant", "kind", "file")
+_TRANSCRIPT_STATEMENTS = ("consent", "deidentified", "by", "at")
+_COUNTS = ("participants", "transcripts", "current", "stale")
+
+
+def _transcripts(mods: dict[str, Any], root: Path) -> dict[str, Any]:
+    """Every registered transcript as ``records.transcripts_state`` reads it; never its text."""
+    qual = mods["qualitative"]
+    state = _object(qual.transcripts_state(root))
+    out: dict[str, Any] = {"gate": _text(state.get("gate")) or qual.TRANSCRIPTS_GATE,
+                           "state": _text(state.get("state")) or "absent", "passed": bool(state.get("passed")),
+                           "path": qual.TRANSCRIPTS_PATH}
+    if out["state"] == "corrupt":
+        return _corrupt_part(out, "TRANSCRIPTS_CORRUPT", state)
+    counts = _object(state.get("counts"))
+    rows = [{key: _text(item.get(key)) for key in _TRANSCRIPT_TEXT}
+            | {"characters": _int(item.get("characters")), "sha256": _short(item.get("sha256"))}
+            | {key: _opt(item.get(key)) for key in _TRANSCRIPT_STATEMENTS}
+            | {"state": _text(item.get("state")), "reasons": _reasons(item.get("reasons"))}
+            for item in _list(state.get("transcripts")) if isinstance(item, dict)]
+    return out | {"transcripts": rows, "counts": {key: _int(counts.get(key)) or 0 for key in _COUNTS},
+                  "kinds": {_text(kind): n for kind, n in _object(counts.get("kinds")).items() if _int(n) is not None},
+                  "records": _int(state.get("records")) or 0, "warnings": _warnings(state.get("warnings"))}
+
+
+def _themes(mods: dict[str, Any], root: Path) -> dict[str, Any]:
+    """The codebook versions and the latest theme sign-off, as ``records`` reads them."""
+    qual = mods["qualitative"]
+    book_state, sign_state = _object(qual.codebook_state(root)), _object(qual.themes_state(root))
+    book: dict[str, Any] = {"state": _text(book_state.get("state")) or "absent", "path": qual.CODEBOOK_PATH}
+    if book["state"] == "corrupt":
+        book = _corrupt_part(book, "CODEBOOK_CORRUPT", book_state)
+    elif book["state"] != "absent":
+        try:
+            history = qual.read_codebook(root)["history"]
+        except qual.QualitativeError:  # rewritten between the two reads: the state above stands
+            history = []
+        book |= {"version": _int(book_state.get("version")), "file": _opt(book_state.get("file")),
+                 "sha256": _short(book_state.get("sha256")), "by": _opt(book_state.get("by")),
+                 "at": _opt(book_state.get("at")), "reasons": _reasons(book_state.get("reasons")),
+                 "versions": [{"version": number, "file": _opt(entry.get("file")), "sha256": _short(entry.get("sha256")),
+                               "by": _opt(entry.get("by")), "at": _opt(entry.get("at"))}
+                              for number, entry in enumerate(history, 1) if isinstance(entry, dict)]}
+    sign: dict[str, Any] = {"state": _text(sign_state.get("state")) or "absent", "path": qual.THEMES_PATH}
+    if sign["state"] == "corrupt":
+        sign = _corrupt_part(sign, "THEMES_CORRUPT", sign_state)
+    elif sign["state"] != "absent":
+        signed = _object(sign_state.get("codebook"))
+        sign |= {"file": _opt(sign_state.get("file")), "sha256": _short(sign_state.get("sha256")),
+                 "by": _opt(sign_state.get("by")), "at": _opt(sign_state.get("at")),
+                 "codebook_version": _int(signed.get("version")), "codebook_sha256": _short(signed.get("sha256")),
+                 "transcripts": len(_list(sign_state.get("transcripts"))),
+                 "reasons": _reasons(sign_state.get("reasons")), "signoffs": _int(sign_state.get("signoffs"))}
+    warnings = _warnings(book_state.get("warnings")) + _warnings(sign_state.get("warnings"))
+    return {"gate": qual.ANALYSIS_GATE, "passed": bool(sign_state.get("passed")), "codebook": book, "signoff": sign,
+            "warnings": warnings}
+
+
+_PLAN_TEXT = ("protocol_revision", "by", "at")
+_ROUND_ITEM = ("n", "agree", "agreement_percent", "median", "q1", "q3", "iqr")
+_CHANGE = ("agreement_percent", "median", "iqr")
+_LAYER = ("influence", "dependence", "influence_rank", "dependence_rank")
+
+
+def _plan(cons: Any, state: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {"state": _text(state.get("state")) or "absent", "path": cons.PLAN_PATH}
+    if out["state"] == "corrupt":
+        return _corrupt_part(out, "PLAN_CORRUPT", state)
+    if out["state"] == "absent":
+        return out
+    scale = _object(state.get("scale"))
+    return out | {"rounds": _int(state.get("rounds")), "threshold": _number(state.get("threshold")),
+                  "scale": {"min": _int(scale.get("min")), "max": _int(scale.get("max"))},
+                  "agree_from": _int(state.get("agree_from"))} | {key: _opt(state.get(key)) for key in _PLAN_TEXT} | {
+        "reasons": _reasons(state.get("reasons")), "changes": _int(state.get("changes"))}
+
+
+def _round_item(item: dict[str, Any]) -> dict[str, Any]:
+    change = item.get("change")
+    shown = None
+    if isinstance(change, dict):
+        shown = {"previous_round": _int(change.get("previous_round"))} \
+            | {key: _number(change.get(key)) for key in _CHANGE} \
+            | {"consensus_previous": bool(change.get("consensus_previous"))}
+    return {"item": _text(item.get("item"))} | {key: _number(item.get(key)) for key in _ROUND_ITEM} \
+        | {"consensus": bool(item.get("consensus")), "change": shown}
+
+
+def _rounds(cons: Any, results: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {"state": _text(results.get("state")) or "absent", "path": cons.ROUNDS_PATH}
+    if out["state"] == "corrupt":
+        return _corrupt_part(out, "ROUNDS_CORRUPT", results) | {"rounds": []}
+    rows = []
+    for row in _list(results.get("rounds")):
+        if not isinstance(row, dict):
+            continue
+        items = row.get("items")
+        rows.append({"round": _int(row.get("round")), "state": _text(row.get("state")),
+                     "reasons": _reasons(row.get("reasons")), "file": _opt(row.get("file")),
+                     "sha256": _short(row.get("sha256")), "responders": _int(row.get("responders")),
+                     "responses": _int(row.get("responses")), "items_count": _int(row.get("items_count")),
+                     "consensus_items": _int(row.get("consensus_items")), "by": _opt(row.get("by")),
+                     "at": _opt(row.get("at")),
+                     "items": None if not isinstance(items, list)
+                     else [_round_item(item) for item in items if isinstance(item, dict)]})
+    return out | {"rounds": rows}
+
+
+def _micmac(cons: Any, state: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {"state": _text(state.get("state")) or "absent", "path": cons.MICMAC_PATH}
+    if out["state"] == "corrupt":
+        return _corrupt_part(out, "MICMAC_CORRUPT", state)
+    if out["state"] == "absent":
+        return out
+    layers = {name: [v for v in _list(_object(state.get(name)).get("variables")) if isinstance(v, dict)]
+              for name in ("direct", "indirect")}
+
+    def layer(name: str, index: int) -> dict[str, Any] | None:
+        rows = layers[name]
+        if index >= len(rows):
+            return None
+        return {key: _int(rows[index].get(key)) for key in _LAYER} | {"quadrant": _text(rows[index].get("quadrant"))}
+
+    return out | {"file": _opt(state.get("file")), "sha256": _short(state.get("sha256")), "by": _opt(state.get("by")),
+                  "at": _opt(state.get("at")), "power": _int(state.get("power")),
+                  "power_mode": _opt(state.get("power_mode")), "stable": bool(state.get("stable")),
+                  "p_value": _int(state.get("p_value")), "p_entries": _int(state.get("p_entries")),
+                  "reasons": _reasons(state.get("reasons")), "records": _int(state.get("records")),
+                  "variables": [{"name": _text(v.get("name")), "direct": layer("direct", i), "indirect": layer("indirect", i)}
+                                for i, v in enumerate(layers["direct"])]}
+
+
+def _consensus(mods: dict[str, Any], root: Path) -> dict[str, Any]:
+    """The panel, the plan, every round's agreement per item and MICMAC, as ``consensus`` reads
+    them; never a comment, an individual rating or a member's note."""
+    cons = mods["consensus"]
+    status = _object(cons.consensus_status(root))
+    gate, panel_state = _object(status.get("rounds")), _object(status.get("panel"))
+    panel: dict[str, Any] = {"state": _text(panel_state.get("state")) or "absent", "path": cons.PANEL_PATH,
+                             "size": _int(panel_state.get("size")) or 0,
+                             "members": [{"member": _text(m.get("member")), "expertise": _opt(m.get("expertise"))}
+                                         for m in _list(panel_state.get("members")) if isinstance(m, dict)]}
+    if panel["state"] == "corrupt":
+        panel = _corrupt_part(panel, "PANEL_CORRUPT", panel_state)
+    return {"gate": _text(gate.get("gate")) or cons.GATE, "state": _text(gate.get("state")) or "absent",
+            "passed": bool(gate.get("passed")), "planned": _int(gate.get("planned")),
+            "missing": [k for k in _list(gate.get("missing")) if _int(k) is not None], "panel": panel,
+            "plan": _plan(cons, _object(status.get("plan"))),
+            "rounds": _rounds(cons, _object(cons.round_results(root))),
+            "micmac": _micmac(cons, _object(status.get("micmac"))), "warnings": _warnings(status.get("warnings"))}
+
+
+_QUALITATIVE_BUILDERS: dict[str, Callable[[dict[str, Any], Path], dict[str, Any]]] = {
+    "transcripts": _transcripts, "themes": _themes, "consensus": _consensus,
+}
+
+
+def _qualitative_shown(root: Path, line: str, name: str) -> bool:
+    return line in QUALITATIVE_KINDS or any((root / rel).exists() for rel in _QUALITATIVE_SHOWN_BY[name])
+
+
 _MEASUREMENT_BUILDERS: dict[str, Callable[[dict[str, Any], Path], dict[str, Any]]] = {
     "instruments": _instruments, "measurements": _measurements, "uncertainty": _uncertainty,
     "agreement": _agreement,
@@ -686,6 +907,14 @@ def _modules(root: Path) -> tuple[dict[str, Any], dict[str, str], list[str]]:
     return mods, missing, warnings
 
 
+def _qualitative_module(name: str) -> tuple[Any | None, str | None]:
+    """``(module, None)`` or ``(None, why)`` for a reader module of :data:`QUALITATIVE_MODULES`."""
+    try:
+        return importlib.import_module(f"{_CORE}.{QUALITATIVE_MODULES[name]}"), None
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 - an absent module is reported, never raised
+        return None, f"{name} ({_CORE}.{QUALITATIVE_MODULES[name]}) did not load: {type(exc).__name__}: {exc}"
+
+
 def _measurement_module() -> tuple[Any | None, str | None]:
     try:
         return importlib.import_module(f"{_CORE}.{MEASUREMENT_MODULE}"), None
@@ -725,6 +954,19 @@ def view(root: Path) -> dict[str, Any]:
             out["allocation"] = _unavailable(MODULE_UNAVAILABLE, missing.get("records", "records did not load"))
     elif _allocation_shown(records, root, line):
         out["allocation"] = _section(lambda: _allocation(mods, root))
+    shown = [name for name in QUALITATIVE_SECTIONS if _qualitative_shown(root, line, name)]
+    loaded: dict[str, tuple[Any | None, str | None]] = {}
+    for name in shown:
+        need = QUALITATIVE_NEEDS[name]
+        if need not in loaded:
+            loaded[need] = _qualitative_module(need)
+            if loaded[need][0] is None:
+                warnings.append(loaded[need][1] or f"{need} did not load")
+        module, why = loaded[need]
+        if module is None:
+            out[name] = _unavailable(MODULE_UNAVAILABLE, why or f"{need} did not load")
+        else:
+            out[name] = _section(lambda build=_QUALITATIVE_BUILDERS[name], mod={need: module}: build(mod, root))
     return out
 
 
@@ -777,4 +1019,5 @@ def checklist(root: Path, guideline: str | None = None) -> dict[str, Any]:
 
 __all__ = ["ALLOCATION_KINDS", "DEPOSIT_KINDS", "EMPIRICAL_KINDS", "GUIDELINE_NOT_THIS_LINE", "MEASUREMENT_KINDS", "MEASUREMENT_MODULE",
            "MEASUREMENT_RECORDS", "MEASUREMENT_SECTIONS", "MODULE_UNAVAILABLE", "MODULES", "NOT_A_STUDY_WORKSPACE",
-           "NO_CHECKLIST", "SECTIONS", "checklist", "checklist_refusal", "load_datasets_cli", "refusal", "view"]
+           "NO_CHECKLIST", "QUALITATIVE_KINDS", "QUALITATIVE_MODULES", "QUALITATIVE_RECORDS", "QUALITATIVE_SECTIONS",
+           "SECTIONS", "checklist", "checklist_refusal", "load_datasets_cli", "refusal", "view"]

@@ -807,7 +807,17 @@ statement, the list's path, row count and short sha256, the protocol revision it
 bound to, who recorded it, and whether it is current or stale (the list changed,
 missing, unreadable or outside the workspace, or the protocol amended or not current),
 read only through `records.allocation_state`; the allocation list itself stays the
-operator's and concealed, and the tab never shows any of its values. The
+operator's and concealed, and the tab never shows any of its values. A
+`qualitative-participatory` workspace, or any workspace holding the matching record,
+adds `transcripts` (gate G-TRANSCRIPTS: per registration the participant code, kind,
+file, character count, short sha256, consent and de-identification statements, who
+and when, current or stale, and the totals), `themes` (gate G-ANALYSIS: the codebook
+versions and the operator's theme sign-off with the codebook version and the number
+of transcripts it covers) and `consensus` (gate G-ROUNDS: the panel's codes and
+expertise, the plan, per round and item n, percent agreement, median, IQR, consensus
+and the change from the previous round, and the MICMAC ranks and quadrant per
+variable at the power used), read only through `qualitative/records.py` and
+`consensus.py`; never a transcript's text, a comment or an individual rating. The
 `experiment-intervention` board has eleven steps with the gates G-STUDY-PROTOCOL,
 G-REGISTRATION, G-ETHICS, G-ALLOCATION, G-DATA-QC and G-FLOW. A trial with people
 (`human-trial`, and any workspace with no variant agreed) needs a current

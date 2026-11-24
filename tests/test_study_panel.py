@@ -11,7 +11,11 @@ identifier with its scheme, licence, landing page, version, date, who recorded
 it, current or stale with the reasons). An experiment-intervention workspace
 adds the allocation section (method, block size, strata, concealment, the
 list's path, rows and short sha256, the protocol revision, current, stale with
-the reasons, or corrupt), the list itself never shown."""
+the reasons, or corrupt), the list itself never shown. A qualitative-participatory
+workspace adds the transcripts (codes, kinds, consent, de-identification,
+totals), codebook and themes (versions, the theme sign-off) and consensus
+(panel, plan, agreement per round and item, MICMAC ranking and quadrant)
+sections, never a transcript's text, a comment or an individual rating."""
 
 from __future__ import annotations
 
@@ -30,6 +34,8 @@ from tests.test_study_view_measurement import RAW, agree as agree_type, measurem
 from tests.test_study_view_deposit import DOI, deposit as record_deposit, own as own_resource
 from tests.test_study_view import lock as lock_protocol
 from tests.test_study_view_allocation import CONCEALMENT, TOKENS, allocate
+from tests.test_study_view_qualitative import TOKENS as QUAL_TOKENS, codebook, consensus_records, signoff, \
+    transcripts as register_transcripts
 from papersmith.core import init as init_module
 
 STATIC = Path(server.__file__).resolve().parent / "static"
@@ -416,6 +422,199 @@ class AllocationPanelTests(unittest.TestCase):
         self.assertIn("records &lt;gone&gt;", out)
         without = {key: value for key, value in self.view.items() if key != "allocation"}
         self.assertNotIn('data-study-section="allocation"', run(without)["html"])
+
+
+@unittest.skipUnless(NODE, "node is required to run the panel")
+class QualitativePanelTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        holder = tempfile.TemporaryDirectory(prefix="study-panel-qp-", ignore_cleanup_errors=True)
+        cls.addClassCleanup(holder.cleanup)
+        root = Path(holder.name).resolve() / "ws"
+        init_module.initialize(root, tools=("claude",), run_npm=False, run_env=False, kind="qualitative-participatory")
+        register_transcripts(root)
+        codebook(root)
+        signoff(root)
+        consensus_records(root)
+        cls.view = TestClient(server.create_app(root)).get("/api/study").json()
+        for name in ("transcripts", "themes", "consensus"):
+            assert cls.view[name]["available"], cls.view[name]
+
+    def copy(self) -> dict:
+        return json.loads(json.dumps(self.view))
+
+    def test_the_transcripts_section_in_english(self) -> None:
+        out = run(self.view)["html"]
+        self.assertIn('data-study-section="transcripts"', out)
+        self.assertIn("<h3>Transcripts</h3>", out)
+        self.assertIn("qual_cli.py transcripts add --by &lt;name&gt; --file &lt;file&gt; --participant &lt;code&gt;", out)
+        self.assertIn("the assistant never writes, edits or reads out a transcript and never invents or polishes a "
+                      "quote", out)
+        self.assertIn('<p class="rv-ok">Gate G-TRANSCRIPTS passed: every registered transcript holds the bytes it was '
+                      "registered with.</p>", out)
+        self.assertIn("<p>3 participant(s), 3 transcript registration(s), 0 stale.</p>", out)
+        sha = self.view["transcripts"]["transcripts"][0]["sha256"]
+        self.assertIn(f"<td>P01</td><td>Interview</td><td>data/p01.txt</td><td>{self.view['transcripts']['transcripts'][0]['characters']}</td>"
+                      f"<td>{sha}</td><td>Written consent &lt;form C-12&gt;</td>"
+                      "<td>Names and places replaced by codes</td><td>Ana Ruiz, ", out)
+        self.assertIn("<td>P02</td><td>Focus group</td>", out)
+        self.assertNotIn("<form C-12>", out)
+        for token in QUAL_TOKENS:
+            self.assertNotIn(token, out)
+
+    def test_the_themes_section_in_english(self) -> None:
+        out = run(self.view)["html"]
+        self.assertIn("<h3>Codebook and themes</h3>", out)
+        self.assertIn("the assistant may propose codes and themes, only the operator records a codebook version "
+                      "(qual_cli.py codebook record --by &lt;name&gt; --file &lt;codebook&gt;) and signs the themes off "
+                      "(qual_cli.py themes signoff --by &lt;name&gt; --file &lt;themes&gt;)", out)
+        self.assertIn('<p class="rv-ok">Version 1 (analysis/codebook.md) is current: the file holds the bytes '
+                      "recorded.</p>", out)
+        sign = self.view["themes"]["signoff"]
+        self.assertIn('<p class="rv-ok">Gate G-ANALYSIS passed: the operator&#39;s sign-off covers the current themes, '
+                      "codebook and transcripts.</p>", out)
+        self.assertIn(f"<td>analysis/themes.md</td><td>{sign['sha256']}</td><td>1</td><td>3</td><td>Luis Mora, ", out)
+        self.assertIn("1 sign-off(s) in total.", out)
+
+    def test_the_consensus_section_in_english(self) -> None:
+        out = run(self.view)["html"]
+        self.assertIn("<h3>Consensus rounds</h3>", out)
+        for command in ("consensus_cli.py panel add --by &lt;name&gt;", "consensus_cli.py plan record --by &lt;name&gt;",
+                        "consensus_cli.py round record --by &lt;name&gt;", "consensus_cli.py micmac compute --by &lt;name&gt;"):
+            self.assertIn(command, out)
+        self.assertIn("the assistant never enters or edits a rating", out)
+        self.assertIn("never a comment or an individual rating", out)
+        self.assertIn('<p class="rv-ok">Gate G-ROUNDS passed: the plan is current and its 2 round(s) are recorded and '
+                      "current.</p>", out)
+        self.assertIn("<p>4 member(s), by code.</p>", out)
+        self.assertIn("<td>P01</td><td>nurse &lt;primary care&gt;</td>", out)
+        self.assertIn("<td>2</td><td>75%</td><td>1 to 5</td><td>4</td><td>protocol/study-protocol-walking-v01.md</td>", out)
+        self.assertIn("<h4>Round 1</h4>", out)
+        self.assertIn("Current: 1 of 2 item(s) reached consensus.", out)
+        self.assertIn('<td>I1</td><td>4</td><td>75% (3 of 4)</td><td>4</td><td>0.75 (3.5 to 4.25)</td>'
+                      '<td><span class="rv-ok">yes</span></td><td>—</td>', out)
+        self.assertIn('<td>I2</td><td>4</td><td>75% (3 of 4)</td><td>4</td><td>0.5 (3.75 to 4.25)</td>'
+                      '<td><span class="rv-ok">yes</span></td><td>since round 1: agreement +50 points, median +1.5, '
+                      "IQR -1; consensus before: no</td>", out)
+        self.assertIn("Indirect influence at power 3 (raised until the ranking is stable); ranking stable: yes. "
+                      "1 potential (P) entries counted as 4.", out)
+        self.assertIn("<th>Influence rank (M^3)</th>", out)
+        self.assertIn("<td>A</td><td>1</td><td>3</td><td>Influential</td><td>1</td><td>3</td><td>Influential</td>", out)
+        self.assertIn("<td>B</td><td>2</td><td>1</td><td>Relay</td><td>2</td><td>2</td><td>Relay</td>", out)
+        for token in QUAL_TOKENS:
+            self.assertNotIn(token, out)
+        order = [out.index(f'data-study-section="{name}"') for name in ("data", "transcripts", "themes", "consensus",
+                                                                       "analysis")]
+        self.assertEqual(order, sorted(order))
+
+    def test_every_stale_reason_is_named(self) -> None:
+        view = self.copy()
+        view["transcripts"].update(state="stale", passed=False)
+        view["transcripts"]["counts"]["stale"] = 1
+        view["transcripts"]["transcripts"][0].update(state="stale", reasons=["file-changed", "file-outside"])
+        view["themes"]["signoff"].update(state="stale", reasons=[
+            "themes-file-missing", "codebook-changed", "codebook-stale", "transcript-changed", "transcript-added"])
+        view["consensus"]["plan"].update(state="stale", reasons=["protocol-amended", "protocol-changed",
+                                                                 "protocol-absent", "protocol-corrupt"])
+        view["consensus"]["rounds"]["rounds"][1].update(state="stale", items=None, reasons=[
+            "file-unreadable", "file-invalid", "plan-changed", "plan-stale", "plan-missing", "beyond-plan"])
+        view["consensus"]["micmac"].update(state="stale", reasons=["file-missing"])
+        out = run(view)["html"]
+        self.assertIn("Gate G-TRANSCRIPTS open: 1 transcript(s) changed since their registration.", out)
+        self.assertIn("Stale: data/p01.txt changed since it was recorded, data/p01.txt is outside the workspace", out)
+        self.assertIn("Gate G-ANALYSIS open: the sign-off is stale (analysis/themes.md is missing, another codebook "
+                      "version was recorded since, the codebook file changed or its record cannot be read, a "
+                      "signed-off transcript was replaced or changed, a transcript was registered since).", out)
+        self.assertIn("Stale: the protocol was amended since, the protocol is not current, no protocol lock is "
+                      "recorded, the protocol lock cannot be read.", out)
+        self.assertIn("Stale: data/round2.csv cannot be read, data/round2.csv no longer reads as a response file, the "
+                      "plan was recorded again since, the plan covers an earlier protocol, the plan entry it was "
+                      "recorded against is missing, the round lies beyond the planned rounds.", out)
+        self.assertIn("The agreement cannot be computed: the response file no longer holds the recorded bytes.", out)
+        self.assertIn("Stale: data/matrix.csv is missing.", out)
+        es = run(view, lang="es")["html"]
+        self.assertIn("Desactualizada: data/p01.txt cambió desde que se registró", es)
+        self.assertIn("se registró otra versión del libro de códigos desde entonces", es)
+        self.assertIn("la ronda está más allá de las rondas planeadas", es)
+
+    def test_absent_states(self) -> None:
+        view = {**self.view,
+                "transcripts": {"available": True, "gate": "G-TRANSCRIPTS", "state": "absent", "passed": False,
+                                "path": "study/transcripts.json", "transcripts": [], "counts": {}, "kinds": {},
+                                "records": 0, "warnings": []},
+                "themes": {"available": True, "gate": "G-ANALYSIS", "passed": False,
+                           "codebook": {"state": "absent", "path": "study/codebook.json"},
+                           "signoff": {"state": "absent", "path": "study/themes.json"}, "warnings": []},
+                "consensus": {"available": True, "gate": "G-ROUNDS", "state": "absent", "passed": False,
+                              "planned": None, "missing": [], "panel": {"state": "absent", "members": [], "size": 0},
+                              "plan": {"state": "absent"}, "rounds": {"state": "absent", "rounds": []},
+                              "micmac": {"state": "absent"}, "warnings": []}}
+        out = run(view)["html"]
+        self.assertIn("No transcript registered yet (gate G-TRANSCRIPTS): qual_cli.py transcripts add --by &lt;name&gt;", out)
+        self.assertIn("No codebook version recorded yet: qual_cli.py codebook record --by &lt;name&gt;", out)
+        self.assertIn("No theme sign-off recorded yet (gate G-ANALYSIS): qual_cli.py themes signoff --by &lt;name&gt;", out)
+        self.assertIn("No consensus plan recorded yet (gate G-ROUNDS).", out)
+        self.assertIn("No panel member registered yet: consensus_cli.py panel add --by &lt;name&gt;", out)
+        self.assertIn("No round recorded yet: consensus_cli.py round record --by &lt;name&gt;", out)
+        self.assertIn("No MICMAC analysis recorded (optional): consensus_cli.py micmac compute --by &lt;name&gt;", out)
+        self.assertNotIn("<th>Participant</th>", out)
+
+    def test_open_gate_with_missing_rounds(self) -> None:
+        view = self.copy()
+        view["consensus"].update(state="open", passed=False, missing=[2])
+        out = run(view)["html"]
+        self.assertIn('<p class="rv-warn">Gate G-ROUNDS open: 2 round(s) planned, not all recorded and current. '
+                      "Rounds not recorded: 2.</p>", out)
+
+    def test_corrupt_parts(self) -> None:
+        view = {**self.view,
+                "transcripts": {"available": True, "gate": "G-TRANSCRIPTS", "state": "corrupt", "passed": False,
+                                "path": "study/transcripts.json", "code": "TRANSCRIPTS_CORRUPT", "message": "bad <json>"},
+                "themes": {"available": True, "gate": "G-ANALYSIS", "passed": False,
+                           "codebook": {"state": "corrupt", "path": "study/codebook.json", "code": "CODEBOOK_CORRUPT",
+                                        "message": "cb <bad>"},
+                           "signoff": {"state": "corrupt", "path": "study/themes.json", "code": "THEMES_CORRUPT",
+                                       "message": "th <bad>"}, "warnings": []},
+                "consensus": {"available": True, "gate": "G-ROUNDS", "state": "corrupt", "passed": False,
+                              "planned": None, "missing": [],
+                              "panel": {"state": "corrupt", "path": "study/consensus/panel.json", "message": "p <bad>"},
+                              "plan": {"state": "corrupt", "path": "study/consensus/plan.json", "message": "pl <bad>"},
+                              "rounds": {"state": "corrupt", "path": "study/consensus/rounds.json", "message": "r <bad>",
+                                         "rounds": []},
+                              "micmac": {"state": "corrupt", "path": "study/consensus/micmac.json", "message": "m <bad>"},
+                              "warnings": []}}
+        out = run(view)["html"]
+        self.assertIn('<p class="rv-error" role="alert">The transcripts record study/transcripts.json cannot be read: '
+                      "bad &lt;json&gt;</p>", out)
+        self.assertIn("The codebook record study/codebook.json cannot be read: cb &lt;bad&gt;", out)
+        self.assertIn("The themes record study/themes.json cannot be read: th &lt;bad&gt;", out)
+        self.assertIn("Gate G-ROUNDS cannot be evaluated: a consensus record cannot be read.", out)
+        for part, message in (("panel", "p"), ("plan", "pl"), ("rounds", "r"), ("MICMAC", "m")):
+            self.assertIn(f"The {part} record study/consensus/{part.lower()}.json cannot be read: {message} &lt;bad&gt;", out)
+        self.assertIn('data-study-section="protocol"', out)
+
+    def test_spanish(self) -> None:
+        out = run(self.view, lang="es")["html"]
+        for text in ("<h3>Transcripciones</h3>", "<h3>Libro de códigos y temas</h3>", "<h3>Rondas de consenso</h3>",
+                     "<td>Entrevista</td>", "<td>Grupo focal</td>", "<th>Desidentificación</th>",
+                     "el asistente nunca escribe, edita ni lee en voz alta una transcripción",
+                     "el asistente nunca ingresa ni edita una calificación", "<td>75 % (3 de 4)</td>",
+                     "<td>Influyente</td>", "<td>Enlace</td>", "Vigente: 1 de 2 ítem(s) alcanzaron consenso."):
+            self.assertIn(text, out)
+        for text in ("<h3>Transcripts</h3>", "<h3>Consensus rounds</h3>", "<td>Interview</td>"):
+            self.assertNotIn(text, out)
+
+    def test_unavailable_sections_and_a_view_without_them(self) -> None:
+        view = {**self.view, "transcripts": {"available": False, "code": "STUDY_MODULE_UNAVAILABLE",
+                                             "message": "qualitative <gone>"}}
+        out = run(view)["html"]
+        self.assertIn('data-study-section="transcripts"', out)
+        self.assertIn("qualitative &lt;gone&gt;", out)
+        self.assertIn('data-study-section="consensus"', out)
+        without = {key: value for key, value in self.view.items() if key not in ("transcripts", "themes", "consensus")}
+        html = run(without)["html"]
+        for name in ("transcripts", "themes", "consensus"):
+            self.assertNotIn(f'data-study-section="{name}"', html)
 
 
 if __name__ == "__main__":
