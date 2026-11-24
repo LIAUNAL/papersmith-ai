@@ -399,6 +399,11 @@ def rounds_state(root: Path) -> dict:
             base["warnings"].append({"code": "PLAN_CORRUPT", "message": plan["message"]})
             return base | {"state": "corrupt"}
         if plan["state"] == "absent":
+            if results["rounds"]:  # rounds bound to a plan that is gone: owed, never "absent"
+                base["warnings"].append({"code": "ROUNDS_WITHOUT_PLAN", "message": "rounds are recorded but the "
+                                         "consensus plan is missing; the operator records the plan again "
+                                         "(`plan record --by`) and then the rounds"})
+                return base | {"state": "corrupt"}
             base["warnings"].append({"code": "ROUNDS_PLAN_ABSENT", "message": "no consensus plan recorded yet "
                                                                               "(`plan record --by`)"})
             return base | {"state": "absent"}

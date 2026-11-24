@@ -253,6 +253,18 @@ class CodebookAndThemesTests(_Workspace):
         return self.run_cli("themes", "signoff", "--file", "analysis/themes.md", "--by", "Ana Ruiz",
                             "--note", "after the second coding pass")
 
+    def test_a_hand_edited_signoff_with_unhashable_entries_reads_as_corrupt(self) -> None:
+        """themes_state never raises: a signed transcript entry whose participant or file is
+        not a string makes the record corrupt."""
+        self.add()
+        self.codebook()
+        self.assertEqual(self.signoff()[0], 0)
+        path = self.root / "study" / "themes.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["history"][-1]["transcripts"] = [{"participant": ["P01"], "file": {"a": 1}, "sha256": "x"}]
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.assertEqual(records.themes_state(self.root)["state"], "corrupt")
+
     def test_codebook_versions_are_kept_with_history(self) -> None:
         self.refused(self.run_cli("codebook", "record", "--file", "analysis/codebook.md"), "APPROVER_MISSING")
         code, out = self.codebook()

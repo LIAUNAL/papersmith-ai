@@ -127,6 +127,31 @@ class QuotesCheckTests(_Quotes):
         self.paper("\\pquote{P02}{the co-op helped us}")
         self.assertEqual([(f["participant"], f["reason"]) for f in self.failures()], [("P02", "not-found")])
 
+    def focus_group(self, text: str) -> None:
+        self.write("data/fg.txt", text)
+        _register(self.root, "data/fg.txt", "P03")
+        _register(self.root, "data/fg.txt", "P04")
+
+    def test_in_a_focus_group_a_quote_must_lie_in_its_speakers_turn(self) -> None:
+        """A file holding several participants is searched turn by turn: a quote spoken by
+        P04 attributed to P03 fails, and so does a quote running across two turns."""
+        self.focus_group("Moderator: What changed?\nP03: The prices went up.\nP04: We sold the goats.\n")
+        self.paper("\\pquote{P03}{The prices went up.}\n\\pquote{P04}{We sold the goats.}")
+        self.assertEqual(self.failures(), [])
+        self.paper("\\pquote{P03}{We sold the goats.}")
+        self.assertEqual([(f["participant"], f["reason"]) for f in self.failures()], [("P03", "not-found")])
+        self.paper("\\pquote{P03}{The prices went up. P04: We sold}")
+        self.assertEqual([f["reason"] for f in self.failures()], ["not-found"])
+
+    def test_a_focus_group_without_speaker_labels_cannot_verify_a_quote(self) -> None:
+        self.focus_group("The prices went up. We sold the goats.\n")
+        self.paper("\\pquote{P03}{The prices went up.}")
+        self.assertEqual([f["reason"] for f in self.failures()], ["speaker-not-labelled"])
+
+    def test_an_interview_quote_must_be_the_participants_not_the_interviewers(self) -> None:
+        self.paper("\\pquote{P01}{And the co-op?}")
+        self.assertEqual([f["reason"] for f in self.failures()], ["not-found"])
+
     def test_an_unregistered_participant_fails(self) -> None:
         self.paper("\\pquote{P09}{the co-op helped us}")
         self.assertEqual([f["reason"] for f in self.failures()], ["participant-not-registered"])

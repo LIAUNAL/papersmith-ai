@@ -135,6 +135,10 @@ def read_themes(root: Path) -> dict:
         if not (isinstance(entry.get("codebook"), dict) and isinstance(entry.get("transcripts"), list)):
             raise QualitativeError("THEMES_CORRUPT", f"{THEMES_PATH} entry {number} lacks its codebook "
                                                      "and transcripts bindings")
+        if not all(isinstance(t, dict) and all(isinstance(t.get(key), str) for key in ("participant", "file", "sha256"))
+                   for t in entry["transcripts"]):
+            raise QualitativeError("THEMES_CORRUPT", f"{THEMES_PATH} entry {number} binds a transcript without "
+                                                     "a participant, file and sha256 string")
     return data
 
 
@@ -290,6 +294,18 @@ def normalise(text: str) -> str:
     return _BLANKS.sub(" ", text).strip()
 
 
+_TURN = re.compile(r"^[ \t]*([^\s:][^:\n]{0,39}?)[ \t]*:[ \t]", re.MULTILINE)
+
+
+def speaker_turns(text: str, participant: str) -> list[str]:
+    """The turns of ``text`` spoken by ``participant``: a turn starts at a line labelled
+    ``<speaker>:`` and runs to the next labelled line. Empty when no line names them, so
+    a quote is searched within one turn of its own speaker, never across turns."""
+    marks = list(_TURN.finditer(text))
+    return [text[mark.end():(marks[i + 1].start() if i + 1 < len(marks) else len(text))]
+            for i, mark in enumerate(marks) if mark.group(1) == participant]
+
+
 def quote_text(latex: str) -> str:
     """A quote's LaTeX source as the words it prints: specials unescaped, ties and control
     spaces read as blanks, then ``normalise``."""
@@ -382,7 +398,8 @@ def check_quotes(root: Path, paper_dir: Path) -> dict:
 
     Returns ``{"quotes", "verified", "transcripts", "failures", "files"}`` where each failure
     is ``{file, line, participant, reason, quote}`` (``reason``: ``not-found``,
-    ``participant-not-registered``, ``transcript-stale``, ``quote-empty``, ``quote-malformed``;
+    ``participant-not-registered``, ``transcript-stale``, ``speaker-not-labelled``, ``quote-empty``,
+    ``quote-malformed``;
     ``quote`` is the paper's text, at most 300 characters), or ``{"corrupt": <message>}`` when
     ``study/transcripts.json`` is unreadable. Reads the transcripts only to search them;
     never returns their text. ``paper_dir`` must lie in the workspace (the caller checks)."""
@@ -395,16 +412,29 @@ def check_quotes(root: Path, paper_dir: Path) -> dict:
         return {"corrupt": error.message}
     texts: dict[str, list[str]] = {}
     stale: set[str] = set()
-    for entry in registered(history):
+    unlabelled: set[str] = set()
+    entries = registered(history)
+    sharing: dict[str, int] = {}
+    for entry in entries:
+        sharing[entry["file"]] = sharing.get(entry["file"], 0) + 1
+    for entry in entries:
         texts.setdefault(entry["participant"], [])
         if file_reason(root, entry["file"], entry["sha256"]) is not None:
             stale.add(entry["participant"])
             continue
         path = confine(root, entry["file"])
         try:
-            texts[entry["participant"]].append(normalise(path.read_bytes().decode("utf-8")))
+            raw = path.read_bytes().decode("utf-8")
         except (OSError, UnicodeDecodeError, AttributeError):
             stale.add(entry["participant"])
+            continue
+        own = speaker_turns(raw, entry["participant"])
+        if own:
+            texts[entry["participant"]].extend(normalise(turn) for turn in own)
+        elif sharing[entry["file"]] == 1:
+            texts[entry["participant"]].append(normalise(raw))
+        else:  # a shared file whose turns do not name this participant cannot attribute a quote
+            unlabelled.add(entry["participant"])
     quotes = verified = 0
     failures = []
     files = []
@@ -428,7 +458,8 @@ def check_quotes(root: Path, paper_dir: Path) -> dict:
             elif quote["participant"] not in texts:
                 reason = "participant-not-registered"
             elif not any(text in transcript for transcript in texts[quote["participant"]]):
-                reason = "transcript-stale" if quote["participant"] in stale else "not-found"
+                reason = ("transcript-stale" if quote["participant"] in stale
+                          else "speaker-not-labelled" if quote["participant"] in unlabelled else "not-found")
             if reason is None:
                 verified += 1
             else:

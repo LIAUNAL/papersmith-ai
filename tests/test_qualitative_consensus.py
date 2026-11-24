@@ -274,6 +274,18 @@ class Rounds(Workspace):
         self.plan("--reason", "recorded against the amended protocol")
         self.assertEqual(self.ok("round", "status")["plan"]["state"], "current")
 
+    def test_rounds_left_without_their_plan_are_flagged_not_absent(self) -> None:
+        """A plan file removed after rounds were recorded leaves orphaned rounds: G-ROUNDS is
+        corrupt with a warning, never 'absent' as if nothing were owed."""
+        from skills._core.qualitative import consensus
+        self.ready()
+        self.responses("round1.csv", ROUND_1)
+        self.record_round(1, "round1.csv")
+        (self.root / "study" / "consensus" / "plan.json").unlink()
+        state = consensus.rounds_state(self.root)
+        self.assertEqual((state["state"], state["passed"]), ("corrupt", False))
+        self.assertIn("ROUNDS_WITHOUT_PLAN", [w["code"] for w in state["warnings"]])
+
     def test_g_rounds_needs_every_planned_round_current(self) -> None:
         from skills._core.qualitative import consensus
         self.assertEqual(consensus.rounds_state(self.root)["state"], "absent")

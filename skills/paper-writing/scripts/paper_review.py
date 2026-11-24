@@ -499,7 +499,7 @@ def _validate_checklist_gaps(gaps) -> list[str]:
             if not isinstance(gap, dict) or not _checklist_item(gap.get("item")) or not _text(gap.get("gap"))]
 
 
-def _rate_criteria(data: dict, criteria: tuple[str, ...], optional: tuple[str, ...] = ()) -> list[str]:
+def _validate_criteria_ratings(data: dict, criteria: tuple[str, ...], optional: tuple[str, ...] = ()) -> list[str]:
     """Criteria rated on the measurement scale and the overall a round asserts.
 
     `optional` names the criteria that may also be `not applicable`.
@@ -536,7 +536,7 @@ def _validate_rated_criteria(data: dict, context: dict, criteria: tuple[str, ...
     errors = []
     if not _text(data.get("recommendation")):
         errors.append("recommendation must be non-empty text")
-    errors += _rate_criteria(data, criteria, (optional,) if optional else ())
+    errors += _validate_criteria_ratings(data, criteria, (optional,) if optional else ())
     errors += _validate_checklist_gaps(data.get("checklist_gaps", []))
     checklist = data.get("checklist")
     if checklist is not None and checklist != context["checklist"]:
@@ -579,11 +579,13 @@ def _shape_data_descriptor(data: dict, context: dict) -> dict:
 
 
 def qualitative_basis(paper_dir: Path) -> dict:
-    """The variant the operator agreed for a qualitative-participatory paper, or None.
+    """``{"variant": <id or None>}``: the variant the operator agreed for a
+    qualitative-participatory paper.
 
     Read from `.papersmith/paper_type.json` (`agreed_variant`), only when the
     agreed type is `qualitative-participatory` and the variant is one this
-    rubric knows; a missing or unreadable file reads as None.
+    rubric knows; otherwise, or when the file is missing or unreadable, the
+    variant is None. Always a dict, never None itself.
     """
     try:
         decision = json.loads((paper_dir.parent / PAPER_TYPE).read_text(encoding="utf-8"))
@@ -617,11 +619,11 @@ def _validate_qualitative_study(data: dict, context: dict) -> list[str]:
     variant, variant_errors = _qualitative_variant(data, context)
     errors += variant_errors
     if variant is None:
-        return errors + _rate_criteria(data, QUALITATIVE_COMMON)
+        return errors + _validate_criteria_ratings(data, QUALITATIVE_COMMON)
     errors += [f"{name} does not apply to the {variant} variant"
                for other, block in QUALITATIVE_VARIANTS.items() if other != variant
                for name in block if name in data]
-    errors += _rate_criteria(data, QUALITATIVE_COMMON + QUALITATIVE_VARIANTS[variant],
+    errors += _validate_criteria_ratings(data, QUALITATIVE_COMMON + QUALITATIVE_VARIANTS[variant],
                              QUALITATIVE_NOT_APPLICABLE.get(variant, ()))
     errors += _validate_checklist_gaps(data.get("checklist_gaps", []))
     allowed, checklist = QUALITATIVE_CHECKLISTS[variant], data.get("checklist")

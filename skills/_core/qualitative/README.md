@@ -107,7 +107,11 @@ defined in the preamble, for example, as
 
 The text may span lines; a `%` comment hides a quote. `quotes check` scans every `.tex` file under the
 paper directory except `translations/` and checks that each quote occurs in a
-registered, current transcript of its participant after normalising only
+registered, current transcript of its participant, within one turn of that
+participant (a turn starts at a line labelled `<code>:` and runs to the next
+labelled line; a file registered to one participant whose lines name no turn of
+its code is searched whole, and a shared file such as a focus group must label
+its turns), after normalising only
 whitespace (runs of blanks and line breaks, `~`, `\ `), quote ligatures
 (double and single TeX quotes and the typographic quotes, read as `"` and
 `'`) and the LaTeX escapes of
@@ -115,7 +119,7 @@ special characters (`\% \& \# \$ \_ \{ \}`). Case, punctuation, spelling and
 word order are compared as they are, so a polished or invented quote fails;
 an omission (`[…]`) is written as two quotes. A failure names the file, the
 line where the quote starts, the participant, the reason (`not-found`,
-`participant-not-registered`, `transcript-stale`, `quote-empty`,
+`participant-not-registered`, `transcript-stale`, `speaker-not-labelled`, `quote-empty`,
 `quote-malformed`) and the paper's own words, never the transcript around
 them; any failure exits 1 with `QUOTE_NOT_FOUND`.
 
