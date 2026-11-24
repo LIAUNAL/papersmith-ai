@@ -239,6 +239,30 @@ class EthicsTests(StudyWorkspace):
         self.approved()
         self.assertFalse(self.ok("status")["ethics"]["current"])
 
+    def test_the_unbound_statement_is_current_only_for_its_own_case(self) -> None:
+        """Only an experience report's not-applicable ethics statement may be unbound: a draft
+        revision or a change of variant makes it stale, and an unbound registration or a
+        hand-edited approved ethics entry never reads as current."""
+        self.agree("qualitative-participatory", "experience-report")
+        self.ok("ethics", "record", "--by", "Ana Ruiz", "--not-applicable", "--reason", "no participant data")
+        self.assertTrue(self.ok("status")["ethics"]["current"])
+        self.agree("qualitative-participatory", "qualitative-mixed")
+        self.assertFalse(self.ok("status")["ethics"]["current"])
+        self.agree("qualitative-participatory", "experience-report")
+        self.revision(1)
+        self.assertFalse(self.ok("status")["ethics"]["current"])
+        (self.root / "protocol" / "study-protocol-walking-v01.md").unlink()
+        path = self.root / "study" / "ethics.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["history"][-1]["status"] = "approved"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.assertFalse(self.ok("status")["ethics"]["current"])
+        registration = self.root / "study" / "registration.json"
+        registration.write_text(json.dumps({"schema": 1, "history": [
+            {"by": "Ana Ruiz", "at": "2026-01-01T00:00:00Z", "status": "not-applicable", "reason": "none",
+             "protocol_revision": None, "protocol_sha256": None}]}), encoding="utf-8")
+        self.assertFalse(self.ok("status")["registration"]["current"])
+
     def test_only_an_experience_report_without_any_protocol_skips_the_lock(self) -> None:
         not_applicable = ("--not-applicable", "--reason", "no participants")
         for type_id, variant in (("qualitative-participatory", "qualitative-mixed"),

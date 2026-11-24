@@ -210,8 +210,8 @@ class StepsTests(QualBoardCase):
         self.write(root, "idea.txt", IDEA + " We add a document analysis.")
         self.run_cli(root, PAPER_TYPE, "accept", "--root", str(root), "--by", "Ana Ruiz", "--idea-file",
                      str(root / "idea.txt"))
-        if empirical_board.agreed_type(root)["stale"]:
-            self.assertEqual(empirical_board.qual_variant(root), ("qualitative-mixed", True))
+        self.assertTrue(empirical_board.agreed_type(root)["stale"])
+        self.assertEqual(empirical_board.qual_variant(root), ("qualitative-mixed", True))
 
 
 # --------------------------------------------------------------------------- G-STUDY-PROTOCOL and G-ETHICS
@@ -640,6 +640,23 @@ class ReadOnlyAndCardTests(QualBoardCase):
         self.assertIn("study/transcripts.json", artifacts)
         self.assertIn("study/consensus/rounds.json", artifacts)
         self.assertNotIn("study/p09.txt", artifacts)
+
+    def test_participant_files_stay_hidden_however_registered_or_when_a_register_is_unreadable(self) -> None:
+        """A registration stored with a non-normalised path still hides its file, and an
+        unreadable register hides every non-record file under study/ (fail closed)."""
+        root = self.workspace()
+        self.write(root, "study/p09.txt", "P09: words\n")
+        self.write(root, "study/notes.md", "operator notes\n")
+        self.write(root, "study/transcripts.json", json.dumps({"schema": 1, "history": [
+            {"participant": "P09", "file": "study/../study/./p09.txt", "sha256": "x"}]}))
+        listed = {a["rel_path"] for a in empirical_board.artifacts(root)}
+        self.assertNotIn("study/p09.txt", listed)
+        self.assertIn("study/notes.md", listed)
+        self.write(root, "study/transcripts.json", "{ not json")
+        listed = {a["rel_path"] for a in empirical_board.artifacts(root)}
+        self.assertNotIn("study/p09.txt", listed)
+        self.assertNotIn("study/notes.md", listed)
+        self.assertIn("study/transcripts.json", listed)
 
     def test_a_full_study_passes_every_operator_gate_per_variant(self) -> None:
         root = self.workspace()

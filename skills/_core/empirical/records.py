@@ -102,6 +102,18 @@ def no_protocol(root: Path) -> bool:
     return protocol_state(root)["state"] == "absent" and latest_revision(Path(root)) is None
 
 
+def unbound_ethics_allowed(root: Path) -> bool:
+    """K5: an experience report (qualitative-participatory, agreed variant
+    experience-report) with no protocol at all may state why no ethics record
+    applies without a lock. The one case where an ethics entry is unbound."""
+    try:
+        agreed = json.loads((Path(root) / ".papersmith" / "paper_type.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return (isinstance(agreed, dict) and agreed.get("agreed") == "qualitative-participatory"
+            and agreed.get("agreed_variant") == "experience-report" and no_protocol(root))
+
+
 def protocol_state(root: Path) -> dict:
     """``state``: ``absent`` (never approved), ``current``, ``changed`` (``reasons``: the locked
     revision was edited or removed, or a newer managed revision exists) or ``corrupt``."""
@@ -265,9 +277,10 @@ def gate_state(root: Path, gate: str) -> dict | None:
         lock = read_lock(root)
     except StudyError:
         lock = None
-    if lock is None and entry.get("protocol_sha256") is None:
-        # An experience report's statement made without any protocol (K5) holds while none exists.
-        current = no_protocol(root)
+    if (gate == "ethics" and entry.get("status") == "not-applicable" and lock is None
+            and entry.get("protocol_sha256") is None):
+        # An experience report's statement made without any protocol (K5) holds while that is still the case.
+        current = unbound_ethics_allowed(root)
     else:
         current = lock is not None and entry.get("protocol_sha256") == lock["sha256"]
     entry.update(state="recorded", current=current, records=len(history), warnings=_warnings(gate, entry, current))

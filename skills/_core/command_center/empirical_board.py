@@ -3025,19 +3025,34 @@ _ARTIFACTS = (
 )
 
 
+#: Marker: a participant register could not be read, so every non-record file
+#: under ``study/`` is withheld from the artifacts list.
+_UNKNOWN_PARTICIPANT_FILES = "\0unknown"
+
+
 def _participant_files(root: Path) -> set[str]:
     """The files that hold what participants said or rated: the registered
     transcripts and the consensus rounds' response files. They are never
     listed as artifacts, wherever the operator keeps them."""
     out: set[str] = set()
+    workspace = root.resolve()
     for relative in ("study/transcripts.json", "study/consensus/rounds.json"):
+        if not (root / relative).is_file():
+            continue
         try:
             history = json.loads((root / relative).read_text(encoding="utf-8")).get("history") or []
         except (OSError, ValueError, AttributeError):
+            history = None
+        if not isinstance(history, list):
+            # Unreadable register: which files it binds is unknown, so fail closed (see artifacts).
+            out.add(_UNKNOWN_PARTICIPANT_FILES)
             continue
-        for entry in history if isinstance(history, list) else ():
+        for entry in history:
             if isinstance(entry, dict) and isinstance(entry.get("file"), str):
-                out.add(Path(entry["file"]).as_posix())
+                try:  # normalised the same way as the listed artifacts, so any spelling matches
+                    out.add((root / entry["file"]).resolve().relative_to(workspace).as_posix())
+                except (OSError, ValueError):
+                    continue
     return out
 
 
@@ -3056,7 +3071,14 @@ def artifacts(root: Path) -> list[dict[str, Any]]:
             if path.name.startswith(".") or not path.is_file():
                 continue
             rel = path.relative_to(root).as_posix()
-            if rel in private:
+            try:
+                resolved = path.resolve().relative_to(root.resolve()).as_posix()
+            except (OSError, ValueError):  # a link out of the workspace is never listed
+                continue
+            if rel in private or resolved in private:
+                continue
+            if (_UNKNOWN_PARTICIPANT_FILES in private and rel.startswith("study/")
+                    and path.suffix not in (".json", ".jsonl")):
                 continue
             name = rel[len("datasets/"):] if folder == "datasets" else path.name
             out.append({"rel_path": rel, "name": name, "category": category,
