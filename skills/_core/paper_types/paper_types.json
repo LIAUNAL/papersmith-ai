@@ -206,8 +206,8 @@
     {
       "id": "experiment-intervention",
       "name": "Experiment or intervention",
-      "status": "planned",
-      "line": null,
+      "status": "available",
+      "line": "experiment-intervention",
       "summary": "Studies that assign a treatment and measure its effect against a control: trials with people, or field, crop and animal experiments.",
       "novelty": "The measured effect of the treatment on its participants, plots, crops or animals.",
       "stages": [
@@ -230,6 +230,8 @@
           "id": "human-trial",
           "name": "Trial with people",
           "summary": "Clinical, educational or consumer trials that assign an intervention to people; ethics, consent and prospective registration.",
+          "checklist": "consort-2025",
+          "flow_template": null,
           "guidelines": [
             {
               "name": "CONSORT 2025",
@@ -255,6 +257,8 @@
           "id": "field-experiment",
           "name": "Field or agricultural experiment",
           "summary": "Plots, blocks, crops or animals under controlled treatments, with true replication and mixed models.",
+          "checklist": "arrive-2",
+          "flow_template": null,
           "guidelines": [
             {
               "name": "ARRIVE 2.0 (animals)",

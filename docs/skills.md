@@ -105,6 +105,9 @@ modules and to the measurement core. The `lab-simulation` line is registered
 beside it (`smith init --kind lab-simulation`) and its skill is documented with
 it, in section 26. Section 27, `data-resource`, is the data-resource line's own
 skill; it routes to the shared empirical modules and to the `datasets` skill.
+Section 28, `experiment-intervention`, is the experiment-intervention line's
+own skill; it routes to the shared empirical modules, the allocation record
+included.
 
 ---
 
@@ -3609,12 +3612,20 @@ satisfied.
 
 **What it never does.** It never generates, labels or alters data, never annotates on the annotators' behalf and never lets a toy set stand in for the resource. It never collects data, contacts participants, deposits or uploads: collection, consent, licence and deposit stay human. It never records an ethics approval, own-data statement, licence decision, de-identification, protocol approval or deposit on the operator's behalf, never chooses the primary outcome, sources, annotation scheme or licence, never relabels an exploratory baseline and never marks a `needs-judgment` item satisfied.
 
+### 28. `experiment-intervention` — a trial with people or a field, crop or animal experiment
+
+**When.** Only in an experiment-intervention workspace (`smith init --kind experiment-intervention`, or `smith kind set experiment-intervention` after `/paper-type`): a study that assigns a treatment and measures its effect against a control. Other workspaces never receive this skill.
+
+**How it runs.** `/experiment-intervention` owns no script and no record; the agreed variant chooses the checklist: `human-trial` reports on `consort-2025` (CONSORT 2025), `field-experiment` on `arrive-2` (ARRIVE 2.0; a plot or crop experiment uses its design and analysis items where they apply). The overview comes from `study_cli.py status`, `study_cli.py allocation status`, `datasets_cli.py --root . status`, `analysis_cli.py status`, `flow_cli.py status` and `checklist_cli.py check --guideline <id>`. The stages are the protocol (G-STUDY-PROTOCOL) and its registration (`study_cli.py registration record --first-enrolment`; G-REGISTRATION requires a prospective registration for a trial with people, and a retrospective one is stated with its reason); ethics and consent (G-ETHICS); the allocation the operator generated and concealed with their own tool, recorded with `study_cli.py allocation record --by` and bound to the list's sha256 and the protocol lock (G-ALLOCATION); intervention and follow-up with the operator's data (`datasets_cli.py own`, `dictionary`, `qc`, `deidentify`; G-DATA-QC); the pre-specified analysis in the labelled analysis log; the flow of units (`flow_cli.py template consort-2025 --arm`, `check`, `render`, `signoff --by`; G-FLOW, required for a trial with people, while a field experiment may report a table of its experimental units); writing from the CONSORT 2025-shaped contracts, whose randomisation block reads the allocation record and never the list; the checklist and the `empirical-study` final judge.
+
+**What it never does.** It never generates measurements or data and never generates, reads out or alters the allocation sequence: it never opens the allocation list or prints an assignment. It never enrols participants, delivers the intervention or collects data: ethics, consent, data collection and the choice of primary outcome stay human. It never records a protocol approval, registration, ethics record, allocation, own-data statement, de-identification or flow sign-off on the operator's behalf, never presents a retrospective registration as prospective, never relabels an exploratory analysis and never marks a `needs-judgment` item satisfied.
+
 ### Shared empirical modules (for the empirical paper lines)
 
 These modules live under `skills/_core/` and serve the empirical lines of the
 paper-type catalogue: the observational and measurement, hardware,
-lab-simulation and data-resource lines today, and the planned ones
-(experiments and interventions, qualitative work). No applied-AI or review flow calls them.
+lab-simulation, data-resource and experiment-intervention lines today, and the
+planned one (qualitative work). No applied-AI or review flow calls them.
 
 **Participant flow** (`skills/_core/participant_flow/`, `flow_cli.py template|check|render|signoff|status`): the operator enters the counts of a CONSORT 2025, STROBE or STARD 2015 flow in `study/flow.json`; `check` validates the arithmetic (each stage equals the previous one minus its exclusions, arms sum to the randomised total, analysed never exceeds followed); `render` draws `paper/Figures/participant-flow.svg` only from valid counts; `signoff --by <operator>` records in `study/flow-signoffs.json` a sign-off bound to the hash of the counts and the figure, stale after any edit. An agent never enters a count or signs.
 

@@ -135,6 +135,21 @@ LINES: dict[str, PaperLine] = {
                  "persistent identifier"),
         empirical=True,
     ),
+    # A trial with people or a field, crop or animal experiment that assigns a
+    # treatment; its allocation is the operator's record bound to the protocol
+    # lock (`study_cli.py allocation record`).
+    "experiment-intervention": PaperLine(
+        sections_dir="sections-experiment-intervention/",
+        only_prefixes=("sections-experiment-intervention/", "skills/experiment-intervention/"),
+        shared_sections=("sections/10-back-matter.md",),
+        flow_template="paper-flow-experiment-intervention.md.tpl",
+        topology="empirical",
+        label="experiment or intervention (CONSORT 2025, ARRIVE 2.0)",
+        summary=("a trial with people or a field, crop or animal experiment: locked protocol and prospective "
+                 "registration, ethics and consent, the operator's allocation record, data QC, pre-specified "
+                 "analysis, flow of units"),
+        empirical=True,
+    ),
 }
 DEFAULT_PAPER_KIND = "experimental"
 

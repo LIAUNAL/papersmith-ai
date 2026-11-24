@@ -696,6 +696,49 @@ licence and deposit stay human. `/data-resource status` reports where the
 resource stands. Details in
 [skills/data-resource/SKILL.md](skills/data-resource/SKILL.md).
 
+### The experiment-intervention line
+
+A study that assigns a treatment and measures its effect against a control is
+the experiment-intervention line: a trial with people, reported against
+CONSORT 2025 (`consort-2025`), or a field, crop or animal experiment, reported
+against ARRIVE 2.0 (`arrive-2`).
+
+```bash
+smith init ~/papers/reading-trial --kind experiment-intervention \
+  --title "A reading programme versus usual teaching: a cluster randomised trial"
+```
+
+An existing workspace moves to it with `smith kind set experiment-intervention
+--by "<operator>"` once `/paper-type` has scored the idea. The workspace has
+the empirical folders (`protocol/`, `study/`, `analysis/`, `datasets/`), the
+CONSORT 2025-shaped section contracts in `sections/` (with optional
+field-experiment blocks for plots, blocks and experimental units, mixed models
+and animal husbandry), the `/experiment-intervention` skill, and its
+`CLAUDE.md` states the line's flow:
+
+1. **Protocol and registration** with `/study-protocol-deliberation`,
+   approved and locked by the operator (G-STUDY-PROTOCOL); a trial with
+   people is registered prospectively, before its first enrolment
+   (G-REGISTRATION).
+2. **Ethics and consent** (G-ETHICS), recorded by the operator.
+3. **Allocation, blocks and sample size** (G-ALLOCATION): the operator
+   generates and conceals the sequence with their own tool and records it
+   with `study_cli.py allocation record --by`, bound to the list's hash and
+   the protocol lock.
+4. **Intervention and follow-up** (G-DATA-QC): the operator's data, its
+   dictionary, quality checks and de-identification.
+5. **Pre-specified analysis** in the labelled analysis log.
+6. **Flow of units** (G-FLOW, required for a trial with people): the CONSORT
+   flow diagram from the operator's signed counts.
+7. **Writing** with `/paper-writing`, the variant's checklist and the final
+   judge on the empirical-study rubric.
+
+The assistant never generates data and never generates, reads out or alters
+the allocation sequence; ethics, consent, data collection and the choice of
+primary outcome stay human. `/experiment-intervention status` reports where
+the study stands. Details in
+[skills/experiment-intervention/SKILL.md](skills/experiment-intervention/SKILL.md).
+
 ### Open the dashboard from another device
 
 `smith ui` listens on `127.0.0.1` only, so only the machine that runs it can open
