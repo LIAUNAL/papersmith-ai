@@ -12,8 +12,9 @@ method, review, observational and measurement study, experiment or
 intervention, qualitative, participatory and consensus study, hardware,
 laboratory and simulation science, and data resource. Some group variants that
 share one flow and change only the reporting checklist. Applied AI, review,
-observational and measurement studies, hardware and laboratory or simulation
-science already have a flow (a workspace line); the others are planned.
+observational and measurement studies, hardware, laboratory or simulation
+science and data resources already have a flow (a workspace line); the others
+are planned.
 
 The applied-AI flow does not depend on this skill: a workspace with no agreed
 type stays on its line, as before.
