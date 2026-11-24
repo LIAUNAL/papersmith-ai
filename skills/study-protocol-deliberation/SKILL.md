@@ -256,7 +256,14 @@ leaves the lock `changed` until the operator runs `protocol amend --by
 keeps the history. The ethics approval (`ethics record`) and the registration
 (`registration record`, a retrospective one flagged) are recorded beside the
 lock and bound to its sha256, so an amendment marks them stale until the
-operator records them again. You never run `approve`, `amend` or `record`
+operator records them again. In an intervention study the allocation record
+follows the locked protocol: the operator generates the allocation sequence
+with their own tool or service and runs `study_cli.py allocation record --by
+<operator> --file <list> --method <method> --concealment <how>`, which binds
+the list's sha256 and row count and the lock's sha256 (gate G-ALLOCATION) and
+goes stale when the list changes or the protocol is amended. You never
+generate, read out, alter or reveal an allocation sequence, and never open the
+allocation list. You never run `approve`, `amend` or `record`
 yourself: you tell the operator the command. Until `protocol status` answers
 `current`, never describe a revision as locked or approved, and never
 describe the study as approved by an ethics committee or registered unless

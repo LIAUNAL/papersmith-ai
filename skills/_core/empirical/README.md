@@ -1,7 +1,8 @@
 # empirical
 
 The operator records of an empirical study: the approval of its protocol
-(gate G-STUDY-PROTOCOL), its ethics approval and its registration; and the
+(gate G-STUDY-PROTOCOL), its ethics approval, its registration and, for an
+intervention study, its allocation list (gate G-ALLOCATION); and the
 labelled log of every analysis run. Every one
 of them is the operator's act, named with `--by`; an agent never approves,
 amends or records any of them on the operator's behalf (decisions D5 and D6
@@ -20,6 +21,7 @@ skill's single parser, `protocol-fields.ts`.
 | `study/protocol.lock.json` | the approved revision, its sha256, who approved it and when, and every amendment |
 | `study/ethics.json` | the history of ethics records, each bound to the lock's sha256 |
 | `study/registration.json` | the history of registration records, each bound to the lock's sha256 |
+| `study/allocation.json` | the history of allocation records: the operator's allocation list bound by its sha256 and row count, never its content, and the lock's sha256 |
 
 ```json
 {"schema": 1, "gate": "G-STUDY-PROTOCOL",
@@ -43,7 +45,20 @@ A registration entry is `{"by", "at", "status": "registered", "registry",
 `"retrospective": null`. `retrospective` is `true` when the registration date
 is after the first-enrolment date (ICMJE asks for registration at or before
 the first enrolment), `false` when it is not, and `null` when no
-first-enrolment date was given.
+first-enrolment date was given; `false` is a prospective registration, which a
+board reads from `records.gate_state(root, "registration")["retrospective"]`.
+
+An allocation entry is `{"by", "at", "file", "sha256", "rows", "method",
+"block_size", "strata", "concealment", "note", "protocol_revision",
+"protocol_sha256"}`: `file` is the workspace-relative path of the allocation
+list, `rows` its non-blank lines (a header line counts), `method` one of
+`simple`, `block`, `stratified`, `minimisation`, `cluster` (a block size goes
+with `block` or `stratified`, permuted blocks within strata), and `block_size`,
+`strata` and `note` are `null` when not given. The record follows the locked
+protocol: the operator generates the allocation sequence with their own tool
+or service and keeps it concealed; the CLI only hashes the list and counts its
+rows. It never reads out, prints or alters the sequence, and an agent never
+generates or reveals one.
 
 ## CLI
 
@@ -55,6 +70,8 @@ python skills/_core/empirical/study_cli.py ethics record --by "<operator>" --com
 python skills/_core/empirical/study_cli.py ethics record --by "<operator>" --not-applicable --reason "<why>" --root .
 python skills/_core/empirical/study_cli.py registration record --by "<operator>" --registry "<name>" --id "<id>" --date YYYY-MM-DD [--first-enrolment YYYY-MM-DD] --root .
 python skills/_core/empirical/study_cli.py registration record --by "<operator>" --not-applicable --reason "<why>" --root .
+python skills/_core/empirical/study_cli.py allocation record --by "<operator>" --file <allocation list> --method simple|block|stratified|minimisation|cluster [--block-size <n>] [--strata "<factors>"] --concealment "<how the sequence was concealed>" [--note "<text>"] --root .
+python skills/_core/empirical/study_cli.py allocation status --root .
 python skills/_core/empirical/study_cli.py status --root .
 ```
 
@@ -73,11 +90,26 @@ python skills/_core/empirical/study_cli.py status --root .
   identical entry over the same lock is refused. After an amendment the
   entry is stale: a warning (`ETHICS_STALE`, `REGISTRATION_STALE`), never a
   refusal, until the operator records it again.
-- `status` reports the three records and every warning: `PROTOCOL_NOT_APPROVED`,
+- `allocation record` refuses, like ethics, until the protocol is approved
+  and current; it also refuses a missing, empty or non-file `--file`, a path
+  outside the workspace (a symbolic link included), `--block-size` (a whole
+  number of at least 2) without `--method block`, `--strata` without
+  `--method stratified` or `minimisation` (which need it), and a missing
+  `--concealment`. An identical entry over the same lock is refused.
+- `allocation status` answers `state`: `absent`, `corrupt`, `current` (the
+  list's bytes unchanged and the lock current and the one it is bound to) or
+  `stale` with `reasons`: `file-changed`, `file-missing`, `file-unreadable`,
+  `protocol-amended` (the lock moved since), `protocol-changed` (the protocol
+  is not current). A stale record warns `ALLOCATION_STALE` until the operator
+  records it again.
+- `status` reports the four records and every warning: `PROTOCOL_NOT_APPROVED`,
   `PROTOCOL_CHANGED`, `PROTOCOL_LOCK_CORRUPT`, `ETHICS_ABSENT`,
   `REGISTRATION_ABSENT`, `ETHICS_STALE`, `REGISTRATION_STALE`,
   `REGISTRATION_RETROSPECTIVE`, `FIRST_ENROLMENT_UNKNOWN`, `ETHICS_CORRUPT`,
-  `REGISTRATION_CORRUPT`.
+  `REGISTRATION_CORRUPT`, `ALLOCATION_STALE`, `ALLOCATION_CORRUPT`. An absent
+  allocation is not a warning: only an intervention study allocates. The
+  importable `records.allocation_state(root)` returns the same object and
+  writes nothing.
 
 Every verb prints one JSON object. A refusal prints `{"ok": false, "error":
 <CODE>, "message": ...}` and exits 1 (usage errors exit 2): `USAGE`,
@@ -87,7 +119,10 @@ Every verb prints one JSON object. A refusal prints `{"ok": false, "error":
 `PROTOCOL_CHANGED`, `PROTOCOL_UNCHANGED`, `AMENDMENT_REASON_MISSING`,
 `FIELD_MISSING`, `FIELDS_CONFLICT`, `REASON_MISSING`, `DATE_INVALID`,
 `TEXT_INVALID`, `RECORD_UNCHANGED`, `ETHICS_CORRUPT`, `REGISTRATION_CORRUPT`,
-`INTERNAL_ERROR`. Writes are atomic.
+`CONCEALMENT_MISSING`, `BLOCK_SIZE_INVALID`, `ALLOCATION_FILE_MISSING`,
+`ALLOCATION_FILE_EMPTY`, `ALLOCATION_FILE_OUTSIDE`, `ALLOCATION_CORRUPT`,
+`INTERNAL_ERROR`. No output or record carries the allocation list's content.
+Writes are atomic.
 
 ## The analysis log
 

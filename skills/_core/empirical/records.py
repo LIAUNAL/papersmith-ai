@@ -9,9 +9,13 @@ only writer of these records (``analysis_cli.py`` writes the analysis log).
                                and the amendments that moved it
     study/ethics.json          the ethics approval (or why none applies)
     study/registration.json    the study registration (or why none applies)
+    study/allocation.json      gate G-ALLOCATION: the operator's allocation list,
+                               bound by its sha256 and row count, never its content
 
-The ethics and registration entries are bound to the lock's sha256: after an
-amendment they are stale, which is a warning (decision D5), never a refusal.
+The ethics, registration and allocation entries are bound to the lock's sha256:
+after an amendment they are stale, which is a warning (decision D5), never a
+refusal. The allocation reader hashes the operator's allocation list and counts
+its rows; it never returns, prints or alters what the list holds (decision J2).
 """
 
 from __future__ import annotations
@@ -26,6 +30,8 @@ GATE = "G-STUDY-PROTOCOL"
 PROTOCOL_DIR = "protocol"
 LOCK_PATH = "study/protocol.lock.json"
 RECORD_PATHS = {"ethics": "study/ethics.json", "registration": "study/registration.json"}
+ALLOCATION_PATH = "study/allocation.json"
+ALLOCATION_GATE = "G-ALLOCATION"
 # The engine writes these bytes first in every managed revision (profile.ts `artifact.marker`).
 MANAGED_MARKER = b"<!-- proposal-workspace:artifact:v1 -->\n"
 REVISION_NAME = re.compile(r"^study-protocol-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)-v(?P<version>\d{2,})\.md$")
@@ -130,22 +136,77 @@ def require_current_lock(root: Path) -> dict:
     return lock
 
 
+def _read_history(root: Path, relative: str, code: str) -> dict:
+    path = Path(root) / relative
+    if not path.is_file():
+        return {"schema": SCHEMA, "history": []}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise StudyError(code, f"{relative} cannot be read as JSON ({exc})") from None
+    if not (isinstance(data, dict) and isinstance(data.get("history"), list)
+            and all(isinstance(entry, dict) for entry in data["history"])):
+        raise StudyError(code, f"{relative} is not a record: a \"history\" list of objects")
+    return data
+
+
 def read_record(root: Path, gate: str) -> dict:
     """The gate's record file, an empty history when absent; ``<GATE>_CORRUPT`` when malformed."""
     if gate not in RECORD_PATHS:
         raise ValueError(f"unknown gate {gate!r}; expected one of {sorted(RECORD_PATHS)}")
-    path = Path(root) / RECORD_PATHS[gate]
-    if not path.is_file():
-        return {"schema": SCHEMA, "history": []}
-    code = f"{gate.upper()}_CORRUPT"
+    return _read_history(root, RECORD_PATHS[gate], f"{gate.upper()}_CORRUPT")
+
+
+def read_allocation(root: Path) -> dict:
+    """``study/allocation.json``, an empty history when absent; ``ALLOCATION_CORRUPT`` when malformed."""
+    return _read_history(root, ALLOCATION_PATH, "ALLOCATION_CORRUPT")
+
+
+def count_rows(data: bytes) -> int:
+    """The non-blank lines of an allocation list (a header line counts); its content is never kept."""
+    return sum(1 for line in data.splitlines() if line.strip())
+
+
+def allocation_state(root: Path) -> dict:
+    """``{"state": "absent"}`` when never recorded, ``{"state": "corrupt", "message"}``, or the latest
+    entry with ``state`` ``current`` (the file's bytes unchanged and the lock current and the one it
+    is bound to) or ``stale``, ``current``, ``reasons`` (``file-missing``, ``file-unreadable``,
+    ``file-changed``, ``protocol-amended``: the lock moved since; ``protocol-changed``: the protocol
+    is not current), ``records`` and ``warnings``. Hashes the file; never returns its content."""
+    root = Path(root)
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise StudyError(code, f"{RECORD_PATHS[gate]} cannot be read as JSON ({exc})") from None
-    if not (isinstance(data, dict) and isinstance(data.get("history"), list)
-            and all(isinstance(entry, dict) for entry in data["history"])):
-        raise StudyError(code, f"{RECORD_PATHS[gate]} is not a record: a \"history\" list of objects")
-    return data
+        history = read_allocation(root)["history"]
+    except StudyError as error:
+        return {"state": "corrupt", "message": error.message}
+    if not history:
+        return {"state": "absent"}
+    entry = dict(history[-1])
+    reasons = []
+    path = root / str(entry.get("file") or "")
+    if not entry.get("file") or not path.is_file():
+        reasons.append("file-missing")
+    else:
+        try:
+            if sha256(path) != entry.get("sha256"):
+                reasons.append("file-changed")
+        except OSError:
+            reasons.append("file-unreadable")
+    try:
+        lock = read_lock(root)
+    except StudyError:
+        lock = None
+    if lock is not None and lock["sha256"] != entry.get("protocol_sha256"):
+        reasons.append("protocol-amended")
+    if protocol_state(root)["state"] != "current":
+        reasons.append("protocol-changed")
+    warnings = []
+    if reasons:
+        warnings.append({"code": "ALLOCATION_STALE",
+                         "message": f"the allocation record of {entry.get('file')} is stale ({', '.join(reasons)}); "
+                                    "the operator records it again against the current file and lock"})
+    entry.update(state="stale" if reasons else "current", current=not reasons, reasons=reasons,
+                 records=len(history), warnings=warnings)
+    return entry
 
 
 def _warnings(gate: str, entry: dict, current: bool) -> list[dict]:
@@ -187,7 +248,8 @@ def gate_state(root: Path, gate: str) -> dict | None:
 
 
 def study_status(root: Path) -> dict:
-    """The protocol, ethics and registration states and every warning, in that order."""
+    """The protocol, ethics, registration and allocation states and every warning, in that order.
+    An absent allocation is not a warning: only an intervention study allocates."""
     protocol = protocol_state(root)
     gates = {gate: gate_state(root, gate) for gate in RECORD_PATHS}
     warnings = []
@@ -206,4 +268,9 @@ def study_status(root: Path) -> dict:
             warnings.append({"code": f"{gate.upper()}_CORRUPT", "message": state["message"]})
         else:
             warnings.extend(state["warnings"])
-    return {"protocol": protocol, **gates, "warnings": warnings}
+    allocation = allocation_state(root)
+    if allocation["state"] == "corrupt":
+        warnings.append({"code": "ALLOCATION_CORRUPT", "message": allocation["message"]})
+    elif allocation["state"] != "absent":
+        warnings.extend(allocation["warnings"])
+    return {"protocol": protocol, **gates, "allocation": allocation, "warnings": warnings}

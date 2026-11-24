@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Operator records of an empirical study: the protocol lock, ethics, registration.
+"""Operator records of an empirical study: the protocol lock, ethics, registration, allocation.
 
     study_cli.py protocol approve --by <operator> [--revision protocol/<file>] --root .
     study_cli.py protocol amend   --by <operator> --reason <why> [--revision protocol/<file>] --root .
@@ -10,6 +10,10 @@
     study_cli.py registration record --by <operator> --registry <name> --id <id> \
         --date <YYYY-MM-DD> [--first-enrolment <YYYY-MM-DD>] --root .
     study_cli.py registration record --by <operator> --not-applicable --reason <text> --root .
+    study_cli.py allocation record --by <operator> --file <allocation list> \
+        --method simple|block|stratified|minimisation|cluster [--block-size <n>] [--strata <text>] \
+        --concealment <how the sequence was concealed> [--note <text>] --root .
+    study_cli.py allocation status --root .
     study_cli.py status --root .
 
 ``protocol approve`` passes gate G-STUDY-PROTOCOL: it pins a managed revision
@@ -19,8 +23,13 @@ newer revision (or to the edited bytes of the locked one) and appends the
 amendment with its reason. ``ethics record`` and ``registration record``
 append the operator's record to ``study/ethics.json`` and
 ``study/registration.json``, bound to the lock's sha256: an amendment makes
-them stale, reported as a warning. Every verb that records takes ``--by``; an
-agent never records any of these on the operator's behalf.
+them stale, reported as a warning. ``allocation record`` (gate G-ALLOCATION)
+appends to ``study/allocation.json`` the sha256 and row count of the allocation
+list the operator generated with their own tool or service, how the sequence
+was concealed, and the lock's sha256; it never reads out, prints or alters the
+sequence, and a changed or removed list or an amendment makes it stale. Every
+verb that records takes ``--by``; an agent never records any of these on the
+operator's behalf, and never generates or reveals an allocation sequence.
 
 Each verb prints one JSON object. A refusal prints ``{"ok": false, "error":
 <CODE>, "message": ...}`` and exits 1 (usage errors exit 2). Refusal codes:
@@ -30,7 +39,9 @@ Each verb prints one JSON object. A refusal prints ``{"ok": false, "error":
 ``PROTOCOL_LOCK_CORRUPT``, ``PROTOCOL_CHANGED``, ``PROTOCOL_UNCHANGED``,
 ``AMENDMENT_REASON_MISSING``, ``FIELD_MISSING``, ``FIELDS_CONFLICT``,
 ``REASON_MISSING``, ``DATE_INVALID``, ``TEXT_INVALID``, ``RECORD_UNCHANGED``,
-``ETHICS_CORRUPT``, ``REGISTRATION_CORRUPT``, ``INTERNAL_ERROR``.
+``ETHICS_CORRUPT``, ``REGISTRATION_CORRUPT``, ``CONCEALMENT_MISSING``,
+``BLOCK_SIZE_INVALID``, ``ALLOCATION_FILE_MISSING``, ``ALLOCATION_FILE_EMPTY``,
+``ALLOCATION_FILE_OUTSIDE``, ``ALLOCATION_CORRUPT``, ``INTERNAL_ERROR``.
 """
 
 from __future__ import annotations
@@ -45,6 +56,7 @@ if _floor_sys.version_info < (3, 11):  # the package floor (pyproject requires-p
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import sys
@@ -62,6 +74,8 @@ StudyError = records.StudyError
 ETHICS_FIELDS = (("committee", "--committee"), ("code", "--code"), ("date", "--date"), ("consent", "--consent"))
 REGISTRATION_FIELDS = (("registry", "--registry"), ("id", "--id"), ("date", "--date"))
 ENTRY_META = ("by", "at")
+ALLOCATION_METHODS = ("simple", "block", "stratified", "minimisation", "cluster")
+STRATA_METHODS = ("stratified", "minimisation")  # stratification factors, or the minimisation factors
 
 
 def _out(payload: dict, code: int = 0) -> int:
@@ -243,14 +257,88 @@ def cmd_registration(args, root: Path) -> dict:
     return _record(root, "registration", by, entry)
 
 
+# --------------------------------------------------------------------------- allocation
+
+
+def _allocation_file(root: Path, given: str | None) -> tuple[str, str, int]:
+    """(workspace-relative path, sha256, rows) of the operator's allocation list.
+
+    Only hashes the bytes and counts the non-blank lines: no message or result carries them."""
+    if not (given or "").strip():
+        raise StudyError("FIELD_MISSING", "--file names the allocation list the operator generated")
+    workspace = root.resolve()
+    candidate = Path(given.strip())
+    resolved = (candidate if candidate.is_absolute() else root / candidate).resolve()
+    if not resolved.is_relative_to(workspace):
+        raise StudyError("ALLOCATION_FILE_OUTSIDE", f"{given} lies outside the workspace; keep the allocation "
+                                                    "list inside it so the record can follow it")
+    if not resolved.is_file():
+        raise StudyError("ALLOCATION_FILE_MISSING", f"{given} is not a file of the workspace")
+    data = resolved.read_bytes()
+    rows = records.count_rows(data)
+    if rows == 0:
+        raise StudyError("ALLOCATION_FILE_EMPTY", f"{given} holds no rows: record the allocation list once it "
+                                                  "is generated")
+    return resolved.relative_to(workspace).as_posix(), hashlib.sha256(data).hexdigest(), rows
+
+
+def _allocation_entry(args, root: Path) -> dict:
+    method = args.method
+    if method is None:
+        raise StudyError("FIELD_MISSING", f"--method is one of {', '.join(ALLOCATION_METHODS)}")
+    if args.block_size is not None and method not in ("block", "stratified"):
+        # Stratified permuted blocks are as common as plain blocks.
+        raise StudyError("FIELDS_CONFLICT", "--block-size goes with --method block or stratified only")
+    strata = None if args.strata is None else _text(args.strata, "--strata")
+    if strata is not None and method not in STRATA_METHODS:
+        raise StudyError("FIELDS_CONFLICT", f"--strata goes with --method {' or '.join(STRATA_METHODS)} only")
+    if method in STRATA_METHODS and not strata:
+        raise StudyError("FIELD_MISSING", f"--method {method} needs --strata (the factors it balances on)")
+    block_size = None
+    if args.block_size is not None:
+        text = args.block_size.strip()
+        block_size = int(text) if text.isdigit() else 0
+        if block_size < 2:
+            raise StudyError("BLOCK_SIZE_INVALID", f"--block-size {args.block_size!r} is not a whole number of "
+                                                   "at least 2")
+    concealment = _text(args.concealment or "", "--concealment")
+    if not concealment:
+        raise StudyError("CONCEALMENT_MISSING", "--concealment states how the sequence was concealed from "
+                                                "those who enrol participants")
+    note = None if args.note is None else (_text(args.note, "--note") or None)
+    file, digest, rows = _allocation_file(root, args.file)
+    return {"file": file, "sha256": digest, "rows": rows, "method": method, "block_size": block_size,
+            "strata": strata, "concealment": concealment, "note": note}
+
+
+def cmd_allocation(args, root: Path) -> dict:
+    if args.action == "status":
+        return {"ok": True, "allocation": records.allocation_state(root)}
+    by = _operator(args)
+    entry = _allocation_entry(args, root)
+    data = records.read_allocation(root)
+    lock = records.require_current_lock(root)
+    entry.update(protocol_revision=lock["revision"], protocol_sha256=lock["sha256"])
+    history = data["history"]
+    if history and {k: v for k, v in history[-1].items() if k not in ENTRY_META} == entry:
+        raise StudyError("RECORD_UNCHANGED", "the allocation record is already current: nothing changed since "
+                                             "it was recorded")
+    history.append({"by": by, "at": _now(), **entry})
+    data["schema"] = records.SCHEMA
+    _write_json(root / records.ALLOCATION_PATH, data)
+    return {"ok": True, "path": records.ALLOCATION_PATH, "allocation": records.allocation_state(root)}
+
+
 def cmd_status(args, root: Path) -> dict:
     return {"ok": True, **records.study_status(root)}
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = _Parser(prog="study_cli.py", description="Study protocol lock, ethics and registration records.")
+    parser = _Parser(prog="study_cli.py",
+                     description="Study protocol lock, ethics, registration and allocation records.")
     sub = parser.add_subparsers(dest="verb", required=True)
-    verbs = {"protocol": cmd_protocol, "ethics": cmd_ethics, "registration": cmd_registration, "status": cmd_status}
+    verbs = {"protocol": cmd_protocol, "ethics": cmd_ethics, "registration": cmd_registration,
+             "allocation": cmd_allocation, "status": cmd_status}
     for name in verbs:
         verb = sub.add_parser(name)
         verb.error = parser.error  # type: ignore[method-assign]
@@ -269,6 +357,15 @@ def main(argv: list[str] | None = None) -> int:
             verb.add_argument(flag, dest=key, default=None)
         verb.add_argument("--not-applicable", action="store_true")
         verb.add_argument("--reason", default=None)
+    allocation = sub.choices["allocation"]
+    allocation.add_argument("action", choices=("record", "status"))
+    allocation.add_argument("--by", default="")
+    allocation.add_argument("--file", default=None)
+    allocation.add_argument("--method", choices=ALLOCATION_METHODS, default=None)
+    allocation.add_argument("--block-size", dest="block_size", default=None)
+    allocation.add_argument("--strata", default=None)
+    allocation.add_argument("--concealment", default=None)
+    allocation.add_argument("--note", default=None)
     args = parser.parse_args(argv)
     try:
         result = verbs[args.verb](args, Path(args.root))
