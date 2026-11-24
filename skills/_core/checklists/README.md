@@ -41,6 +41,7 @@ declarations alone. For PRISMA 2020, `presence` equals the verdict of
 | `cosmin` | COSMIN Reporting Guideline 2.0 (measurement properties of PROMs) | 68 | generic section names |
 | `hardwarex` | HardwareX hardware article template (Version 2, June 2021) | 31 | the hardware line's HardwareX sections |
 | `gum-reporting` | GUM (JCGM 100:2008) clause 7, reporting uncertainty | 18 | generic section names |
+| `datasheets` | Datasheets for Datasets (Gebru et al., Commun ACM 2021) | 50 | the data-resource line's data-descriptor sections |
 
 Sub-items (STROBE 6a/6b, STARD 10a/10b, …) are folded into their numbered
 item, whose question names every part.
@@ -68,6 +69,17 @@ of confidence, components and how they were evaluated, degrees of freedom,
 correlations, the measurement model); each topic starts with its subclause.
 Both are questions only: whether a manuscript gives these is a reader's call,
 and the uncertainty budget itself lives in the measurement core's records.
+
+Datasheets for Datasets (the data-resource line) lists its questions as
+unnumbered bullets in seven sections. Items 1-50 take them one per question in
+the paper's order (motivation 1-3, composition 4-18, collection process 19-29,
+preprocessing/cleaning/labeling 30-32, uses 33-37, distribution 38-43,
+maintenance 44-50), leaving out each section's closing "any other comments"
+bullet; each topic starts with its section. Targets are the data-resource
+line's data-descriptor contracts (background and summary, methods, data
+records, technical validation, usage notes, code availability) and back matter.
+Every item is a question; those about people apply only when the dataset
+relates to people.
 
 ## How blocks and declarations are read
 
