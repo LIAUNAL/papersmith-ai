@@ -338,7 +338,10 @@ class StalenessTests(AllocationWorkspace):
                                   cwd=str(self.base))
             self.outputs += [proc.stdout, proc.stderr]
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-            self.assertTrue(json.loads(proc.stdout)["ok"])
+            out = json.loads(proc.stdout)
+            self.assertTrue(out["ok"])
+        # The status read the workspace given before the action, not the cwd.
+        self.assertEqual(out["allocation"]["state"], "current", out)
         self.assertEqual(self.allocation()["history"][-1]["by"], "Ana Ruiz")
 
     def test_a_stored_path_outside_the_workspace_is_stale_and_never_hashed(self) -> None:

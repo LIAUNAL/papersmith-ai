@@ -167,6 +167,13 @@ def count_rows(data: bytes) -> int:
     return sum(1 for line in data.splitlines() if line.strip())
 
 
+def _is_file(path: Path) -> bool:
+    try:
+        return path.is_file()
+    except (OSError, ValueError):
+        return False
+
+
 def allocation_state(root: Path) -> dict:
     """``{"state": "absent"}`` when never recorded, ``{"state": "corrupt", "message"}``, or the latest
     entry with ``state`` ``current`` (the file's bytes unchanged and the lock current and the one it
@@ -189,13 +196,12 @@ def allocation_state(root: Path) -> dict:
     workspace = root.resolve()
     try:
         path = (root / stored).resolve() if stored else root
-        named = bool(stored) and path.is_file()
     except (OSError, ValueError):  # a hand-edited value that is no valid path names no file
-        path, named = root, False
-        stored = ""
-    if stored and (Path(stored).is_absolute() or not path.is_relative_to(workspace)):
+        path, stored = root, ""
+    outside = bool(stored) and (Path(stored).is_absolute() or not path.is_relative_to(workspace))
+    if outside:  # checked before any stat, so an outside path is never followed
         reasons.append("file-outside")
-    elif not named:
+    elif not stored or not _is_file(path):
         reasons.append("file-missing")
     else:
         try:
