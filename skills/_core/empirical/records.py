@@ -171,7 +171,8 @@ def allocation_state(root: Path) -> dict:
     """``{"state": "absent"}`` when never recorded, ``{"state": "corrupt", "message"}``, or the latest
     entry with ``state`` ``current`` (the file's bytes unchanged and the lock current and the one it
     is bound to) or ``stale``, ``current``, ``reasons`` (``file-missing``, ``file-unreadable``,
-    ``file-changed``, ``protocol-amended``: the lock moved since; ``protocol-changed``: the protocol
+    ``file-changed``, ``file-outside``: the stored path leaves the workspace and is never hashed,
+    ``protocol-amended``: the lock moved since; ``protocol-changed``: the protocol
     is not current), ``records`` and ``warnings``. Hashes the file; never returns its content."""
     root = Path(root)
     try:
@@ -182,8 +183,14 @@ def allocation_state(root: Path) -> dict:
         return {"state": "absent"}
     entry = dict(history[-1])
     reasons = []
-    path = root / str(entry.get("file") or "")
-    if not entry.get("file") or not path.is_file():
+    stored = str(entry.get("file") or "")
+    # The same confinement as `allocation record`: a stored path that is absolute, traverses
+    # out or names a link pointing out of the workspace is never followed nor hashed.
+    workspace = root.resolve()
+    path = (root / stored).resolve() if stored else root
+    if stored and (Path(stored).is_absolute() or not path.is_relative_to(workspace)):
+        reasons.append("file-outside")
+    elif not stored or not path.is_file():
         reasons.append("file-missing")
     else:
         try:

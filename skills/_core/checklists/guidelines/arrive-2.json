@@ -4,7 +4,7 @@
   "name": "ARRIVE guidelines 2.0 (reporting animal research)",
   "version": "2.0 (2020)",
   "url": "https://doi.org/10.1371/journal.pbio.3000410",
-  "citation": "Percie du Sert N, Hurst V, Ahluwalia A, et al. The ARRIVE guidelines 2.0: updated guidelines for reporting animal research. PLoS Biol 2020;18(7):e3000410. Items 1-10 are the Essential 10, items 11-21 the Recommended Set; sub-items (1a/1b, 3a-3c, 9a-9d, ...) are folded into their item. The experiment-intervention line also uses it for a plot or crop field experiment, where its design and analysis items apply: no formal checklist exists for those. See https://arriveguidelines.org",
+  "citation": "Percie du Sert N, Hurst V, Ahluwalia A, et al. The ARRIVE guidelines 2.0: updated guidelines for reporting animal research. PLoS Biol 2020;18(7):e3000410. Items 1-10 are the Essential 10, items 11-21 the Recommended Set; the sub-items each item carries on arriveguidelines.org (for example 1a-1b, 3a-3c, 9a-9d, checked there on 2026-11-24) are folded into their item. The experiment-intervention line also uses it for a plot or crop field experiment, where its design and analysis items apply: no formal checklist exists for those. See https://arriveguidelines.org",
   "lines": ["experiment-intervention"],
   "item_count": 21,
   "items": [

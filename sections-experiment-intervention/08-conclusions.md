@@ -60,13 +60,6 @@
             "file": "sections/08-conclusions.md",
             "quote": "The limitations bound every conclusion; each future direction answers one of them."
           }
-        },
-        {
-          "target": "limitations.lim-reported",
-          "source": {
-            "file": "sections/08-conclusions.md",
-            "quote": "The limitations bound every conclusion; each future direction answers one of them."
-          }
         }
       ]
     }

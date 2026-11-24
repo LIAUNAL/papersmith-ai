@@ -92,16 +92,21 @@ python skills/_core/empirical/study_cli.py status --root .
   refusal, until the operator records it again.
 - `allocation record` refuses, like ethics, until the protocol is approved
   and current; it also refuses a missing, empty or non-file `--file`, a path
-  outside the workspace (a symbolic link included), `--block-size` (a whole
-  number of at least 2) without `--method block`, `--strata` without
+  outside the workspace (a symbolic link included), a list it cannot read
+  (`ALLOCATION_FILE_UNREADABLE`), a `--block-size` that is not a whole number
+  of at least 2 in ASCII digits (`BLOCK_SIZE_INVALID`), `--block-size`
+  without `--method block` or `stratified`, `--strata` without
   `--method stratified` or `minimisation` (which need it), and a missing
   `--concealment`. An identical entry over the same lock is refused.
 - `allocation status` answers `state`: `absent`, `corrupt`, `current` (the
   list's bytes unchanged and the lock current and the one it is bound to) or
   `stale` with `reasons`: `file-changed`, `file-missing`, `file-unreadable`,
+  `file-outside` (the stored path is absolute, traverses out of the workspace
+  or names a link pointing out of it; that file is never hashed),
   `protocol-amended` (the lock moved since), `protocol-changed` (the protocol
   is not current). A stale record warns `ALLOCATION_STALE` until the operator
-  records it again.
+  records it again. It takes no record option: `allocation status --file
+  <other>` is a usage error, never a silent read of the recorded list.
 - `status` reports the four records and every warning: `PROTOCOL_NOT_APPROVED`,
   `PROTOCOL_CHANGED`, `PROTOCOL_LOCK_CORRUPT`, `ETHICS_ABSENT`,
   `REGISTRATION_ABSENT`, `ETHICS_STALE`, `REGISTRATION_STALE`,
@@ -120,7 +125,7 @@ Every verb prints one JSON object. A refusal prints `{"ok": false, "error":
 `FIELD_MISSING`, `FIELDS_CONFLICT`, `REASON_MISSING`, `DATE_INVALID`,
 `TEXT_INVALID`, `RECORD_UNCHANGED`, `ETHICS_CORRUPT`, `REGISTRATION_CORRUPT`,
 `CONCEALMENT_MISSING`, `BLOCK_SIZE_INVALID`, `ALLOCATION_FILE_MISSING`,
-`ALLOCATION_FILE_EMPTY`, `ALLOCATION_FILE_OUTSIDE`, `ALLOCATION_CORRUPT`,
+`ALLOCATION_FILE_EMPTY`, `ALLOCATION_FILE_OUTSIDE`, `ALLOCATION_FILE_UNREADABLE`, `ALLOCATION_CORRUPT`,
 `INTERNAL_ERROR`. No output or record carries the allocation list's content.
 Writes are atomic.
 

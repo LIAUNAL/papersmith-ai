@@ -188,13 +188,13 @@ No paper of this line has been measured yet: the rules below carry the group's w
 
 | Input | Unblocks |
 |---|---|
-| `problem-statement` — The gap is what the existing trials and experiments leave unanswered for this population or system. | `intro-evidence-gap` |
-| `gap` — The contributions are the objectives of the locked protocol and the prespecified hypotheses. | `intro-objectives` |
 | `skeleton` — The skeleton is the order of the sections that follow. | `intro-skeleton` |
 
 ### Internal chain
 
+The two facts the blocks pass along are produced in this section, not supplied from outside it.
+
 | Block | Depends on |
 |---|---|
-| `introduction.intro-evidence-gap` — The gap is what the existing trials and experiments leave unanswered for this population or system. | `introduction.intro-context` |
-| `introduction.intro-objectives` — The contributions are the objectives of the locked protocol and the prespecified hypotheses. | `introduction.intro-evidence-gap` |
+| `introduction.intro-evidence-gap` — needs the `problem-statement`: what is not yet known about the intervention, its comparator and the outcome, and why it matters. | `introduction.intro-context` — produces the `problem-statement` |
+| `introduction.intro-objectives` — needs the `gap`: what the existing trials and experiments leave unanswered for this population or system. | `introduction.intro-evidence-gap` — produces the `gap` |

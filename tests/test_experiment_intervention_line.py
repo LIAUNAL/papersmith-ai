@@ -510,6 +510,28 @@ class FlowTextTests(CommandCheck):
                 self.assertTrue((ROOT / "skills" / name / "SKILL.md").is_file(), name)
 
 
+class ContractCommandTests(CommandCheck):
+    """The section contracts direct the writer to CLI commands; each one must exist as written."""
+
+    #: The study CLIs a contract may name; a span naming one of them is checked against its `--help`.
+    STUDY_CLIS = ("study_cli.py", "datasets_cli.py", "analysis_cli.py", "flow_cli.py", "checklist_cli.py")
+
+    def test_every_study_cli_command_the_contracts_name_exists(self) -> None:
+        named = rf"(?:^|/)(?:{'|'.join(map(re.escape, self.STUDY_CLIS))}) \S"
+        commands = []
+        for name in FILES:
+            body = body_of(CONTRACTS / name)
+            found = [command for command in cli_spans(body) if re.search(named, command)]
+            # Every mention of a study CLI is a backticked command the check below can read.
+            mentions = re.findall(rf"(?:{'|'.join(map(re.escape, self.STUDY_CLIS))})\s", body)
+            self.assertEqual(len(found), len(mentions), f"{name}: a study CLI named outside a command span")
+            commands += [(name, command) for command in found]
+        self.assertGreaterEqual(len(commands), 8)
+        for name, command in commands:
+            with self.subTest(contract=name, command=command):
+                self.check_command(command)
+
+
 class SkillTests(CommandCheck):
     def test_the_skill_names_the_line(self) -> None:
         text = skill_text()

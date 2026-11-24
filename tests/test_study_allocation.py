@@ -190,6 +190,30 @@ class RefusalTests(AllocationWorkspace):
         self.refused("TEXT_INVALID", *self.record_args("--note", "a\x07b", *by))
         self.assertFalse((self.root / "study" / "allocation.json").exists())
 
+    def test_a_non_ascii_digit_block_size_is_refused(self) -> None:
+        # Superscript two passes str.isdigit() but int() rejects it; Arabic-Indic four passes
+        # int() but is not the ASCII whole number the record documents.
+        self.approved()
+        self.sequence()
+        for size in ("\u00b2", "\u0664", "4\u00b2"):
+            with self.subTest(size=size):
+                self.refused("BLOCK_SIZE_INVALID", "allocation", "record", "--file", "allocation/sequence.csv",
+                             "--method", "block", "--block-size", size, *CONCEALMENT, "--by", "Ana Ruiz")
+        self.assertFalse((self.root / "study" / "allocation.json").exists())
+
+    def test_status_takes_no_record_option(self) -> None:
+        """`allocation status` reads the recorded list only: a record option is a usage error, never ignored."""
+        self.approved()
+        self.sequence()
+        self.sequence(name="allocation/other.csv")
+        self.ok(*self.record_args("--by", "Ana Ruiz"))
+        for option in (("--file", "allocation/other.csv"), ("--by", "Ana Ruiz"), ("--method", "simple"),
+                       ("--block-size", "4"), ("--strata", "site"), CONCEALMENT, ("--note", "x")):
+            with self.subTest(option=option[0]):
+                exit_code, out = self.run_cli("allocation", "status", *option)
+                self.assertEqual((exit_code, out["ok"], out["error"]), (2, False, "USAGE"), out)
+        self.assertEqual(self.ok("allocation", "status")["allocation"]["state"], "current")
+
     def test_stratified_permuted_blocks_record_their_block_size(self) -> None:
         # Stratified permuted blocks are a common trial design.
         self.approved()
@@ -222,6 +246,15 @@ class RefusalTests(AllocationWorkspace):
         link = self.root / "allocation" / "link.csv"
         os.symlink(outside, link)
         self.refused("ALLOCATION_FILE_OUTSIDE", *self.record_args(*by, file="allocation/link.csv"))
+        self.assertFalse((self.root / "study" / "allocation.json").exists())
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root reads a file whatever its mode")
+    def test_an_unreadable_file_is_refused(self) -> None:
+        self.approved()
+        path = self.sequence()
+        path.chmod(0)
+        self.addCleanup(path.chmod, 0o644)
+        self.refused("ALLOCATION_FILE_UNREADABLE", *self.record_args("--by", "Ana Ruiz"))
         self.assertFalse((self.root / "study" / "allocation.json").exists())
 
     def test_an_identical_record_is_refused(self) -> None:
@@ -272,6 +305,55 @@ class StalenessTests(AllocationWorkspace):
         self.recorded().unlink()
         state = self.status()
         self.assertEqual((state["state"], state["reasons"]), ("stale", ["file-missing"]))
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root reads a file whatever its mode")
+    def test_an_unreadable_file_makes_the_record_stale(self) -> None:
+        path = self.recorded()
+        path.chmod(0)
+        self.addCleanup(path.chmod, 0o644)
+        state = self.status()
+        self.assertEqual((state["state"], state["reasons"]), ("stale", ["file-unreadable"]))
+
+    def test_a_stored_path_outside_the_workspace_is_stale_and_never_hashed(self) -> None:
+        """A hand-edited `file` that leaves the workspace is confined like the record command:
+        an absolute path, a traversal or a link pointing out is `file-outside`, never hashed."""
+        path = self.recorded()
+        outside = self.base / "outside.csv"
+        outside.write_text(SEQUENCE, encoding="utf-8")
+        link = self.root / "allocation" / "link.csv"
+        os.symlink(outside, link)
+        record = self.root / "study" / "allocation.json"
+        original = record.read_text(encoding="utf-8")
+        hashed: list[Path] = []
+        if str(REPO) not in sys.path:
+            sys.path.insert(0, str(REPO))
+        from skills._core.empirical import records
+        real_sha256 = records.sha256
+
+        def spy(target: Path) -> str:
+            hashed.append(Path(target))
+            return real_sha256(target)
+
+        for stored in ("../outside.csv", str(outside), "allocation/link.csv",
+                       "allocation/../../outside.csv"):
+            with self.subTest(stored=stored):
+                data = json.loads(original)
+                data["history"][-1]["file"] = stored
+                record.write_text(json.dumps(data), encoding="utf-8")
+                state = self.status()
+                self.assertEqual((state["state"], state["current"], state["reasons"]),
+                                 ("stale", False, ["file-outside"]))
+                self.assertEqual([w["code"] for w in state["warnings"]], ["ALLOCATION_STALE"])
+                hashed.clear()
+                records.sha256 = spy
+                try:
+                    self.assertEqual(records.allocation_state(self.root)["reasons"], ["file-outside"])
+                finally:
+                    records.sha256 = real_sha256
+                self.assertNotIn(outside.resolve(), [target.resolve() for target in hashed])
+        record.write_text(original, encoding="utf-8")
+        self.assertEqual(self.status()["state"], "current")
+        self.assertTrue(path.is_file())
 
     def test_an_amendment_makes_the_record_stale_until_recorded_again(self) -> None:
         self.recorded()

@@ -18,16 +18,26 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from papersmith.core import init as init_module
+from papersmith.core import init as init_module, manifest
 from skills._core.checklists import engine
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "skills" / "_core" / "checklists" / "checklist_cli.py"
 README = ROOT / "skills" / "_core" / "checklists" / "README.md"
 
-#: The experiment-intervention line's IMRaD contract ids plus back matter.
-ALLOWED_TARGETS = {"title-and-keywords", "abstract", "introduction", "methods", "results", "discussion",
-                   "limitations", "conclusions", "back-matter"}
+
+
+def line_contract_ids(kind: str = "experiment-intervention") -> dict[str, set[str]]:
+    """Section id -> block ids of the contracts a line registers: its own ``sections_dir`` plus
+    the shared sections (the back matter), read from each contract's JSON front matter."""
+    line = manifest.LINES[kind]
+    paths = sorted((ROOT / line.sections_dir).glob("*.md")) + [ROOT / name for name in line.shared_sections]
+    sections: dict[str, set[str]] = {}
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        head = json.loads(text.split("\n---\n", 1)[0].removeprefix("---\n"))
+        sections.setdefault(head["section"], set()).update(block["id"] for block in head.get("blocks", []))
+    return sections
 
 #: CONSORT 2025's six checklist sections and the items each holds, in order.
 CONSORT_SECTIONS = (("Title and abstract", 1), ("Open science", 4), ("Introduction", 2), ("Methods", 14),
@@ -85,12 +95,18 @@ class TrialGuidelineDataTests(unittest.TestCase):
                     self.assertEqual(entry.get("evidence", []), [])
 
     def test_targets_are_only_the_line_contract_ids(self):
+        sections = line_contract_ids()
+        self.assertIn("back-matter", sections)
         for gid in GUIDELINES:
             for entry in engine.load_guideline(gid)["items"]:
                 with self.subTest(gid=gid, item=entry["number"]):
                     self.assertEqual(set(entry["targets"]), {"default"})
                     self.assertTrue(entry["targets"]["default"])
-                    self.assertTrue(set(entry["targets"]["default"]) <= ALLOWED_TARGETS)
+                    for target in entry["targets"]["default"]:
+                        section, _, block = target.partition(".")
+                        self.assertIn(section, sections, target)
+                        if block:
+                            self.assertIn(block, sections[section], target)
 
     def test_consort_places_open_science_in_methods_and_back_matter(self):
         items = {e["number"]: e["targets"]["default"] for e in engine.load_guideline("consort-2025")["items"]}

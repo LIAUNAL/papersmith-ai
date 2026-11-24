@@ -274,7 +274,11 @@ def _allocation_file(root: Path, given: str | None) -> tuple[str, str, int]:
                                                     "list inside it so the record can follow it")
     if not resolved.is_file():
         raise StudyError("ALLOCATION_FILE_MISSING", f"{given} is not a file of the workspace")
-    data = resolved.read_bytes()
+    try:
+        data = resolved.read_bytes()
+    except OSError as error:
+        raise StudyError("ALLOCATION_FILE_UNREADABLE", f"{given} cannot be read ({error.strerror or error}); "
+                                                       "let the workspace read the allocation list") from None
     rows = records.count_rows(data)
     if rows == 0:
         raise StudyError("ALLOCATION_FILE_EMPTY", f"{given} holds no rows: record the allocation list once it "
@@ -297,7 +301,9 @@ def _allocation_entry(args, root: Path) -> dict:
     block_size = None
     if args.block_size is not None:
         text = args.block_size.strip()
-        block_size = int(text) if text.isdigit() else 0
+        # ASCII digits only: str.isdigit() admits superscripts int() rejects, and int()
+        # admits other scripts' digits the record does not document.
+        block_size = int(text) if text.isascii() and text.isdecimal() else 0
         if block_size < 2:
             raise StudyError("BLOCK_SIZE_INVALID", f"--block-size {args.block_size!r} is not a whole number of "
                                                    "at least 2")
@@ -342,7 +348,8 @@ def main(argv: list[str] | None = None) -> int:
     for name in verbs:
         verb = sub.add_parser(name)
         verb.error = parser.error  # type: ignore[method-assign]
-        verb.add_argument("--root", default=".")
+        if name != "allocation":  # its two actions own their options, `--root` included
+            verb.add_argument("--root", default=".")
     protocol = sub.choices["protocol"]
     protocol.add_argument("action", choices=("approve", "amend", "status"))
     protocol.add_argument("--by", default="")
@@ -357,15 +364,21 @@ def main(argv: list[str] | None = None) -> int:
             verb.add_argument(flag, dest=key, default=None)
         verb.add_argument("--not-applicable", action="store_true")
         verb.add_argument("--reason", default=None)
-    allocation = sub.choices["allocation"]
-    allocation.add_argument("action", choices=("record", "status"))
-    allocation.add_argument("--by", default="")
-    allocation.add_argument("--file", default=None)
-    allocation.add_argument("--method", choices=ALLOCATION_METHODS, default=None)
-    allocation.add_argument("--block-size", dest="block_size", default=None)
-    allocation.add_argument("--strata", default=None)
-    allocation.add_argument("--concealment", default=None)
-    allocation.add_argument("--note", default=None)
+    # `record` and `status` are subparsers of their own so `status` refuses a record
+    # option (a usage error) instead of ignoring it.
+    actions = sub.choices["allocation"].add_subparsers(dest="action", required=True)
+    record = actions.add_parser("record")
+    status = actions.add_parser("status")
+    for action in (record, status):
+        action.error = parser.error  # type: ignore[method-assign]
+        action.add_argument("--root", default=".")
+    record.add_argument("--by", default="")
+    record.add_argument("--file", default=None)
+    record.add_argument("--method", choices=ALLOCATION_METHODS, default=None)
+    record.add_argument("--block-size", dest="block_size", default=None)
+    record.add_argument("--strata", default=None)
+    record.add_argument("--concealment", default=None)
+    record.add_argument("--note", default=None)
     args = parser.parse_args(argv)
     try:
         result = verbs[args.verb](args, Path(args.root))

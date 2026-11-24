@@ -85,8 +85,12 @@ implications wait for the discussion.
 ## Block `r-participant-flow` (variant `human-trial`, required there; optional otherwise)
 
 CONSORT 2025 item 22. The participant-flow is the operator's counts of units randomised, receiving the intervention, followed and analysed in each arm, checked and signed.
-Required in a workspace of the `human-trial` variant (gate G-FLOW): a trial
-with people always reports its flow. For each group, the numbers randomly
+Required in a workspace of the `human-trial` variant: a trial with people
+always reports its flow. The block graph declares this block optional because
+a field experiment may never keep a flow; for a `human-trial` workspace the
+requirement is enforced by the command center board's G-FLOW gate, not by the
+block graph: the gate stays failed while the flow is missing, its counts
+inconsistent, or its figure stale or unsigned. For each group, the numbers randomly
 assigned, receiving the intended intervention, followed up and analysed for
 the primary outcome, with the losses and exclusions after randomisation and
 their reasons, copied from `study/flow.json`. The flow diagram
