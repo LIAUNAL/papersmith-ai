@@ -8,7 +8,10 @@ A hardware workspace adds the measurement sections (instruments, data files,
 uncertainty budgets, agreement) and a second guideline, gum-reporting, run from
 its own button. A data-resource workspace adds the deposit section (repository,
 identifier with its scheme, licence, landing page, version, date, who recorded
-it, current or stale with the reasons)."""
+it, current or stale with the reasons). An experiment-intervention workspace
+adds the allocation section (method, block size, strata, concealment, the
+list's path, rows and short sha256, the protocol revision, current, stale with
+the reasons, or corrupt), the list itself never shown."""
 
 from __future__ import annotations
 
@@ -25,6 +28,8 @@ from skills._core.command_center import server
 from tests.test_study_view import KIND, build_study
 from tests.test_study_view_measurement import RAW, agree as agree_type, measurement_records
 from tests.test_study_view_deposit import DOI, deposit as record_deposit, own as own_resource
+from tests.test_study_view import lock as lock_protocol
+from tests.test_study_view_allocation import CONCEALMENT, TOKENS, allocate
 from papersmith.core import init as init_module
 
 STATIC = Path(server.__file__).resolve().parent / "static"
@@ -331,6 +336,86 @@ class DepositPanelTests(unittest.TestCase):
         self.assertIn('data-study-section="data"', out)
         without = {key: value for key, value in self.view.items() if key != "deposit"}
         self.assertNotIn('data-study-section="deposit"', run(without)["html"])
+
+
+@unittest.skipUnless(NODE, "node is required to run the panel")
+class AllocationPanelTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        holder = tempfile.TemporaryDirectory(prefix="study-panel-ei-", ignore_cleanup_errors=True)
+        cls.addClassCleanup(holder.cleanup)
+        root = Path(holder.name).resolve() / "ws"
+        init_module.initialize(root, tools=("claude",), run_npm=False, run_env=False, kind="experiment-intervention")
+        lock_protocol(root)
+        allocate(root, "--note", "Pharmacy <holds> the key")
+        cls.view = TestClient(server.create_app(root)).get("/api/study").json()
+        assert cls.view["allocation"]["available"], cls.view["allocation"]
+
+    def test_the_allocation_section_in_english(self) -> None:
+        out = run(self.view)["html"]
+        self.assertIn('data-study-section="allocation"', out)
+        self.assertIn("<h3>Allocation</h3>", out)
+        self.assertIn("The allocation list is the operator&#39;s and stays concealed", out)
+        self.assertIn("study_cli.py allocation record --by &lt;name&gt;", out)
+        self.assertIn("the assistant never generates, reads out or alters it", out)
+        self.assertIn('<p class="rv-ok">Gate G-ALLOCATION current: the list is the one recorded and the record is '
+                      "bound to the current protocol lock (protocol/study-protocol-walking-v01.md).</p>", out)
+        sha = self.view["allocation"]["sha256"]
+        self.assertIn(f"<td>Stratified</td><td>4</td><td>site, sex</td><td>{CONCEALMENT.replace('<', '&lt;').replace('>', '&gt;')}"
+                      f"</td><td>allocation/sequence.csv</td><td>4</td><td>{sha}</td>"
+                      "<td>protocol/study-protocol-walking-v01.md</td>", out)
+        self.assertIn("Operator&#39;s note: Pharmacy &lt;holds&gt; the key", out)
+        self.assertRegex(out, r"Recorded by Ana Ruiz on \d{4}-\d{2}-\d{2}\S*; 1 record\(s\) in total\.")
+        self.assertNotIn("Pharmacy <holds>", out)
+        for token in TOKENS:
+            self.assertNotIn(token, out)
+        self.assertLess(out.index('data-study-section="registration"'), out.index('data-study-section="allocation"'))
+
+    def test_every_stale_reason_is_named(self) -> None:
+        view = json.loads(json.dumps(self.view))
+        view["allocation"].update(state="stale", current=False, reasons=[
+            "file-changed", "file-missing", "file-unreadable", "file-outside", "protocol-amended",
+            "protocol-changed"])
+        out = run(view)["html"]
+        self.assertIn("Stale: allocation/sequence.csv changed since it was recorded, allocation/sequence.csv is "
+                      "missing, allocation/sequence.csv cannot be read, allocation/sequence.csv is outside the "
+                      "workspace, the protocol was amended since (the record "
+                      "covers protocol/study-protocol-walking-v01.md), the protocol is not current. Record the "
+                      "allocation again against the current list and lock", out)
+        es = run(view, lang="es")["html"]
+        self.assertIn("Desactualizada: allocation/sequence.csv cambió desde que se registró", es)
+        self.assertIn("el protocolo no está vigente", es)
+        self.assertIn("allocation/sequence.csv está fuera del espacio de trabajo", es)
+
+    def test_absent_and_corrupt(self) -> None:
+        absent = run({**self.view, "allocation": {"available": True, "gate": "G-ALLOCATION", "state": "absent",
+                                                  "path": "study/allocation.json"}})["html"]
+        self.assertIn("No allocation recorded yet (gate G-ALLOCATION): study_cli.py allocation record --by &lt;name&gt; "
+                      "--file &lt;list&gt; --method &lt;method&gt; --concealment &lt;how&gt;.", absent)
+        self.assertNotIn("<th>Method</th>", absent)
+        corrupt = run({**self.view, "allocation": {"available": True, "gate": "G-ALLOCATION", "state": "corrupt",
+                                                   "path": "study/allocation.json", "code": "ALLOCATION_CORRUPT",
+                                                   "message": "bad <json>"}})["html"]
+        self.assertIn('<p class="rv-error" role="alert">The allocation record study/allocation.json cannot be read: '
+                      "bad &lt;json&gt;</p>", corrupt)
+        self.assertIn('data-study-section="protocol"', corrupt)
+
+    def test_spanish(self) -> None:
+        out = run(self.view, lang="es")["html"]
+        self.assertIn("<h3>Asignación</h3>", out)
+        self.assertIn("La lista de asignación es del operador y permanece oculta", out)
+        self.assertIn("<th>Ocultamiento</th>", out)
+        self.assertIn("<td>Estratificada</td>", out)
+        self.assertNotIn("<h3>Allocation</h3>", out)
+
+    def test_an_unavailable_allocation_and_a_view_without_one(self) -> None:
+        view = {**self.view, "allocation": {"available": False, "code": "STUDY_MODULE_UNAVAILABLE",
+                                            "message": "records <gone>"}}
+        out = run(view)["html"]
+        self.assertIn('data-study-section="allocation"', out)
+        self.assertIn("records &lt;gone&gt;", out)
+        without = {key: value for key, value in self.view.items() if key != "allocation"}
+        self.assertNotIn('data-study-section="allocation"', run(without)["html"])
 
 
 if __name__ == "__main__":

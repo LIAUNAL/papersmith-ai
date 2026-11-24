@@ -17,6 +17,12 @@
  * A data-resource workspace (or any with a deposit record) also answers deposit:
  * each dataset's repository, identifier and scheme, licence, landing page,
  * version, date and who recorded it, current or stale with the reasons.
+ * An experiment-intervention workspace (or any with an allocation record) also
+ * answers allocation (gate G-ALLOCATION): the operator's record of the
+ * allocation list (method, block size, strata, concealment, the list's path,
+ * rows and short sha256, the protocol revision, who recorded it), current,
+ * stale with the reasons, or corrupt. The list itself stays concealed: the
+ * server never sends a value of it.
  * A section the server could not read carries
  * {available: false, code, message} and is drawn as unavailable; the others
  * still render. The variant's checklist is slow (the engine runs paper_cli.py)
@@ -99,6 +105,17 @@
   const DEPOSIT_REASON_KEYS = {
     'file-changed': 'study.deposit.reason.changed', 'file-added': 'study.deposit.reason.added',
     'file-missing': 'study.deposit.reason.missing',
+  };
+  const ALLOCATION_REASON_KEYS = {
+    'file-changed': 'study.allocation.reason.changed', 'file-missing': 'study.allocation.reason.missing',
+    'file-unreadable': 'study.allocation.reason.unreadable', 'file-outside': 'study.allocation.reason.outside',
+    'protocol-amended': 'study.allocation.reason.amended',
+    'protocol-changed': 'study.allocation.reason.protocolChanged',
+  };
+  const ALLOCATION_METHOD_KEYS = {
+    simple: 'study.allocation.method.simple', block: 'study.allocation.method.block',
+    stratified: 'study.allocation.method.stratified', minimisation: 'study.allocation.method.minimisation',
+    cluster: 'study.allocation.method.cluster',
   };
   const STATUS_KEYS = {
     satisfied: 'study.checklist.satisfied', missing: 'study.checklist.missing',
@@ -416,6 +433,35 @@
     return note + datasets.map(depositHtml).join('');
   }
 
+  function allocationBody(a) {
+    const note = `<p class="rv-muted">${esc(t('study.allocation.note'))}</p>`;
+    const gate = a.gate || 'G-ALLOCATION';
+    if (a.state === 'corrupt') {
+      return `${note}<p class="rv-error" role="alert">${esc(t('study.allocation.corrupt', { path: a.path || 'study/allocation.json', message: a.message || '' }))}</p>`;
+    }
+    if (a.state !== 'current' && a.state !== 'stale') {
+      return `${note}<p class="rv-warn">${esc(t('study.allocation.absent', { gate }))}</p>`;
+    }
+    let state;
+    if (a.state === 'current') {
+      state = `<p class="rv-ok">${esc(t('study.allocation.current', { gate, revision: a.protocol_revision || DASH }))}</p>`;
+    } else {
+      const reasons = list(a.reasons).map((r) => (ALLOCATION_REASON_KEYS[r]
+        ? t(ALLOCATION_REASON_KEYS[r], { file: a.file || DASH, revision: a.protocol_revision || DASH }) : String(r))).join(', ');
+      state = `<p class="rv-warn">${esc(t('study.allocation.stale', { reasons }))}</p>`;
+    }
+    const method = ALLOCATION_METHOD_KEYS[a.method] ? t(ALLOCATION_METHOD_KEYS[a.method]) : fmt(a.method);
+    const row = [esc(method), esc(fmt(a.block_size)), esc(fmt(a.strata)), esc(fmt(a.concealment)), esc(fmt(a.file)),
+      esc(fmt(a.rows)), esc(fmt(a.sha256)), esc(fmt(a.protocol_revision))];
+    const operatorNote = a.note ? `<p>${esc(t('study.allocation.operatorNote', { note: a.note }))}</p>` : '';
+    return `${note}${state}`
+      + table([t('study.allocation.method'), t('study.allocation.blockSize'), t('study.allocation.strata'),
+        t('study.allocation.concealment'), t('study.allocation.file'), t('study.allocation.rows'),
+        t('study.allocation.sha256'), t('study.allocation.revision')], [row])
+      + operatorNote
+      + `<p class="rv-muted">${esc(t('study.allocation.recorded', { by: a.by || DASH, at: a.at || DASH, n: a.records ?? 1 }))}</p>`;
+  }
+
   function reportingLine(r) {
     r = obj(r);
     const additional = list(r.additional_guidelines).map((g) => `<p>${esc(ADDITIONAL_KEYS[g] ? t(ADDITIONAL_KEYS[g]) : t('study.reporting.additional', { guideline: g }))}</p>`).join('');
@@ -487,6 +533,7 @@
       ${section('protocol', 'study.protocol.title', view.protocol, protocolBody)}
       ${section('ethics', 'study.ethics.title', view.ethics, ethicsBody)}
       ${section('registration', 'study.registration.title', view.registration, registrationBody)}
+      ${view.allocation ? section('allocation', 'study.allocation.title', view.allocation, allocationBody) : ''}
       ${section('data', 'study.data.title', view.data, dataBody)}
       ${MEASUREMENT_SECTIONS.filter((name) => view[name]).map((name) => section(name, MEASUREMENT_TITLES[name], view[name], MEASUREMENT_BODIES[name])).join('')}
       ${section('analysis', 'study.analysis.title', view.analysis, analysisBody)}

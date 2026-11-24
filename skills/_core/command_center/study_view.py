@@ -34,6 +34,15 @@
   landing page, version, date, who recorded it and when, the files it binds,
   earlier records) and whether it is current or stale with the reasons, read
   only through ``datasets_cli.deposit_state``.
+  An ``experiment-intervention`` workspace, and any workspace holding an
+  allocation record, also gets ``allocation`` (gate G-ALLOCATION, decision J2):
+  the operator's latest allocation record read only through
+  ``records.allocation_state`` -- its state (absent, current, stale, or
+  corrupt with the reader's code and message), method, block size, strata,
+  concealment, note, who recorded it and when, the list's path, row count and
+  short sha256, the protocol revision it is bound to, the stale reasons and the
+  number of records. The allocation list is the operator's and stays
+  concealed: the view never opens it and carries none of its values.
 * ``checklist(root, guideline=None)``: the reporting guideline (or another of
   the line's guidelines, ``checklist_refusal`` refusing any other) evaluated by
   the checklist engine, served on demand only (the engine runs ``paper_cli.py``
@@ -90,6 +99,8 @@ MEASUREMENT_RECORDS = ("study/instruments.json", "study/measurements.json", "stu
                        "study/agreement.json")
 #: The lines whose Study tab always shows the deposit section (decision H6).
 DEPOSIT_KINDS: tuple[str, ...] = ("data-resource",)
+#: The lines whose Study tab always shows the allocation section (decision J2).
+ALLOCATION_KINDS: tuple[str, ...] = ("experiment-intervention",)
 
 #: Shared ``skills/_core`` modules, relative to that package.
 MODULES: dict[str, str] = {
@@ -550,6 +561,39 @@ def _deposit(mods: dict[str, Any], root: Path, line: str) -> dict[str, Any]:
     return {"datasets": rows}
 
 
+# --------------------------------------------------------------------------- allocation (decision J2)
+
+
+#: Characters of the list's sha256 the view carries: enough to compare, short to read.
+SHORT_SHA256 = 12
+_ALLOCATION_TEXT = ("method", "strata", "concealment", "note", "by", "at", "file", "protocol_revision")
+
+
+def _allocation_shown(records: Any, root: Path, line: str) -> bool:
+    return line in ALLOCATION_KINDS or (root / records.ALLOCATION_PATH).exists()
+
+
+def _allocation(mods: dict[str, Any], root: Path) -> dict[str, Any]:
+    """The latest allocation record as ``records.allocation_state`` reads it; never the list's content."""
+    records = mods["records"]
+    state = _object(records.allocation_state(root))
+    out: dict[str, Any] = {"gate": records.ALLOCATION_GATE, "state": _text(state.get("state")) or "absent",
+                           "path": records.ALLOCATION_PATH}
+    if out["state"] == "absent":
+        return out
+    if out["state"] == "corrupt":
+        return out | {"code": "ALLOCATION_CORRUPT", "message": _text(state.get("message"))}
+    block_size, rows, count = state.get("block_size"), state.get("rows"), state.get("records")
+    digest = _text(state.get("sha256"))
+    return out | {key: (_text(state.get(key)) if state.get(key) is not None else None) for key in _ALLOCATION_TEXT} | {
+        "current": bool(state.get("current")), "reasons": [_text(r) for r in _list(state.get("reasons"))],
+        "block_size": block_size if isinstance(block_size, int) and not isinstance(block_size, bool) else None,
+        "rows": rows if isinstance(rows, int) and not isinstance(rows, bool) else None,
+        "sha256": digest[:SHORT_SHA256] or None,
+        "records": count if isinstance(count, int) and not isinstance(count, bool) else None,
+        "warnings": _warnings(state.get("warnings"))}
+
+
 _MEASUREMENT_BUILDERS: dict[str, Callable[[dict[str, Any], Path], dict[str, Any]]] = {
     "instruments": _instruments, "measurements": _measurements, "uncertainty": _uncertainty,
     "agreement": _agreement,
@@ -675,6 +719,12 @@ def view(root: Path) -> dict[str, Any]:
             out["deposit"] = _unavailable(MODULE_UNAVAILABLE, missing.get("datasets_cli", "datasets_cli did not load"))
     elif _deposit_shown(dc, root, line):
         out["deposit"] = _section(lambda: _deposit(mods, root, line))
+    records = mods.get("records")
+    if records is None:
+        if line in ALLOCATION_KINDS:
+            out["allocation"] = _unavailable(MODULE_UNAVAILABLE, missing.get("records", "records did not load"))
+    elif _allocation_shown(records, root, line):
+        out["allocation"] = _section(lambda: _allocation(mods, root))
     return out
 
 
@@ -725,6 +775,6 @@ def checklist(root: Path, guideline: str | None = None) -> dict[str, Any]:
     return _section(build)
 
 
-__all__ = ["DEPOSIT_KINDS", "EMPIRICAL_KINDS", "GUIDELINE_NOT_THIS_LINE", "MEASUREMENT_KINDS", "MEASUREMENT_MODULE",
+__all__ = ["ALLOCATION_KINDS", "DEPOSIT_KINDS", "EMPIRICAL_KINDS", "GUIDELINE_NOT_THIS_LINE", "MEASUREMENT_KINDS", "MEASUREMENT_MODULE",
            "MEASUREMENT_RECORDS", "MEASUREMENT_SECTIONS", "MODULE_UNAVAILABLE", "MODULES", "NOT_A_STUDY_WORKSPACE",
            "NO_CHECKLIST", "SECTIONS", "checklist", "checklist_refusal", "load_datasets_cli", "refusal", "view"]

@@ -767,7 +767,7 @@ current). A record that cannot be read turns only its section into
 
 **The Study tab (empirical workspaces only).** A workspace whose `paper_kind` is an
 empirical line (`observational-measurement`, `hardware`, `lab-simulation`, `data-resource`,
-and the planned `experiment-intervention` and `qualitative-participatory`) shows a
+`experiment-intervention`, and the planned `qualitative-participatory`) shows a
 *Study* tab (*Estudio* in Spanish) after *Pipeline and Progress*; an experimental or
 review workspace never shows it, and its routes answer `409` with
 `{"ok": false, "code": "NOT_A_STUDY_WORKSPACE", "paper_kind": ...}`. `GET /api/study`
@@ -798,7 +798,14 @@ the resource (every registry entry but a toy set) with the repository, the persi
 identifier and its scheme, the licence, the landing page, the version, the deposit date,
 who recorded it and the files it binds, and whether it is current or stale (a file
 changed, added or missing since), read only through `datasets_cli.py`'s
-`deposit_state`; a data-resource workspace's `reporting` names `datasheets`. A record
+`deposit_state`; a data-resource workspace's `reporting` names `datasheets`. An
+`experiment-intervention` workspace, or any workspace with a `study/allocation.json`,
+adds `allocation` (gate G-ALLOCATION): the method, block size, strata, concealment
+statement, the list's path, row count and short sha256, the protocol revision it is
+bound to, who recorded it, and whether it is current or stale (the list changed,
+missing, unreadable or outside the workspace, or the protocol amended or not current),
+read only through `records.allocation_state`; the allocation list itself stays the
+operator's and concealed, and the tab never shows any of its values. A record
 that cannot be read turns only its section into `{"available": false, "code",
 "message"}`. The variant's reporting checklist runs the checklist engine, so it loads
 only when the operator clicks its button, from `GET /api/study/checklist` (another of
