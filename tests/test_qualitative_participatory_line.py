@@ -222,6 +222,11 @@ class LineCase(unittest.TestCase):
 
 
 class TableEntryTests(LineCase):
+    def test_the_line_ships_its_eight_contracts(self) -> None:
+        """The registered sections_dir holds exactly the eight contracts the tests below read."""
+        self.assertEqual(sorted(p.name for p in CONTRACTS.glob("*.md")), FILES)
+        self.assertEqual(manifest.LINES[KIND].sections_dir, "sections-qualitative-participatory/")
+
     def test_the_line_is_a_table_entry(self) -> None:
         line = manifest.LINES[KIND]
         self.assertEqual(line.sections_dir, "sections-qualitative-participatory/")

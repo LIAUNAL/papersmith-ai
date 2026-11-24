@@ -116,7 +116,9 @@ class QualitativeGuidelineDataTests(unittest.TestCase):
 
     def test_targets_are_only_the_line_contract_ids(self):
         sections = line_contract_ids()
-        self.assertIn("back-matter", sections)
+        # The line's eight contracts plus the shared back matter, so no target check is vacuous.
+        self.assertEqual(set(sections), {"title-and-keywords", "abstract", "introduction", "methods", "results",
+                                         "discussion", "limitations", "conclusions", "back-matter"})
         for gid in GUIDELINES:
             for entry in engine.load_guideline(gid)["items"]:
                 with self.subTest(gid=gid, item=entry["number"]):
