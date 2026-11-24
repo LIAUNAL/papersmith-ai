@@ -89,7 +89,7 @@ python skills/_core/measurement/measure_cli.py status [--on YYYY-MM-DD] --root .
 Each verb prints one JSON object. A refusal is `{"ok": false, "error":
 <CODE>, "message": ...}` with exit code 1; a usage error exits 2. The codes
 are listed in the docstring of `measure_cli.py`; the ones an operator meets
-most are `DATA_CHANGED` (re-register the file), `CALIBRATION_PAST_DUE`,
+most are `DATA_CHANGED` (re-register the file), `CALIBRATION_PAST_DUE, OVERRIDE_NOT_NEEDED (an override given while the calibration is current)`,
 `REPLICATES_TOO_FEW`, `CONDITIONS_MIXED` (name a `--condition` set),
 `UNIT_MISMATCH` (declare a sensitivity coefficient) and `PAIRS_TOO_FEW`.
 

@@ -322,6 +322,16 @@ class UncertaintyBudget(Workspace):
         self.assertEqual((budget["calibration"]["override"]["by"], budget["calibration"]["override"]["reason"]),
                          ("Ana Ruiz", "drift checked against a gauge block"))
 
+    def test_an_override_on_a_current_calibration_refuses_instead_of_being_dropped(self) -> None:
+        # The operator's attestation is never silently discarded: with the
+        # calibration current, --allow-past-due, --by or --reason refuse.
+        for extra in (("--allow-past-due", "--by", "Ana Ruiz", "--reason", "drift checked"),
+                      ("--by", "Ana Ruiz"), ("--reason", "drift checked")):
+            with self.subTest(extra=extra):
+                self.refused("OVERRIDE_NOT_NEEDED", "uncertainty", "compute", "--quantity", "length", *extra)
+        budget = self.ok("uncertainty", "compute", "--quantity", "length")["budget"]
+        self.assertIsNone(budget["calibration"]["override"])
+
     def test_a_changed_input_makes_the_budget_stale(self) -> None:
         self.ok("uncertainty", "compute", "--quantity", "length")
         self.data.write_text(self.data.read_text().replace("10.03", "10.04"), encoding="utf-8")

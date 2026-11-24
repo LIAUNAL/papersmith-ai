@@ -262,6 +262,12 @@ def _calibration(args, instrument: dict) -> dict:
     state = records.calibration_state(instrument, today)
     result = {"due": instrument.get("due"), "checked_on": today.isoformat(), "state": state, "override": None}
     if state == "current":
+        if args.allow_past_due or (args.by or "").strip() or args.reason is not None:
+            # An attestation the computation would not use is refused, never
+            # silently dropped: the operator learns the override is unneeded.
+            raise MeasurementError("OVERRIDE_NOT_NEEDED", f"instrument {instrument['id']} is calibrated until "
+                                                          f"{instrument.get('due')}; --allow-past-due, --by and "
+                                                          "--reason apply only to a past-due calibration")
         return result
     if not args.allow_past_due:
         raise MeasurementError("CALIBRATION_PAST_DUE", f"instrument {instrument['id']} was due for calibration on "
