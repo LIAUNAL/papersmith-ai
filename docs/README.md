@@ -20,7 +20,8 @@ document is the defect.
 | Guard hooks | [guard-hooks.md](guard-hooks.md) |
 | MCP server and tool catalogue | [mcp.md](mcp.md) |
 | Per-user Asta/OpenAlex API keys (`smith keys`, the Doctor → API keys panel) and Ai2's Asta discovery | [mcp.md](mcp.md#literature-discovery-ai2s-asta-asta); the `keys` command in [cli.md](cli.md) |
-| The dashboard's thematic help for `/plausibility` (`banco-lia`, `uv`, offline behaviour) | [mcp.md](mcp.md#the-dashboards-thematic-help) |
+| Idea shaping before `/plausibility` for a vague idea (`/idea-shaping`, `smith idea`, the *Idea* tab, `.papersmith/idea_brief.json`) | [cli.md](cli.md#smith-idea-verb-dir); [skills.md](skills.md#32-idea-shaping--a-vague-idea-shaped-into-two-sentences-before-plausibility) |
+| The *Idea* tab's thematic help in step 4 (`banco-lia`, `uv`, offline behaviour) | [mcp.md](mcp.md#the-dashboards-thematic-help) |
 | The dashboard's tabs, including *Experimentos* (results discussion) and *Novedad & Hallazgos* | [cli.md](cli.md#smith-ui-dir) |
 | The eleven phases and their order: Phase 4's problem and pillars → hypotheses → mathematics → SOTA citations → judge-reviewer, Phase 5's protocol → proof of concept → its verification (`G-EXP-POC`) → full experiments, and the gates | [cli.md](cli.md#smith-ui-dir) ("The phases"); the "Paper construction flow" of [`CLAUDE.md`](../CLAUDE.md) |
 | The SOTA citations contract (`.papersmith/citations.json`, each citation's verbatim `quote` of its abstract, `citations_cli.py check`/`routes`) and the judge-reviewer (`JUDGE_REVIEW_OWED`, see [skills.md](skills.md#3-proposal-deliberation--discuss-the-mathematics-and-publish-revisions)), and the `smith atlas` commands (`build`, `cited`, `coverage`, `summary`, `novelty`) | [`skills/_core/results/README.md`](../skills/_core/results/README.md); [cli.md](cli.md#smith-atlas-build-dir) |

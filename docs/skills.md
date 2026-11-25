@@ -32,6 +32,8 @@ the folder name.
 
 ```mermaid
 flowchart TD
+    VAGUE["a vague idea (optional)"] --> IS["32. idea-shaping"]
+    IS -- "/plausibility <draft>, launched by the operator" --> PL
     IDEA["the idea, in two sentences"] --> PL["1. plausibility"]
     PDF["PDFs placed in guidance/"] --> PI["2. paper-ingestion"]
     PL -- "the accepted idea" --> PT["30. paper-type"]
@@ -126,7 +128,9 @@ modules and to the qualitative core (transcripts, codebook, theme sign-off,
 verbatim quotes, consensus rounds and MICMAC). Section 30, `paper-type`, agrees
 the paper type after plausibility and so chooses the line; section 31,
 `study-protocol-deliberation`, is the deliberation engine's third profile, the
-protocol every empirical line locks before its data exist.
+protocol every empirical line locks before its data exist. Section 32,
+`idea-shaping`, is the optional guided phase before plausibility (lane 2a)
+that turns a vague idea into the two sentences plausibility needs.
 
 ---
 
@@ -199,18 +203,22 @@ snippets are never abstracts or quotes. Without the key nothing changes. Details
 in [mcp.md](mcp.md#literature-discovery-ai2s-asta-asta).
 
 **Thematic help, when the operator has no sentences yet.** The skill itself only
-ever receives an idea. In the dashboard, the box that opens on phase 2 offers an
-optional *Ayuda temática*: the operator types 3 to 5 keywords, the dashboard's
-server queries the lab bank through the `banco-lia` MCP (`search_bank`), and the
-panel shows the best-matching LIA items, the topics they belong to and a proposed
-idea, composed deterministically from the keywords and those matches (no model
-call). The operator edits it and presses **Aprobar y lanzar**, which sends
-`/plausibility <idea>` through the normal launch path; nothing runs without that
-click. For the skill, a draft that arrives this way is an idea like any other: the
-two-sentence minimum still applies, and the bank items are LIA continuity context,
-never SOTA evidence and never cited as such. The help needs `uv`/`uvx` and the
-`banco-lia` entry of `.mcp.json`; what it calls and how it behaves offline is in
-[mcp.md](mcp.md#the-dashboards-thematic-help).
+ever receives an idea. An operator without one goes first to the optional idea
+shaping ([section 32](#32-idea-shaping--a-vague-idea-shaped-into-two-sentences-before-plausibility)):
+`/idea-shaping`, `smith idea`, or the dashboard's *Idea* tab, which phase 2's
+console opens with **Shape the idea first**. In step 4 of that tab, with
+`banco-lia` as the source, **Ask the bank** sends 3 to 5 keywords to the
+dashboard's server, which queries the lab bank through the `banco-lia` MCP
+(`search_bank`); the panel shows the best-matching LIA items, the topics they
+belong to and a proposed idea, composed deterministically from the keywords and
+those matches (no model call). **Use as the draft** records it as the step-6
+draft, which the operator edits, approves and sends with **Launch
+plausibility** as `/plausibility <idea>`; nothing runs without that click. For
+the skill, a draft that arrives this way is an idea like any other: the
+two-sentence minimum still applies, and the bank items are LIA continuity
+context, never SOTA evidence and never cited as such. The help needs `uv`/`uvx`
+and the `banco-lia` entry of `.mcp.json`; what it calls and how it behaves
+offline is in [mcp.md](mcp.md#the-dashboards-thematic-help).
 
 ### 2. `paper-ingestion` — from PDF to Markdown
 
@@ -3706,6 +3714,49 @@ data, a pilot result, an effect size, a variance or a dropout rate, and never
 computes a sample size from data it has not seen; accepting a change and
 authorizing publication stay the operator's. The full contract is
 [`skills/study-protocol-deliberation/SKILL.md`](../skills/study-protocol-deliberation/SKILL.md).
+
+### 32. `idea-shaping` — a vague idea shaped into two sentences, before plausibility
+
+**When.** Before `/plausibility`, when the operator has only a vague idea and
+asks for guidance (`/idea-shaping`, `smith idea` in a terminal, or the
+dashboard's *Idea* tab). It is optional: lane 2a of phase 2, with no phase of
+its own, and it locks nothing. It ships to every workspace.
+
+**How it runs.** Six steps, each recorded in `.papersmith/idea_brief.json` by
+the engine in `skills/_core/idea/` (`smith idea <verb>`, or `python
+skills/_core/idea/idea_cli.py <verb>`), never by hand. (1) Sources, the
+operator's decision: `banco-lia` (managed by smith, probed when chosen, with
+the reason shown when unreachable), another bank MCP (one of the workspace's
+`.mcp.json` servers smith does not manage, or one added with `smith idea bank
+--add`; probed with `tools/list`, it is compatible when it exposes
+`search_bank` and is then searched like banco-lia, and otherwise usable only
+through the agent's own `mcp__<server>__*` tools), or none (no bank is
+queried). (2) Profile: an ORCID iD, an OpenAlex author, or a Google Scholar
+link used only to find the author in OpenAlex or ORCID (Scholar is never
+scraped); the author's works are summarised into topics. (3) Experience:
+level, methods, data and equipment access, time. (4) Interests: keywords,
+application domain, an admired paper; in the Idea tab this step also carries
+the bank's thematic help (*Ask the bank*). (5) Topics: the engine proposes
+three candidates deterministically from the interests, the profile and the
+chosen bank's hits, with OpenAlex volume counts of the last four years, and
+records them; the skill delegates to the `idea-guide` agent, which suggests
+three topics of its own with their rationale and evidence, and a draft. The
+guide's topics are shown in the conversation and never recorded; the operator
+picks or combines the engine's topics (`topics --choose`), with the angle of a
+guide suggestion as the pick's note when they want it.
+(6) Draft: at least two sentences naming a problem and a proposal, checked
+live by the prompt gate with the plausibility rules; `approve` refuses while
+the gate fails, and `handoff` prints `/plausibility <draft>`. The questions
+are asked one at a time, with the agent's native question tool when it has
+one.
+
+**What it never does.** It never queries a bank the operator did not choose,
+never presents a topic without naming where its evidence came from, never
+scrapes Google Scholar, never hand-edits the brief, and never runs
+`/plausibility` on the operator's behalf: typing it, or pressing *Launch
+plausibility* in the Idea tab, is the operator's decision. The conversation
+follows the operator's language; the brief stays English. The full contract
+is [`skills/idea-shaping/SKILL.md`](../skills/idea-shaping/SKILL.md).
 
 ### Shared empirical modules (for the empirical paper lines)
 

@@ -80,6 +80,13 @@ instead.
    `.papersmith/paper_type.json`. An agreed applied-AI type keeps these
    phases; another type moves the workspace with `smith kind set <type> --by
    <name>` to its line's own flow.
+   - **Idea shaping (optional, 2a)**: with only a vague idea, `/idea-shaping`
+     (or `smith idea` in a terminal, or the dashboard's Idea tab) first asks
+     which knowledge bank to use, if any, then the operator's profile,
+     experience and interests; the `idea-guide` agent proposes three topics
+     with their evidence and a two-sentence draft that the operator approves
+     and launches as `/plausibility <draft>`. The answers live in
+     `.papersmith/idea_brief.json`.
 3. **Ingestion**: `/paper-ingestion <PDF or URL>` (or `smith ingest`)
    turns the accepted top 5 into Markdown under `guidance/`, with equations
    as LaTeX.

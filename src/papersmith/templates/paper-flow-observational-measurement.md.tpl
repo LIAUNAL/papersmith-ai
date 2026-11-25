@@ -20,6 +20,7 @@ Every tool refuses when a stage's input is missing.
    records the type and the variant the operator agrees in
    `.papersmith/paper_type.json`. The variant chooses the reporting
    checklist: `strobe`, `stard-2015` or `cosmin`.
+   A vague idea can be shaped first with `/idea-shaping` (`smith idea`).
 3. **Study protocol** (gate G-STUDY-PROTOCOL): `/study-protocol-deliberation`
    keeps the protocol as managed revisions
    `protocol/study-protocol-<slug>-vNN.md`: the research question, exactly

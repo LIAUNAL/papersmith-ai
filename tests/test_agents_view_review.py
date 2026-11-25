@@ -48,7 +48,10 @@ def _label(step: str) -> str:
 #: `description`), computed with the pre-T6c code. An agent's own wording may
 #: change with its file; which agents appear and under which phases may not.
 _PROSE_FIELDS = ("role", "description")
-EXPERIMENTAL_VIEW_SHA256 = "23e55db8f11c4e0eb8a623a8c48f891d04402162992c02e584466e3750936ffc"
+# Moved once, on purpose: the idea-shaping feature added the `idea-guide` agent
+# under Phase 2. Without that one agent the view still hashes to the earlier
+# pin, 23e55db8f11c4e0eb8a623a8c48f891d04402162992c02e584466e3750936ffc.
+EXPERIMENTAL_VIEW_SHA256 = "43c696ace0046455a7c5d9078f0bab4370d9bbd697dac0026b0af1dc2bcff3e5"
 
 
 class ExperimentalAgentsUnchangedTests(unittest.TestCase):

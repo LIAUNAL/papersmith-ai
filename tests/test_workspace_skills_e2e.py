@@ -37,6 +37,7 @@ SKILL_NAMES = (
     "experiments-tutor",
     "figure-review",
     "hyperparameter-search",
+    "idea-shaping",
     "journal-finder",
     "kaggle-accounts",
     "math-tutor",

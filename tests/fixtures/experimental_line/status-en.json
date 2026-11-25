@@ -118,7 +118,7 @@
       "Then it splits the hypothesis into claims and grades each one (novel / known / tension / contradicted) with verbatim quotes.",
       "Nothing is ingested or filed: the report awaits your acceptance before the top 5 move on to ingestion.",
       "You can adjust the idea and ask for a new screening; every pass is a new report.",
-      "No clear idea yet? Open Thematic help, give 3 to 5 keywords and the Banco LIA proposes one you can edit and approve."
+      "No clear idea yet? Shape it first in the Idea tab: choose a knowledge bank or none, give your profile and keywords, and approve a draft that launches /plausibility."
      ],
      "keyword_help": true,
      "kind": "prompt",
@@ -147,7 +147,7 @@
    "agent": "sota-scout → sota-grapher → novelty-screener",
    "blocked_by": "Fase 1",
    "cli_command": "/plausibility <text>",
-   "desc": "SOTA exploration, plausibility validation and compilation of the 3D atlas of candidates and the conceptual constellation. Without a clear idea, the optional thematic help turns 3 to 5 keywords into a proposed idea from the Banco LIA, which the operator edits, approves and launches.",
+   "desc": "SOTA exploration, plausibility validation and compilation of the 3D atlas of candidates and the conceptual constellation. Without a clear idea, the optional Idea tab (/idea-shaping, smith idea) first asks which knowledge bank to use, if any, then the operator's profile, experience and interests, and turns them into a draft the operator approves and launches.",
    "detail": "No artifacts in sota-pool/",
    "evidence": [
     {
@@ -1548,7 +1548,7 @@
       "Then it splits the hypothesis into claims and grades each one (novel / known / tension / contradicted) with verbatim quotes.",
       "Nothing is ingested or filed: the report awaits your acceptance before the top 5 move on to ingestion.",
       "You can adjust the idea and ask for a new screening; every pass is a new report.",
-      "No clear idea yet? Open Thematic help, give 3 to 5 keywords and the Banco LIA proposes one you can edit and approve."
+      "No clear idea yet? Shape it first in the Idea tab: choose a knowledge bank or none, give your profile and keywords, and approve a draft that launches /plausibility."
      ],
      "keyword_help": true,
      "kind": "prompt",
@@ -1577,7 +1577,7 @@
    "agent": "sota-scout → sota-grapher → novelty-screener",
    "blocked_by": "Fase 1",
    "cli_command": "/plausibility <text>",
-   "desc": "SOTA exploration, plausibility validation and compilation of the 3D atlas of candidates and the conceptual constellation. Without a clear idea, the optional thematic help turns 3 to 5 keywords into a proposed idea from the Banco LIA, which the operator edits, approves and launches.",
+   "desc": "SOTA exploration, plausibility validation and compilation of the 3D atlas of candidates and the conceptual constellation. Without a clear idea, the optional Idea tab (/idea-shaping, smith idea) first asks which knowledge bank to use, if any, then the operator's profile, experience and interests, and turns them into a draft the operator approves and launches.",
    "detail": "No artifacts in sota-pool/",
    "evidence": [
     {

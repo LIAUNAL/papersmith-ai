@@ -43,7 +43,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, atlas_coverage, atlas_reference, decisions, experiments_tutor, experiments_view, math_view, office, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
-from . import board_refresh, caztor, doctor_view, keys_view, lines, localize, paper_type_view, prompt_gate, prompt_review, review_view, study_view, toolchain
+from . import board_refresh, caztor, doctor_view, idea_view, keys_view, lines, localize, paper_type_view, prompt_gate, prompt_review, review_view, study_view, toolchain
 from ..paper_types import decision as paper_line
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -1838,7 +1838,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "stage_id": "plausibility",
                 "name": "Phase 2: Plausibility & 3D SOTA Atlas",
                 "gate": "G-SOTA",
-                "desc": "SOTA exploration, plausibility validation and compilation of the 3D atlas of candidates and the conceptual constellation. Without a clear idea, the optional thematic help turns 3 to 5 keywords into a proposed idea from the Banco LIA, which the operator edits, approves and launches.",
+                "desc": "SOTA exploration, plausibility validation and compilation of the 3D atlas of candidates and the conceptual constellation. Without a clear idea, the optional Idea tab (/idea-shaping, smith idea) first asks which knowledge bank to use, if any, then the operator's profile, experience and interests, and turns them into a draft the operator approves and launches.",
                 "tools": ["read", "write", "mcp"],
                 "outputs": ["sota-pool/atlas.json", "sota-pool/atlas.html", "sota-pool/candidates.json"],
                 "status": fase2_status,
@@ -3065,6 +3065,65 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return JSONResponse(await asyncio.to_thread(paper_type_view.agree, root_path, payload))
         except paper_type_view.decision.DecisionError as exc:
             return JSONResponse({"ok": False, "code": exc.code, "error": str(exc)}, status_code=422)
+
+    # ---- Idea tab (idea-shaping S6): the optional guided phase before /plausibility.
+    # Every route answers the tab's whole state (idea_view.view) plus the step's
+    # result; a refusal of the engine answers {ok: false, code, message}. The
+    # engine reads and writes .papersmith/idea_brief.json, probes MCP servers and
+    # asks OpenAlex, so every call runs off the event loop.
+    async def _idea(request: Request | None, step: Callable[..., Any], *args: Any) -> JSONResponse:
+        if request is not None and not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "cross-origin request rejected"}, status_code=403)
+        payload = await _prompt_payload(request) if request is not None else None
+        try:
+            return JSONResponse(await asyncio.to_thread(step, root_path, payload, *args))
+        except idea_view.IdeaError as exc:
+            return JSONResponse(idea_view.refusal(exc), status_code=idea_view.status_of(exc))
+
+    @app.get("/api/idea")
+    async def api_idea() -> JSONResponse:
+        """The Idea tab: the brief, the bank choices and whether the draft is ready to hand off."""
+        return await _idea(None, lambda root, _payload: idea_view.view(root))
+
+    @app.post("/api/idea/bank")
+    async def api_idea_bank(request: Request) -> JSONResponse:
+        """Step 1, sources: list, probe, choose or add a bank (or search the chosen one)."""
+        return await _idea(request, idea_view.bank_step)
+
+    @app.post("/api/idea/profile")
+    async def api_idea_profile(request: Request) -> JSONResponse:
+        """Step 2: find the author in OpenAlex by ORCID, OpenAlex id, Scholar link or name."""
+        return await _idea(request, idea_view.profile_step)
+
+    @app.post("/api/idea/experience")
+    async def api_idea_experience(request: Request) -> JSONResponse:
+        """Step 3: level, methods, resources and time."""
+        return await _idea(request, idea_view.experience_step)
+
+    @app.post("/api/idea/interests")
+    async def api_idea_interests(request: Request) -> JSONResponse:
+        """Step 4: keywords, application domain and an admired paper."""
+        return await _idea(request, idea_view.interests_step)
+
+    @app.post("/api/idea/topics")
+    async def api_idea_topics(request: Request) -> JSONResponse:
+        """Step 5: propose candidate topics with their evidence."""
+        return await _idea(request, idea_view.propose)
+
+    @app.post("/api/idea/choose")
+    async def api_idea_choose(request: Request) -> JSONResponse:
+        """Step 5: record the topics the operator picked (one, or several to combine)."""
+        return await _idea(request, idea_view.choose)
+
+    @app.post("/api/idea/draft")
+    async def api_idea_draft(request: Request) -> JSONResponse:
+        """Step 6: compose a draft, record the operator's text, or check a text with the prompt gate."""
+        return await _idea(request, idea_view.draft_step)
+
+    @app.post("/api/idea/approve")
+    async def api_idea_approve(request: Request) -> JSONResponse:
+        """Step 6: approve the draft (refused while the prompt gate fails)."""
+        return await _idea(request, idea_view.approve)
 
     @app.get("/api/review")
     def api_review() -> JSONResponse:

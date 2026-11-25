@@ -61,7 +61,8 @@ DECLARED_ADDITIONS: dict[str, tuple[str, ...]] = {
                           r"/\+:   `\.papersmith/paper_type\.json`; the phases below do not change\.$"),
     # T3: the paper-type skill ships to every workspace; the AI flow does not call it.
     # T7-U1: the study-protocol-deliberation skill ships to every workspace (D4); no flow calls it.
-    "kit.json": (r"^/skills/\+:paper-type$", r"^/skills/\+:study-protocol-deliberation$"),
+    "kit.json": (r"^/skills/\+:paper-type$", r"^/skills/\+:study-protocol-deliberation$",
+                  r"^/skills/\+:idea-shaping$"),
 }
 
 

@@ -118,7 +118,7 @@
       "Luego divide la hipótesis en afirmaciones y califica cada una (novel / known / tension / contradicted) con citas literales.",
       "Nada se ingiere ni se archiva: el informe espera tu aceptación antes de pasar el top 5 a ingestión.",
       "Puedes ajustar la idea y pedir un nuevo screening; cada pasada es un informe nuevo.",
-      "¿Aún no tienes una idea clara? Abre la Ayuda temática, escribe de 3 a 5 palabras clave y el Banco LIA te propone una que puedes editar y aprobar."
+      "¿Aún no tienes una idea clara? Dale forma primero en la pestaña Idea: elige un banco de conocimiento o ninguno, indica tu perfil y palabras clave, y aprueba un borrador que lanza /plausibility."
      ],
      "keyword_help": true,
      "kind": "prompt",
@@ -147,7 +147,7 @@
    "agent": "sota-scout → sota-grapher → novelty-screener",
    "blocked_by": "Fase 1",
    "cli_command": "/plausibility <text>",
-   "desc": "Exploración SOTA, validación de plausibilidad y compilación del Atlas 3D de candidatos y constelación conceptual. Si aún no hay una idea clara, la ayuda temática opcional convierte de 3 a 5 palabras clave en una idea propuesta a partir del Banco LIA, que el operador edita, aprueba y lanza.",
+   "desc": "Exploración SOTA, validación de plausibilidad y compilación del Atlas 3D de candidatos y constelación conceptual. Si aún no hay una idea clara, la pestaña opcional Idea (/idea-shaping, smith idea) pregunta primero qué banco de conocimiento usar, si alguno, y luego el perfil, la experiencia y los intereses del operador, y los convierte en un borrador que el operador aprueba y lanza.",
    "detail": "Sin artefactos en sota-pool/",
    "evidence": [
     {
@@ -1548,7 +1548,7 @@
       "Luego divide la hipótesis en afirmaciones y califica cada una (novel / known / tension / contradicted) con citas literales.",
       "Nada se ingiere ni se archiva: el informe espera tu aceptación antes de pasar el top 5 a ingestión.",
       "Puedes ajustar la idea y pedir un nuevo screening; cada pasada es un informe nuevo.",
-      "¿Aún no tienes una idea clara? Abre la Ayuda temática, escribe de 3 a 5 palabras clave y el Banco LIA te propone una que puedes editar y aprobar."
+      "¿Aún no tienes una idea clara? Dale forma primero en la pestaña Idea: elige un banco de conocimiento o ninguno, indica tu perfil y palabras clave, y aprueba un borrador que lanza /plausibility."
      ],
      "keyword_help": true,
      "kind": "prompt",
@@ -1577,7 +1577,7 @@
    "agent": "sota-scout → sota-grapher → novelty-screener",
    "blocked_by": "Fase 1",
    "cli_command": "/plausibility <text>",
-   "desc": "Exploración SOTA, validación de plausibilidad y compilación del Atlas 3D de candidatos y constelación conceptual. Si aún no hay una idea clara, la ayuda temática opcional convierte de 3 a 5 palabras clave en una idea propuesta a partir del Banco LIA, que el operador edita, aprueba y lanza.",
+   "desc": "Exploración SOTA, validación de plausibilidad y compilación del Atlas 3D de candidatos y constelación conceptual. Si aún no hay una idea clara, la pestaña opcional Idea (/idea-shaping, smith idea) pregunta primero qué banco de conocimiento usar, si alguno, y luego el perfil, la experiencia y los intereses del operador, y los convierte en un borrador que el operador aprueba y lanza.",
    "detail": "Sin artefactos en sota-pool/",
    "evidence": [
     {
