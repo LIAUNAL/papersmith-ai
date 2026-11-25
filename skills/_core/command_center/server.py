@@ -17,6 +17,7 @@ script and reports its output; it changes no paper byte.
 from __future__ import annotations
 
 import argparse
+import atexit
 import asyncio
 import contextlib
 import hashlib
@@ -42,7 +43,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, atlas_coverage, atlas_reference, decisions, experiments_tutor, experiments_view, math_view, office, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
-from . import board_refresh, doctor_view, keys_view, lines, localize, paper_type_view, prompt_gate, prompt_review, review_view, study_view, toolchain
+from . import board_refresh, caztor, doctor_view, keys_view, lines, localize, paper_type_view, prompt_gate, prompt_review, review_view, study_view, toolchain
 from ..paper_types import decision as paper_line
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
@@ -57,6 +58,11 @@ DEFAULT_HEALTH_TTL_SECONDS = 10.0
 #: left, and sends a keep-alive comment after this much silence.
 TERMINAL_WAIT_SECONDS = 1.0
 TERMINAL_PING_SECONDS = 15.0
+
+#: How long shutdown waits for open connections (the board's event stream never
+#: closes by itself) before it cancels them and runs the lifespan's cleanup,
+#: which stops Caztor; without a bound it waited forever and Caztor kept its port.
+SHUTDOWN_GRACE_SECONDS = 3
 
 _log = logging.getLogger(__name__)
 
@@ -1537,6 +1543,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     watcher = WorkspaceWatcher(root_path, on_flush, debounce_ms=debounce_ms)
     smoke_lock = threading.Lock()
     terminals = terminal.TerminalManager(root_path, login_token=terminal_token)
+    # The PDF tab's LaTeX editor, started the first time the tab asks (caztor.py).
+    caztor_sidecar = caztor.CaztorSidecar(root_path)
     #: Engram interactions observed in live session output, bounded by
     #: office.MEMORY_EVENTS_MAX; the office state endpoint owns this ring.
     office_ring: list = []
@@ -1556,11 +1564,13 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         finally:
             watcher.stop()
             terminals.close_all()
+            caztor_sidecar.stop()
 
     app = FastAPI(title="Paper Command Center", version="0.1.0", lifespan=lifespan)
     app.state.root = root_path
     app.state.bus = bus
     app.state.watcher = watcher
+    app.state.caztor = caztor_sidecar
     app.state.measure_health = measure_health
     app.state.history = store
     # Display labels in English, or Spanish on `?lang=es` (see localize.py).
@@ -2726,6 +2736,63 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             except Exception:
                 pass
         return JSONResponse({"timestamp": None, "annotations": [], "applied": {}})
+
+    def _caztor_refusal(request: Request, answer: str) -> JSONResponse | None:
+        """Why this request may not reach Caztor, or None. With the terminal on, Caztor's frame key (and so its
+        launch token) goes only to the browser holding the terminal login cookie; that cookie is scoped to
+        /api/terminal, so the page calls these routes under /api/terminal/caztor."""
+        if not origin_is_same(request):
+            return JSONResponse({answer: False, "reason": "cross-origin request rejected"}, status_code=403)
+        if enable_terminal and not terminals.authorized(request.cookies.get(TERMINAL_COOKIE)):
+            return JSONResponse({answer: False, "error": "TERMINAL_LOGIN_REQUIRED", "reason": (
+                "The LaTeX editor needs the terminal access link, the same one the CLI assistant needs: "
+                "open the dashboard from the login URL the server printed (or sign in from the CLI "
+                "assistant), then reload the PDF tab.")}, status_code=403,
+                headers={"Cache-Control": "no-store"})
+        return None
+
+    @app.post("/api/terminal/caztor")
+    @app.post("/api/caztor")
+    async def api_caztor(request: Request) -> JSONResponse:
+        """Caztor's address, instance and frame key for this page, starting it on first use.
+
+        Caztor lets only the origin the page was opened at (and its loopback
+        twin) frame it, so the origin comes from this request's Host (already
+        checked against the allowlist when one is configured). The page loads
+        the frame at ``<url>/?k=<key>``: Caztor hands its launch token only to
+        a request carrying that key.
+
+        With the terminal enabled, only the browser holding the terminal login
+        cookie gets the key; any other caller is refused (403,
+        ``TERMINAL_LOGIN_REQUIRED``). With the terminal disabled there is no
+        per-browser secret to tie it to: any local process that can send a
+        same-origin request to this loopback dashboard learns the key, and with
+        it Caztor's launch token, as any local process could open the dashboard
+        itself."""
+        refused = _caztor_refusal(request, "available")
+        if refused is not None:
+            return refused
+        host = request.headers.get("host", "")
+        # Only a dashboard opened on this machine: a page that reached it under
+        # another name (DNS rebinding) must not become Caztor's framing origin.
+        hostname = host.rsplit(":", 1)[0] if not host.endswith("]") else host
+        if not is_loopback_bind(hostname):
+            return JSONResponse({"available": False, "reason": (
+                "The LaTeX editor runs only for a dashboard opened on a loopback address "
+                "(127.0.0.1 or localhost).")})
+        result = await asyncio.to_thread(app.state.caztor.ensure, f"http://{host}")
+        return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/terminal/caztor/stop")
+    @app.post("/api/caztor/stop")
+    async def api_caztor_stop(request: Request) -> JSONResponse:
+        """Stop Caztor when the operator turns the PDF tab's LaTeX editor off; the next visit with it on starts it
+        again. Gated like `api_caztor`; it never waits for a download in progress."""
+        refused = _caztor_refusal(request, "stopped")
+        if refused is not None:
+            return refused
+        await asyncio.to_thread(app.state.caztor.stop)
+        return JSONResponse({"stopped": True})
 
     @app.post("/api/pdf/execute")
     async def api_pdf_execute(request: Request) -> JSONResponse:
@@ -5036,7 +5103,10 @@ def main(argv: list[str] | None = None) -> int:
                          daemon=True).start()
     if not args.no_browser:
         threading.Timer(1.0, open_browser, args=(url,)).start()
-    uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
+    # A forced quit skips the lifespan's cleanup: Caztor is stopped when the process exits anyway.
+    atexit.register(app.state.caztor.stop)
+    uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level,
+                timeout_graceful_shutdown=SHUTDOWN_GRACE_SECONDS)
     return 0
 
 

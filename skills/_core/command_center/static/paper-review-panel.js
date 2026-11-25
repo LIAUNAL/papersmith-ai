@@ -30,10 +30,14 @@
  * criteria (panel, consensus threshold, rounds and feedback, dissent for a
  * consensus study; context, what was done, what it taught, honest limits for
  * an experience report) and the gaps against the variant's checklist, when it
- * has one. Read-only: nothing here launches the judge or edits the paper.
+ * has one. Its one button types the next round's request into
+ * the agent terminal (/paper-writing hands the compiled paper to the
+ * paper-reviewer and records the round with `paper_cli.py review`); nothing
+ * here writes the review file or the paper.
  *
  * Every value is escaped before insertion. Public surface (window):
- * refreshPaperReview(), PaperReviewPanel (the pure HTML builder, for tests).
+ * refreshPaperReview(), launchPaperJudge(), PaperReviewPanel (the pure HTML
+ * builder, for tests).
  */
 (function () {
   'use strict';
@@ -240,13 +244,43 @@
         <pre style="white-space:pre-wrap;font-size:0.78rem;max-height:520px;overflow:auto;">${esc(r.report)}</pre></details>` : ''}`;
   }
 
+  // The round the button asks for: one past the highest recorded (1 when none);
+  // 0 while the review file cannot be read, so nothing is launched.
+  let nextRound = 0;
+
+  // What the button types into the agent terminal (agent input stays English).
+  function judgeCommand(round) {
+    const previous = round > 1
+      ? ` This round must judge every revision the previous round raised (one verdict per rank in items).`
+      : '';
+    return `/paper-writing Run the final judge, round ${round}: hand the compiled paper/main.tex to the paper-reviewer agent `
+      + `for its full main-track review. Save the round JSON it returns to a scratch file and record it with `
+      + `python skills/paper-writing/scripts/paper_cli.py review --input <file>; on a refusal, send the round back `
+      + `to the agent with the refusal detail instead of editing it.${previous}`;
+  }
+
+  function launchPaperJudge() {
+    if (nextRound > 0 && typeof window.sendToCli === 'function') window.sendToCli(judgeCommand(nextRound), false, { kind: 'slash' });
+  }
+
+  function judgeAction(rounds) {
+    const label = rounds.length ? t('review.launchAgain').replace('{round}', String(nextRound)) : t('review.launch');
+    return `<div class="review-launch" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.6rem;">
+        <button type="button" class="btn ${rounds.length ? '' : 'btn--primary '}btn--sm" data-paper-judge="${nextRound}" onclick="window.launchPaperJudge()">${esc(label)}</button>
+        <span class="panel__meta">${esc(t('review.launchHint'))}</span>
+      </div>`;
+  }
+
   function render(state) {
     const s = obj(state);
+    nextRound = 0;
     if (s.status && s.status !== 'ok' && s.status !== 'absent') return `<p class="banner banner--warn">${esc(t('review.invalid'))}${esc(s.status)}</p>`;
     const rounds = list(s.rounds).slice().sort((a, b) => Number(b.round) - Number(a.round));
-    if (!rounds.length) return `<p class="panel__empty">${esc(t('review.empty'))}</p>`;
+    const highest = rounds.length ? Number(rounds[0].round) : 0;
+    nextRound = Number.isFinite(highest) && highest > 0 ? Math.floor(highest) + 1 : rounds.length + 1;
+    if (!rounds.length) return `${judgeAction(rounds)}<p class="panel__empty">${esc(t('review.empty'))}</p>`;
     const [latest, ...older] = rounds;
-    return `
+    return `${judgeAction(rounds)}
       <div class="review-round">${summary(latest)}${roundDetail(latest)}</div>
       ${older.length ? `<h4 style="margin:1rem 0 0.3rem;">${esc(t('review.history'))}</h4>${older.map((r) => `
         <details class="review-round" style="margin:0.3rem 0;"><summary>${esc(t('review.round'))} ${esc(r.round)} · ${headline(r)} · ${esc(r.recommendation || '')}</summary>
@@ -265,6 +299,7 @@
   }
 
   window.refreshPaperReview = refreshPaperReview;
+  window.launchPaperJudge = launchPaperJudge;
   window.PaperReviewPanel = { render };
   document.addEventListener('languagechange', refreshPaperReview);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', refreshPaperReview);

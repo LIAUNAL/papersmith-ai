@@ -1,0 +1,84 @@
+.provider-select-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.provider-select {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-muted);
+}
+
+.provider-select__option {
+  display: inline-flex;
+  min-width: 2.25rem;
+  min-height: 2rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-2);
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.provider-select__option:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+.provider-select__option--checked {
+  border-color: var(--color-accent);
+  background: var(--color-surface);
+}
+
+.provider-select__option:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.provider-select__option--unavailable {
+  opacity: 0.7;
+}
+
+/* In the row after the logo or name, never over it: a long name such as "Codex" has no free corner. */
+.provider-select__option {
+  gap: var(--space-2);
+}
+
+.provider-select__flag {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-warning);
+}
+
+/* The dropdown of the other providers: as tall as a radio, and only as wide as its longest name. */
+.provider-select__more {
+  min-height: 2.25rem;
+  max-width: 8rem;
+  padding: 0 var(--space-2);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.provider-select__more--checked {
+  border-color: var(--color-accent);
+  background: var(--color-surface);
+}
+
+.provider-select__more:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}

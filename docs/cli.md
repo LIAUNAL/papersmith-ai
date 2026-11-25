@@ -1222,6 +1222,72 @@ with pdf.js 3.11.174, vendored in `skills/_core/command_center/static/vendor/`
 `run_details.pdf_mtime`; when a recompile moves that token the open preview
 reloads in place and keeps the page you were reading.
 
+**LaTeX editor in the PDF tab (Caztor).** Caztor comes with papersmith: an
+install (`pipx install papersmith-ai`) carries it prebuilt in
+`papersmith/_caztor` (its server bundled into one file and its web app), and
+`pipx upgrade papersmith-ai` brings the matching version. It runs on `node`
+(Node.js 26 or newer) and compiles with `tectonic`. The ones on the `PATH` are
+used; when one is missing (or `node` is older), the first time the PDF tab opens
+smith downloads it from its official release (Node.js 26.13.1, Tectonic 0.17.0;
+about 45 MB; Linux and macOS on x64 and arm64, Windows on x64), checks it against the
+SHA-256 pinned in `skills/_core/command_center/caztor_tools.py`, and keeps only
+the executable under `~/.cache/papersmith/tools/`.
+`PAPERSMITH_NO_TOOL_DOWNLOAD=1` turns the download off. Tectonic itself fetches
+the TeX packages a document needs on its first compile. Nothing from npm is needed. Its source lives in this repository's `caztor/` folder: in a checkout,
+`npm run setup:caztor` (part of `npm run setup`) installs its dependencies and
+builds it, and smith then runs that source. `pip install .` from a checkout does
+not build Caztor; `python3 scripts/build-caztor.py --require` packages it for a
+wheel (it needs Node.js 26 or newer and npm, and says why when it skips; the
+publish workflow runs it before `python -m build`). Each bundle ships a
+`THIRD_PARTY_NOTICES.md` with every npm package it includes, its version,
+licence and full licence text.
+`CAZTOR_HOME` names another Caztor copy. With Caztor available, the tab shows Caztor's four vertical panes
+in place of the viewer: files, LaTeX editor, the PDF it compiles with Tectonic
+(into `.caztor/build`, never `paper/main.pdf`), and the assistant chat, filling
+the window under the tab's toolbar. The toolbar serves both views: the LaTeX
+editor switch, Style & redundancy, open the PDF in a new tab, and the Change
+Control toggle with its pending count. The change-control panel folds to a
+narrow handle (folded by default with the editor, open with the viewer, the
+choice remembered per view); a venue or translation view and a jump to a page
+show the viewer over the editor with a way back. Opening the CLI assistant gives
+it the keyboard even while Caztor holds it. Unfolded, text selected in Caztor's
+PDF fills its selection card, and running the batch records it as before
+(`.papersmith/anotaciones_pdf.{json,md}`) and puts one instruction for the
+assistant in the chat box, which you review and send yourself. `POST /api/terminal/caztor`
+(same origin only) starts Caztor the first time the tab opens, as
+`node apps/server-local/src/main.ts <workspace> --embed-origin <the dashboard's origin>`
+(once for each loopback twin, `127.0.0.1:<port>` and `localhost:<port>`, so a tab
+on either does not restart it): it binds loopback whatever
+`CAZTOR_HOST`/`CAZTOR_PUBLIC_NAME` say, only those origins may frame it, it
+cannot switch to another project, and it stops with the dashboard. Each start
+gets a fresh key in its environment (`CAZTOR_EMBED_KEY`, never on the command
+line, removed from Caztor's own environment once read); Caztor hands its page
+token only to a request carrying that key, and the dashboard returns the key
+only from `POST /api/terminal/caztor` to a browser holding the terminal login
+(the access link `smith ui` prints, the same one the CLI assistant needs), so
+another local user or process cannot open the editor. Without that login the
+tab says so, offers Activate and shows the viewer. With the terminal disabled
+(`--no-terminal`) the key is returned to any same-origin request, as before.
+Node.js and Tectonic are downloaded outside the editor's lock, so turning the
+editor off or stopping `smith ui` never waits for a download; a failed download
+is retried after five minutes, and a cached tool is checked once per run
+against the SHA-256 recorded when it was installed. Without Caztor or Node the tab falls back to the viewer above and
+says why. Add `.caztor/` to the workspace's `.gitignore`.
+
+Inside the dashboard Caztor shows no top bar of its own and takes the dashboard's
+light or dark theme, when it loads and on every toggle (`caztor:ready` and
+`caztor:theme` messages, pinned to Caztor's origin). Its chat offers opencode,
+Claude Code, Pi and Antigravity, counts a provider you are already signed in to on
+this computer as signed in, and offers the workspace's conversational PaperSmith
+agents as switches above the message box: **Math tutor** and **Experiments tutor**,
+with **Paper reviewer** and **Writing auditor** under **More**. While one is on,
+every message runs with that agent's instructions (its skill is read from
+`skills/`), and the agent is told the exact paths of the latest proposal revision,
+`.papersmith/model_spec.json`, the latest experiments protocol and
+`paper/main.tex`; switching one on sends nothing. The passages the latest reply quotes are marked
+in soft yellow in the LaTeX editor and on the PDF; **Highlight explained passages**
+above the message box turns that off and on.
+
 **Paper preview (read-only).** Two GET routes, no writes:
 `GET /api/paper/preview` returns the sections in the same order and with the same
 ids as `/api/state`, with the plain text of each block of `paper/main.tex`

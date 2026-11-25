@@ -1,0 +1,42 @@
+.model-select {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.model-select__form {
+  display: flex;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.model-select__control {
+  min-width: 0;
+  flex: 1 1 auto;
+  min-height: 2rem;
+  padding: 0 var(--space-2);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.model-select__set {
+  flex: 0 0 auto;
+  min-height: 2rem;
+}
+
+.model-select__hint {
+  margin: 0;
+  color: var(--color-warning);
+  font-size: var(--text-xs);
+}
+
+.model-select__problem {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--text-xs);
+}

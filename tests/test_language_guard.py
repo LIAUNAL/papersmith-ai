@@ -66,6 +66,7 @@ PENDING_T2 = "pending T2 English catalogue"
 
 ALLOWLIST = (
     Allow("odd/tasks/*", "verbatim operator quotes kept as provenance"),
+    Allow("caztor/odd/tasks/*", "Caztor's own feature documents: verbatim operator quotes kept as provenance"),
     Allow("openspec/changes/archive/*", "archived records"),
     Allow("openspec/specs/*", "fixture data: section titles of a Spanish source paper",
           ("Formulación", "Fundamentos de métodos", "Estimación de la entropía",

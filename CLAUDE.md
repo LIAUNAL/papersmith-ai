@@ -207,7 +207,8 @@ instead of these phases.
     - **Final judge**: the `paper-reviewer` reviews the compiled paper round
       by round; `/paper-writing` records each round with `paper_cli.py review
       --input <round.json>` in `.papersmith/paper_review.json`, and the PDF
-      tab shows the verdict per round.
+      tab shows the verdict per round. Its "Launch the final judge" button
+      types the next round's request into the agent.
     - **Journal and venue**: `/journal-finder` ranks international journals
       by SJR quartile (the bundled SCImago 2025 snapshot) or, with `--scope
       national`, Colombian Publindex IBN 2026 journals (A1, A2, B) by

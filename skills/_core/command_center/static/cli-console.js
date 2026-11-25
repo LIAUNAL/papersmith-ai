@@ -11,7 +11,8 @@
  * while a phase run is live keeps the session and reattaches to it.
  *
  * Public surface (window): toggleSmithTerminal(), openCliConsole(),
- * closeCliConsole(), sendToCli(text, run), smithTerminalInterrupt().
+ * closeCliConsole(), sendToCli(text, run), smithTerminalInterrupt(),
+ * smithTerminalActivate() (terminal access for this page), smithTerminalFocus().
  */
 (function () {
   'use strict';
@@ -50,6 +51,7 @@
     activating: null,  // the pending self-activation (POST /api/terminal/activate)
     accessNote: '',    // why this page stays unauthorized after activating, if known
     said: null,        // the last status as { key, vars, tone }, redrawn on a language switch
+    focusClaimUntil: 0, // until then a frame that takes the keyboard gives it back to the terminal
   };
 
   const $ = (id) => document.getElementById(id);
@@ -531,7 +533,7 @@
       state.exited = false;
       rememberSession(created.id, state.agent);
       attach(created.id, false);
-      term.focus();
+      claimFocus();
       return created.id;
     })();
     try {
@@ -562,6 +564,35 @@
     start().catch(() => {});
   }
 
+  // ---- keyboard focus --------------------------------------------------------
+  // A frame of another origin (Caztor's LaTeX editor in the PDF tab) keeps the keyboard while it holds
+  // focus, so the terminal takes it explicitly: the frame is blurred, then xterm focused. For a moment
+  // after the window opens or a command is typed, a frame that grabs the keyboard again gives it back.
+  const FOCUS_CLAIM_MS = 1500;
+
+  function focusTerminal() {
+    const active = typeof document !== 'undefined' ? document.activeElement : null;
+    if (active && active.tagName === 'IFRAME' && typeof active.blur === 'function') active.blur();
+    if (!state.term) return false;
+    state.term.focus();
+    return true;
+  }
+
+  function claimFocus() {
+    state.focusClaimUntil = Date.now() + FOCUS_CLAIM_MS;
+    return focusTerminal();
+  }
+
+  // The page lost the keyboard: to a frame inside it (activeElement is that frame) within the claim, it
+  // comes back; to another window or application (activeElement unchanged), it stays there.
+  function onWindowBlur() {
+    if (!isOpen() || Date.now() >= state.focusClaimUntil) return;
+    setTimeout(() => {
+      const active = typeof document !== 'undefined' ? document.activeElement : null;
+      if (active && active.tagName === 'IFRAME') focusTerminal();
+    }, 0);
+  }
+
   // ---- window --------------------------------------------------------------
   function isOpen() {
     const win = $('smithTerminalWindow');
@@ -576,13 +607,15 @@
     $('smithAssistantFab')?.classList.add('is-active');
     // A session detached while hidden is streamed again (and replayed once).
     if (state.sessionId && !state.source && ensureTerm()) attach(state.sessionId, true);
+    // The keyboard goes to the terminal at once, not to a frame that held it (Caztor's editor).
+    claimFocus();
     loadInfo().then((info) => {
       if (!ensureTerm()) return;
       setTimeout(() => {
         refit(true);
         // An unauthorized page activates itself first (start → ensureAuthorized).
         if (info.enabled && !state.sessionId && !state.exited) start().catch(() => {});
-        state.term.focus();
+        claimFocus();
       }, 100);
     });
   }
@@ -746,7 +779,7 @@
       if (kind === 'slash' && STARTUP_QUESTIONS.test(screenText())) {
         state.refusal = /trust/i.test(screenText()) ? 'trust' : 'question';
         say('cli.awaitingConfirmation', null, 'warn');
-        state.term.focus();
+        claimFocus();
         return false;
       }
       await api(`/api/terminal/sessions/${sid}/input`, 'POST', { data: text });
@@ -755,7 +788,7 @@
           api(`/api/terminal/sessions/${sid}/input`, 'POST', { data: '\r' }).catch(() => {});
         }, 200);
       }
-      state.term.focus();
+      claimFocus();
       return true;
     } catch (err) {
       state.refusal = err.message;
@@ -809,6 +842,7 @@
     // phase runs any more (a run that ended after the console was closed).
     document.addEventListener('visibilitychange', () => { if (document.hidden) detachIfIdle(); else wake(); });
     window.addEventListener('focus', wake);
+    window.addEventListener('blur', onWindowBlur);
     window.addEventListener('resize', () => { if (isOpen()) refit(false); });
     // A reload keeps the session of a running phase (and reattaches to it);
     // otherwise it ends the session so it never lingers unseen.
@@ -839,4 +873,7 @@
   window.smithTerminalActivity = smithTerminalActivity;
   window.smithTerminalAgents = smithTerminalAgents;
   window.smithTerminalInterrupt = interrupt;
+  // Opens terminal access for this page (the CLI's Activate); resolves with /api/terminal/agents.
+  window.smithTerminalActivate = ensureAuthorized;
+  window.smithTerminalFocus = claimFocus;
 })();

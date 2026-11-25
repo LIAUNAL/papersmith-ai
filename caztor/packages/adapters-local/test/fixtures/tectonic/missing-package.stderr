@@ -1,0 +1,10 @@
+note: "version 2" Tectonic command-line interface activated
+note: Running TeX ...
+error: main.tex:3: ! LaTeX Error: File `nosuchpkg.sty' not found.
+error: main.tex:3: Undefined control sequence
+error: main.tex:3: Undefined control sequence
+error: main.tex:3: ! LaTeX Error: File `.' not found.
+error: main.tex:3: Undefined control sequence
+error: main.tex:5: Undefined control sequence
+error: main.tex:6: ! LaTeX Error: File `chapter.tex' not found.
+error: main.tex:9: Package natbib Error: Bibliography not compatible with author-year citations.

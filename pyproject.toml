@@ -64,6 +64,7 @@ papersmith = [
   "_kit/.claude/agents/*.md",
   "_kit/guidance/paper-guide/.gitkeep",
   "_kit/skills/kaggle-accounts/store/.gitignore",
+  "_caztor/**/*",
 ]
 
 [tool.setuptools.dynamic]

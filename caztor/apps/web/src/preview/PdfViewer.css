@@ -1,0 +1,127 @@
+.pdf-viewer {
+  position: relative;
+  height: 100%;
+  overflow: auto;
+  background: var(--color-surface-muted);
+}
+
+.pdf-viewer:focus-visible {
+  outline-offset: calc(var(--focus-ring-width) * -1);
+}
+
+.pdf-viewer__column {
+  position: relative;
+}
+
+.pdf-viewer__page {
+  position: absolute;
+  background: #ffffff;
+  box-shadow: 0 0 0 var(--border-width) var(--color-border-strong), 0 2px 6px rgb(15 20 28 / 0.12);
+}
+
+.pdf-viewer__bitmap {
+  width: 100%;
+  height: 100%;
+}
+
+.pdf-viewer__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The selectable text layer, laid out by PDF.js over the bitmap (rules from PDF.js's own viewer, trimmed). */
+.pdf-viewer__text.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  transform-origin: 0 0;
+  z-index: 1;
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.pdf-viewer__text.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.pdf-viewer__text.textLayer > :not(.markedContent),
+.pdf-viewer__text.textLayer .markedContent span:not(.markedContent) {
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.pdf-viewer__text.textLayer .markedContent {
+  display: contents;
+}
+
+.pdf-viewer__text.textLayer ::selection {
+  background: rgb(0 100 255 / 0.25);
+}
+
+.pdf-viewer__text.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+
+/* The passages the assistant's last reply explains: the text layer is transparent, so the mark shows over the page. */
+.pdf-viewer__text.textLayer .pdf-viewer__explained {
+  background-color: rgb(253 224 71 / 0.3);
+  box-shadow: 0 0 0 1px rgb(234 179 8 / 0.45);
+  border-radius: 2px;
+}
+
+/* The passage the arrows last brought into view. */
+.pdf-viewer__text.textLayer .pdf-viewer__explained--current {
+  /* The same soft fill as the other passages, set apart by a thin ring only, so it reads as easily. */
+  background-color: rgb(253 224 71 / 0.3);
+  box-shadow: 0 0 0 1.5px rgb(234 179 8 / 0.85);
+}
+
+/* The text a double click in the source brought into view, for a moment. */
+.pdf-viewer__text.textLayer .pdf-viewer__jump {
+  background-color: rgb(96 165 250 / 0.45);
+  box-shadow: 0 0 0 2px rgb(37 99 235 / 0.85);
+  border-radius: 2px;
+}
+
+/* Sticky and without height, so the notice stays at the top of the view and moves no page. */
+.pdf-viewer__notice-anchor {
+  position: sticky;
+  top: 0;
+  height: 0;
+  z-index: 2;
+}
+
+.pdf-viewer__notice {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+}

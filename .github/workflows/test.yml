@@ -8,6 +8,24 @@ on:
   pull_request:
 
 jobs:
+  test-caztor:
+    name: Caztor (LaTeX editor) Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          # Caztor runs its TypeScript directly, which needs Node 26.
+          node-version: 26.x
+          cache: "npm"
+          cache-dependency-path: caztor/package-lock.json
+      - run: npm ci --prefix caztor
+      - name: Type-check Caztor
+        run: npm --prefix caztor run typecheck
+      - name: Run Caztor's tests (Vitest)
+        run: npm --prefix caztor test
+
   test-node:
     name: Node.js Test Suite
     runs-on: ubuntu-latest

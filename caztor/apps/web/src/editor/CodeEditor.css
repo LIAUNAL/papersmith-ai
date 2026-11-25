@@ -1,0 +1,47 @@
+.code-editor {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.code-editor .cm-editor {
+  height: 100%;
+}
+
+/* PaperSmith block markers: shown, but out of reach of typing. */
+.code-editor .cm-paper-marker {
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* The passages the assistant's last reply explains. */
+.cm-explained {
+  background-color: rgb(253 224 71 / 0.38);
+  border-radius: 2px;
+}
+
+[data-theme="dark"] .cm-explained {
+  background-color: rgb(250 204 21 / 0.22);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .cm-explained {
+    background-color: rgb(250 204 21 / 0.22);
+  }
+}
+
+/* The explained passage the arrows last brought into view. */
+/* The passage the arrows brought into view: the same soft fill underneath, set apart by a thin ring only, so it reads as easily. */
+.cm-explained-current {
+  background-color: transparent;
+  outline: 1.5px solid rgb(234 179 8 / 0.85);
+  border-radius: 2px;
+}
+
+/* The word a double click in the PDF brought into view, for a moment: the same blue as the PDF's mark. */
+.cm-jump {
+  background-color: rgb(96 165 250 / 0.45);
+  outline: 1.5px solid rgb(37 99 235 / 0.85);
+  border-radius: 2px;
+}

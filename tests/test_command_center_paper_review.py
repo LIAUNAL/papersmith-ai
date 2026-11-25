@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -70,6 +72,66 @@ class PaperReviewTests(unittest.TestCase):
         index = (Path(server.__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
         self.assertIn('id="paperReviewPanel"', index)
         self.assertIn("paper-review-panel.js", index)
+
+
+STATIC = Path(server.__file__).parent / "static"
+# Loads the panel script with a stub DOM, renders a state and clicks the judge
+# button once per entry of `clicks`, recording what reaches the agent terminal.
+PANEL = r"""
+const fs = require('fs'); const path = require('path');
+const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+const calls = [];
+global.window = { sendToCli: (text, run, options) => { calls.push([text, run, options.kind]); return true; } };
+global.document = { readyState: 'complete', addEventListener() {}, getElementById: () => null };
+global.fetch = async () => ({ json: async () => input.state });
+eval(fs.readFileSync(path.join(process.argv[1], 'paper-review-panel.js'), 'utf8'));
+const html = window.PaperReviewPanel.render(input.state);
+for (let i = 0; i < input.clicks; i += 1) window.launchPaperJudge();
+process.stdout.write(JSON.stringify({ html, calls }));
+"""
+
+
+def render_panel(state: dict, clicks: int = 0) -> dict:
+    out = subprocess.run(["node", "-e", PANEL, str(STATIC)], input=json.dumps({"state": state, "clicks": clicks}),
+                         capture_output=True, text=True, cwd=tempfile.gettempdir(), check=True)
+    return json.loads(out.stdout)
+
+
+@unittest.skipUnless(shutil.which("node"), "node is not installed")
+class JudgeButtonTests(unittest.TestCase):
+    def test_without_rounds_the_button_launches_the_first_round(self) -> None:
+        result = render_panel({"status": "absent", "rounds": []}, clicks=1)
+        self.assertIn('onclick="window.launchPaperJudge()"', result["html"])
+        self.assertIn("review.launch", result["html"])
+        self.assertIn("review.empty", result["html"])
+        self.assertEqual(len(result["calls"]), 1)
+        text, run, kind = result["calls"][0]
+        self.assertTrue(text.startswith("/paper-writing "))
+        self.assertIn("paper-reviewer", text)
+        self.assertIn("paper_cli.py review --input", text)
+        self.assertIn("round 1", text)
+        self.assertNotIn("previous round", text)
+        self.assertEqual((run, kind), (False, "slash"))
+
+    def test_after_a_round_it_launches_the_next_one_against_its_revisions(self) -> None:
+        result = render_panel({"status": "ok", "rounds": [ROUND]}, clicks=1)
+        self.assertIn("review.launchAgain", result["html"])
+        self.assertIn("Round", result["html"].replace("review.round", "Round"))
+        text = result["calls"][0][0]
+        self.assertIn("round 4", text)
+        self.assertIn("every revision the previous round raised", text)
+
+    def test_an_unreadable_file_offers_no_button(self) -> None:
+        result = render_panel({"status": "invalid", "rounds": []}, clicks=1)
+        self.assertNotIn("launchPaperJudge", result["html"])
+        self.assertEqual(result["calls"], [])
+
+    def test_both_catalogues_carry_the_button_labels(self) -> None:
+        for name in ("en.js", "es.js"):
+            text = (STATIC / "i18n" / name).read_text(encoding="utf-8")
+            for key in ("review.launch", "review.launchAgain", "review.launchHint"):
+                with self.subTest(file=name, key=key):
+                    self.assertIn(f'"{key}":', text)
 
 
 if __name__ == "__main__":

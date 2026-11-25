@@ -1,0 +1,361 @@
+{
+  "repository": "https://github.com/Daprosero/papersmith-ai",
+  "commit": "1f09516",
+  "files": {
+    "01-materials-and-methods.md": {
+      "source": "sections/01-materials-and-methods.md",
+      "sha256": "b6fc1a9f5cce6419e7e08954bbac4726611ef824f71afd929366ac3b78da4ed8",
+      "stripped": [
+        "### External inputs",
+        "### Internal chain",
+        "### Structural decisions"
+      ],
+      "kept": [
+        "# Materials and Methods",
+        "## Nothing is decided here",
+        "## Preamble",
+        "## Subsection order",
+        "## Slot 1 — The dataset",
+        "## Slot 2 — The borrowed machinery",
+        "## Slot 3 — The proposal",
+        "### The summary diagram",
+        "## Every artefact is referenced before it appears",
+        "## Continuity",
+        "## Extent counts prose, never mathematics",
+        "## Equations: display and number are two separate decisions",
+        "## Ambiguity between the equation and the code",
+        "## Citations",
+        "## Avoid re-motivating",
+        "## Drafting order",
+        "## Disqualifiers"
+      ]
+    },
+    "02-experimental-setup.md": {
+      "source": "sections/02-experimental-setup.md",
+      "sha256": "8a4a602579e8776de03113540612c5e9a9d63b1e354dec89e397804e6ecc021f",
+      "stripped": [
+        "### External inputs",
+        "### Internal chain",
+        "### Structural decisions"
+      ],
+      "kept": [
+        "# Experimental Set-Up",
+        "## The two subsections split design from execution",
+        "## Preamble",
+        "## Subsection 1 — Assessment and Method Comparison",
+        "### What is cited here",
+        "## Subsection 2 — Training Details",
+        "## Every artefact is referenced before it appears",
+        "## Figures and tables here are protocol, never results",
+        "## The closing diagram",
+        "## Disqualifiers"
+      ]
+    },
+    "03-results-and-discussion.md": {
+      "source": "sections/03-results-and-discussion.md",
+      "sha256": "b47a672f923ced52f0e0875dcaa17881bae56537f3be826e954ce3707e03bb18",
+      "stripped": [
+        "### External inputs",
+        "### Internal chain",
+        "### Structural decisions"
+      ],
+      "kept": [
+        "# Results and Discussion",
+        "## One section, never two",
+        "## The blocks",
+        "### Organizing by scenario instead",
+        "## The chain that ends here",
+        "## How a result is presented",
+        "## Every artefact is referenced before it appears",
+        "## The three-beat move",
+        "## The discussion: three registers",
+        "## When a contribution has no competitor",
+        "## The artefact type follows the claim",
+        "## Citations",
+        "## Disqualifiers"
+      ]
+    },
+    "04-limitations.md": {
+      "source": "sections/04-limitations.md",
+      "sha256": "924f07def2f14281736706f6ea76a940069f5f106423bf7c2de20aa3cf4ea0f8",
+      "stripped": [
+        "### External inputs",
+        "### Internal chain",
+        "### Structural decisions"
+      ],
+      "kept": [
+        "# Limitations",
+        "## The opening is a concession",
+        "## The anatomy of an item",
+        "### Every item carries at least one citation",
+        "## Two sweeps, two kinds of gap",
+        "## The second paragraph: the quantitative failure mode",
+        "## The closing",
+        "## Coupling with future work",
+        "## Disqualifiers"
+      ]
+    },
+    "05-related-work.md": {
+      "source": "sections/05-related-work.md",
+      "sha256": "a22443029116a8a12b4fcf6a9c772482c9006dff7b32780a032f0b17518adc3a",
+      "stripped": [
+        "### External inputs",
+        "### Internal chain"
+      ],
+      "kept": [
+        "# Related Work",
+        "## Whether the section exists",
+        "## Global structural rule",
+        "## Block 1 — Preamble",
+        "## Block 2 — General panorama of the problem",
+        "## Block 3 — One block per specific problem",
+        "### Two ways to walk a block, chosen by the nature of the problem",
+        "## Block 4 — Closing: open fronts and the gap",
+        "## Block 5 — Synthesis artefact",
+        "## Every artefact is referenced before it appears",
+        "## Thematic, not catalogue",
+        "## Citations",
+        "## Drafting order",
+        "## Disqualifiers"
+      ]
+    },
+    "06-introduction.md": {
+      "source": "sections/06-introduction.md",
+      "sha256": "cf691d6191487314e5d85569e5d7bf734810a218e457236933579cae5a51f939",
+      "stripped": [
+        "### External inputs",
+        "### Internal chain",
+        "### Structural decisions"
+      ],
+      "kept": [
+        "# Introduction",
+        "## Global structural rule",
+        "## Drafting order",
+        "### What is writable before measuring",
+        "### The loop that must be closed by hand",
+        "## Block 1 — Contextualization",
+        "## Block 2 — Problem statement",
+        "## Block 3 — State of the art and gap",
+        "## Block 4 — Proposal and contributions",
+        "### Paragraph 4a — the prose. Three movements, two or three sentences.",
+        "### Paragraph 4b — the list.",
+        "## Block 5 — Evaluation of the proposal",
+        "## Block 6 — Organization of the article",
+        "## Cross-cutting conventions",
+        "## Disqualifiers"
+      ]
+    },
+    "07-conclusions.md": {
+      "source": "sections/07-conclusions.md",
+      "sha256": "4f1bba60019d16f037f25f4a1813c4c39542a69cd9e101ef7d37376178e6351e",
+      "stripped": [
+        "### External inputs",
+        "### Internal chain",
+        "### Structural decisions"
+      ],
+      "kept": [
+        "# Conclusions",
+        "## Four functional blocks",
+        "## Block 1 — The proposal and its components",
+        "## Block 2 — The results recap",
+        "## Block 3 — The consequence beyond the method",
+        "## Block 4 — Future work",
+        "## Optional",
+        "## Drafting order",
+        "## Disqualifiers"
+      ]
+    },
+    "08-abstract.md": {
+      "source": "sections/08-abstract.md",
+      "sha256": "f8cfb75a090a1189fe958c5ff554f9144c1b1505d6d52af2aa37fc091cccf551",
+      "stripped": [
+        "### External inputs",
+        "### Internal chain"
+      ],
+      "kept": [
+        "# Abstract",
+        "## Global structural rule",
+        "## What the abstract drops",
+        "## Drafting order",
+        "## Slot 1 — Context",
+        "## Slot 2 — Problem",
+        "## Slot 3 — The proposal, named",
+        "## Slot 4 — Announcement and components",
+        "## Slot 5 — Validation",
+        "## Slot 6 — Result or secondary contribution",
+        "### Figures are permitted here, under three conditions",
+        "## Slot 7 — Verdict",
+        "## Cross-cutting conventions",
+        "## Disqualifiers"
+      ]
+    },
+    "09-title-and-keywords.md": {
+      "source": "sections/09-title-and-keywords.md",
+      "sha256": "43625fe4ed1cc828c5e447baad30305ebe598bad256a0d4c4cd3b9256ad2c2a3",
+      "stripped": [
+        "### External inputs",
+        "### Internal chain",
+        "### Structural decisions"
+      ],
+      "kept": [
+        "# Title and Keywords",
+        "## The title is a slot machine",
+        "## Dashes do two different jobs",
+        "## What never appears in the title",
+        "## Keywords",
+        "## The classification line",
+        "## Disqualifiers"
+      ]
+    },
+    "10-back-matter.md": {
+      "source": "sections/10-back-matter.md",
+      "sha256": "0db516c2830714f48d16af1a7d3871ec99e06d74efa9ae24d89dd00d3d504b1e",
+      "stripped": [
+        "### External inputs",
+        "### Internal chain"
+      ],
+      "kept": [
+        "# Back Matter",
+        "## The blocks, in this order",
+        "## Author Contributions",
+        "## Funding",
+        "## Data Availability Statement",
+        "## Conflicts of Interest",
+        "## Acknowledgments",
+        "## Appendices",
+        "## Drafting order",
+        "## Disqualifiers"
+      ]
+    }
+  },
+  "conventions": [
+    {
+      "rule": "Place a citation at the end of the sentence it supports: one sentence, one attributed claim, and a sentence that would need two citations is two sentences.",
+      "evidence": [
+        {
+          "file": "05-related-work.md",
+          "quote": "At the end of the sentence it supports"
+        },
+        {
+          "file": "06-introduction.md",
+          "quote": "Place the citation at the end of the sentence it supports"
+        }
+      ]
+    },
+    {
+      "rule": "Never use a citation as a noun phrase (\"the work in [N] does X\"): write about families of work and ideas, and let the citation close the sentence.",
+      "evidence": [
+        {
+          "file": "05-related-work.md",
+          "quote": "Never as a noun phrase"
+        },
+        {
+          "file": "06-introduction.md",
+          "quote": "Do not use the citation as a noun phrase"
+        }
+      ]
+    },
+    {
+      "rule": "Cite what is borrowed and do not cite what is the document's own. A citation that credits an object (a definition, an estimator, a dataset, an instrument) attaches to that object.",
+      "evidence": [
+        {
+          "file": "01-materials-and-methods.md",
+          "quote": "Borrowed is cited, own is not"
+        },
+        {
+          "file": "01-materials-and-methods.md",
+          "quote": "The citation attaches to the object it credits"
+        },
+        {
+          "file": "02-experimental-setup.md",
+          "quote": "what is borrowed is cited"
+        }
+      ]
+    },
+    {
+      "rule": "Expand every acronym at its first appearance, including the name of the document's own method, and use the acronym alone afterwards.",
+      "evidence": [
+        {
+          "file": "06-introduction.md",
+          "quote": "Expand acronyms on first appearance"
+        },
+        {
+          "file": "08-abstract.md",
+          "quote": "Expand every acronym on first appearance"
+        }
+      ]
+    },
+    {
+      "rule": "State the count before enumerating components or contributions, and keep the same count, order and names wherever the list is repeated.",
+      "evidence": [
+        {
+          "file": "06-introduction.md",
+          "quote": "State the count before enumerating"
+        },
+        {
+          "file": "07-conclusions.md",
+          "quote": "Same count, same order, same names"
+        },
+        {
+          "file": "08-abstract.md",
+          "quote": "State the count before enumerating it"
+        }
+      ]
+    },
+    {
+      "rule": "Give each property, problem and component the same name everywhere it appears, not a synonym.",
+      "evidence": [
+        {
+          "file": "03-results-and-discussion.md",
+          "quote": "The property carries the same name through all five links"
+        },
+        {
+          "file": "06-introduction.md",
+          "quote": "The property carries the same name through every link"
+        }
+      ]
+    },
+    {
+      "rule": "Refer to every figure and table in the text before it appears, and point at the exact part of it that holds the value.",
+      "evidence": [
+        {
+          "file": "01-materials-and-methods.md",
+          "quote": "Every artefact is referenced before it appears"
+        },
+        {
+          "file": "02-experimental-setup.md",
+          "quote": "Every artefact is referenced before it appears"
+        },
+        {
+          "file": "03-results-and-discussion.md",
+          "quote": "Every artefact is referenced before it appears"
+        },
+        {
+          "file": "05-related-work.md",
+          "quote": "Every artefact is referenced before it appears"
+        }
+      ]
+    },
+    {
+      "rule": "In summarizing parts (the abstract and the conclusions) add no claim, number or property that the body does not establish, and quote a figure only when it matches the results exactly.",
+      "evidence": [
+        {
+          "file": "07-conclusions.md",
+          "quote": "They add nothing"
+        },
+        {
+          "file": "07-conclusions.md",
+          "quote": "A quoted figure must match the results section exactly"
+        },
+        {
+          "file": "08-abstract.md",
+          "quote": "must match it exactly"
+        }
+      ]
+    },
+    {
+      "rule": "Never state a fact, number, result or reference the user has not provided. Ask for it, or leave a visible placeholder.",
+      "evidence": []
+    }
+  ]
+}

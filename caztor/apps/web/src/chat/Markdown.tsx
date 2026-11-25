@@ -1,0 +1,63 @@
+import { createElement, type ReactNode } from "react";
+import { parseInline, parseMarkdown, type Block, type Inline } from "./markdown.ts";
+import { TexMath } from "./TexMath.tsx";
+import "./Markdown.css";
+
+function renderInlines(inlines: Inline[]): ReactNode[] {
+  return inlines.map((inline, index) => {
+    switch (inline.type) {
+      case "text":
+        return inline.text;
+      case "code":
+        return <code key={index}>{inline.text}</code>;
+      case "strong":
+        return <strong key={index}>{renderInlines(inline.children)}</strong>;
+      case "em":
+        return <em key={index}>{renderInlines(inline.children)}</em>;
+      case "math":
+        return <TexMath key={index} tex={inline.tex} display={inline.display} />;
+      case "link":
+        return (
+          <a key={index} href={inline.href} target="_blank" rel="noopener noreferrer nofollow">
+            {renderInlines(inline.children)}
+          </a>
+        );
+    }
+  });
+}
+
+function renderBlock(block: Block, index: number): ReactNode {
+  switch (block.type) {
+    case "paragraph":
+      return <p key={index}>{renderInlines(block.inlines)}</p>;
+    case "heading":
+      // Headings in a message are small: they never outrank the pane's own title.
+      return createElement(`h${Math.min(6, block.level + 2)}`, { key: index, className: "markdown__heading" }, renderInlines(block.inlines));
+    case "code":
+      return (
+        <pre key={index} className="markdown__code" data-language={block.language === "" ? undefined : block.language}>
+          <code>{block.text}</code>
+        </pre>
+      );
+    case "math":
+      return <TexMath key={index} tex={block.tex} display />;
+    case "list": {
+      const items = block.items.map((item, at) => <li key={at}>{renderInlines(item)}</li>);
+      return block.ordered ? <ol key={index}>{items}</ol> : <ul key={index}>{items}</ul>;
+    }
+    case "quote":
+      return <blockquote key={index}>{renderInlines(block.inlines)}</blockquote>;
+    case "rule":
+      return <hr key={index} />;
+  }
+}
+
+/** Assistant text as safe elements: nothing in it can become markup, a script, or a request; formulas are typeset. */
+export function Markdown({ text }: { text: string }) {
+  return <div className="markdown">{parseMarkdown(text).map(renderBlock)}</div>;
+}
+
+/** One line of assistant text (a list item of a tutor's answer): emphasis, code, links and formulas, no blocks. */
+export function InlineMarkdown({ text }: { text: string }) {
+  return <>{renderInlines(parseInline(text))}</>;
+}

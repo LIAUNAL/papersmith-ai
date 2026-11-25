@@ -1,0 +1,142 @@
+.rail {
+  display: flex;
+  flex: 0 0 13.5rem;
+  flex-direction: column;
+  min-height: 0;
+  border-right: var(--border-width) solid var(--color-border);
+  background: var(--color-surface-muted);
+  font-size: var(--text-sm);
+}
+
+.rail--collapsed {
+  flex-basis: 2rem;
+  align-items: center;
+  padding-top: var(--space-2);
+}
+
+.rail__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+}
+
+.rail__heading {
+  font-weight: var(--weight-semibold);
+}
+
+.rail__fold {
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font: inherit;
+}
+
+.rail__fold:hover {
+  background: var(--color-surface-hover);
+}
+
+.rail__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0 var(--space-2);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.rail__project {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.rail__project:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+.rail__project[aria-current="true"] {
+  background: var(--color-surface-selected);
+  cursor: default;
+  font-weight: var(--weight-medium);
+}
+
+.rail__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rail__badge,
+.rail__note {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.rail__badge {
+  padding: 0 var(--space-1);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.rail__note {
+  flex-basis: 100%;
+}
+
+.rail__empty,
+.rail__problem {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+.rail__empty {
+  color: var(--color-text-muted);
+}
+
+.rail__problem {
+  color: var(--color-danger);
+}
+
+.rail__add {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.rail__add input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.rail__new {
+  margin-left: auto;
+}
+
+.rail__create {
+  flex-wrap: wrap;
+  border-top: 0;
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.rail__create input {
+  flex-basis: 100%;
+}
