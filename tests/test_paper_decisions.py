@@ -3263,6 +3263,126 @@ class ReopenInvalidatesProvenanceEndToEndTests(unittest.TestCase):
         )
 
 
+class RelocatedContractProvenanceTests(unittest.TestCase):
+    """A provenance record stores the contract path `substitute --contract`
+    was given, which is absolute on the machine that wrote the block. A
+    workspace cloned or moved elsewhere keeps that record, so `plan` and
+    `phases` must find the contract in the workspace's own `sections/`
+    rather than read a path that only existed on the author's machine.
+    Before this, `phases` crashed with FileNotFoundError, and the systematic
+    review checklist (which reads `phases`) reported every declaration as
+    missing.
+    """
+
+    BLOCK_ID = "relocated-e2e.needs-nothing"
+
+    def setUp(self) -> None:
+        base = FORGE_ROOT / "implementations"
+        self.origin = base / f".paper-writing-relocated-origin-{os.getpid()}"
+        self.moved = base / f".paper-writing-relocated-moved-{os.getpid()}"
+        for root in (self.origin, self.moved):
+            self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        sections_dir = self.origin / "sections"
+        sections_dir.mkdir(parents=True)
+        header = json.dumps({
+            "section": "relocated-e2e",
+            "position": 1,
+            "blocks": [{
+                "id": "needs-nothing",
+                "requires_facts": [],
+                "requires_declarations": [],
+                "citations": "none",
+            }],
+        })
+        self.contract_text = (
+            f"---\n{header}\n---\n\nProse body, never read for meaning.\n\n"
+            "### External inputs\n\n### Internal chain\n"
+        )
+        contract_path = sections_dir / "relocated-e2e.md"
+        contract_path.write_text(self.contract_text, encoding="utf-8")
+
+        paper_dir = self.origin / "paper"
+        self._ok("scaffold", "--paper", str(paper_dir))
+        self._ok("open", "--paper", str(paper_dir), "--block", self.BLOCK_ID, "--at-end")
+        body_path = self.origin / "body.tex"
+        body_path.write_text("some prose\n", encoding="utf-8")
+        self._ok(
+            "substitute", "--paper", str(paper_dir), "--block", self.BLOCK_ID,
+            "--body", str(body_path), "--contract", str(contract_path),
+        )
+        recorded = paper_provenance.read_provenance((paper_dir / "main.tex").read_bytes())
+        self.assertEqual(recorded["body"]["records"][0]["contract"], str(contract_path))
+        shutil.move(str(self.origin), str(self.moved))
+        self.paper_dir = self.moved / "paper"
+        self.sections_dir = self.moved / "sections"
+
+    def _run(self, *args: str):
+        proc = subprocess.run(
+            [sys.executable, str(CLI), *args], capture_output=True, text=True, timeout=60,
+        )
+        return proc.returncode, proc.stdout, proc.stderr
+
+    def _ok(self, *args: str) -> dict:
+        code, stdout, stderr = self._run(*args)
+        self.assertEqual(code, 0, stderr or stdout)
+        return json.loads(stdout)
+
+    def _plan_state(self) -> str:
+        payload = self._ok(
+            "plan", "--paper", str(self.paper_dir), "--sections", str(self.sections_dir),
+        )
+        return {p["block"]: p["state"] for p in payload["provenance"]}[self.BLOCK_ID]
+
+    def test_a_moved_workspace_finds_its_unchanged_contract_in_sections(self) -> None:
+        self.assertFalse((self.origin / "sections" / "relocated-e2e.md").exists())
+        self.assertEqual(self._plan_state(), "current")
+
+    def test_phases_reads_a_moved_workspace_instead_of_crashing(self) -> None:
+        code, stdout, stderr = self._run(
+            "phases", "--paper", str(self.paper_dir), "--sections", str(self.sections_dir),
+        )
+        self.assertEqual(code, 0, stderr or stdout)
+        self.assertNotIn("Traceback", stderr)
+        self.assertEqual(json.loads(stdout)["status"], "ok")
+
+    def test_a_moved_workspace_whose_contract_changed_reports_drifted(self) -> None:
+        (self.sections_dir / "relocated-e2e.md").write_text(
+            self.contract_text + "\nAn edit after the block was written.\n", encoding="utf-8",
+        )
+        self.assertEqual(self._plan_state(), "drifted")
+
+    def test_a_copy_reads_its_own_contract_not_the_original_one(self) -> None:
+        shutil.copytree(self.moved, self.origin)
+        (self.sections_dir / "relocated-e2e.md").write_text(
+            self.contract_text + "\nAn edit in the copy only.\n", encoding="utf-8",
+        )
+        self.assertEqual(self._plan_state(), "drifted")
+
+    def test_phases_reports_the_relocated_block_current(self) -> None:
+        payload = self._ok(
+            "phases", "--paper", str(self.paper_dir), "--sections", str(self.sections_dir),
+        )
+        self.assertIn(self.BLOCK_ID, json.dumps(payload))
+        self.assertNotIn('"drifted"', json.dumps(payload))
+
+    def test_a_contract_found_nowhere_reports_drifted_never_current(self) -> None:
+        (self.sections_dir / "relocated-e2e.md").rename(self.sections_dir / "renamed.md")
+        self.assertEqual(self._plan_state(), "drifted")
+
+    def test_verify_compares_the_relocated_contract(self) -> None:
+        main_tex_bytes = (self.paper_dir / "main.tex").read_bytes()
+        provenance = paper_provenance.read_provenance(main_tex_bytes)
+        drift = paper_coupling_evidence._compute_contract_drift(
+            main_tex_bytes, provenance, self.sections_dir,
+        )
+        self.assertIs(drift[self.BLOCK_ID], False)
+        (self.sections_dir / "relocated-e2e.md").unlink()
+        drift = paper_coupling_evidence._compute_contract_drift(
+            main_tex_bytes, provenance, self.sections_dir,
+        )
+        self.assertIsNone(drift[self.BLOCK_ID])
+
+
 class ReadinessDeclinedFactsTests(unittest.TestCase):
     """`a-declined-fact-has-somewhere-to-live` + its `condition-that-expires`
     extension: the decisive proof that a decline actually changes what

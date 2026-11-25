@@ -139,6 +139,26 @@ def record_write(
     }
 
 
+def locate_contract(recorded: str | Path, sections_dir: Path | None) -> Path | None:
+    """The contract file a provenance record names, in THIS workspace.
+
+    `record_write` persists the path `substitute --contract` was given,
+    which is absolute on the machine that wrote the block. A workspace that
+    was cloned, moved or copied keeps that record, so the contract is looked
+    up by its file name in the workspace's own `sections_dir` first, where
+    every section contract lives; the recorded path is used only when
+    `sections_dir` holds no file of that name. Returns `None` when the
+    contract is found in neither place; a caller must then treat the block
+    as not current, never read the missing path.
+    """
+    path = Path(recorded)
+    if sections_dir is not None:
+        local = Path(sections_dir) / path.name
+        if local.is_file():
+            return local
+    return path if path.is_file() else None
+
+
 def drift(main_tex_bytes: bytes, block_id: str, contract_path: Path) -> bool | None:
     """Whether `block_id`'s persisted contract digest still matches
     `contract_path`'s current bytes.

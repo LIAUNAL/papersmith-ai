@@ -1977,6 +1977,7 @@ def cmd_validate(args: argparse.Namespace) -> dict:
 
 def _compute_provenance_report(
     main_tex_bytes: bytes, status: dict, declarations_body: dict, corpus: "paper_graph.Corpus | None",
+    sections_dir: Path | None = None,
 ) -> list:
     """The `current`/`drifted`/`unprovenanced` per-block state, extracted
     from `compute_plan` (`the-phases-are-derived-not-remembered`, tasks.md
@@ -2017,7 +2018,14 @@ def _compute_provenance_report(
         if entry is None:
             report.append({"block": block_id, "state": "unprovenanced"})
             continue
-        digest_drifted = paper_provenance.drift(main_tex_bytes, block_id, Path(entry["contract"]))
+        # A recorded path from another machine is relocated into this
+        # workspace's sections/; a contract found nowhere cannot be shown
+        # current, so it reads as drifted rather than crashing the report.
+        contract_path = paper_provenance.locate_contract(entry["contract"], sections_dir)
+        digest_drifted = (
+            True if contract_path is None
+            else paper_provenance.drift(main_tex_bytes, block_id, contract_path)
+        )
         generation_drifted = stale_since_generation.get(block_id, 0) > entry.get("generation", 0)
         report.append({
             "block": block_id,
@@ -2097,7 +2105,9 @@ def compute_plan(paper_dir: Path, *, guidance_dir: Path, sections_dir: Path | No
 
     status = paper_block.status(main_tex_bytes)
     corpus = paper_graph.assemble_corpus(sections_dir) if sections_dir is not None else None
-    provenance_report = _compute_provenance_report(main_tex_bytes, status, declarations_body, corpus)
+    provenance_report = _compute_provenance_report(
+        main_tex_bytes, status, declarations_body, corpus, sections_dir,
+    )
 
     # `specs/source-declaration-authoring/spec.md`, `Requirement: The
     # Position Report Names Every Declarable Root's And Every Guidance
@@ -2379,7 +2389,9 @@ def compute_phases(
         declarations_record["body"] if declarations_record is not None
         else {"generation": 0, "records": []}
     )
-    provenance_report = _compute_provenance_report(main_tex_bytes, status, declarations_body, corpus)
+    provenance_report = _compute_provenance_report(
+        main_tex_bytes, status, declarations_body, corpus, sections_dir,
+    )
     provenance_by_block = {entry["block"]: entry["state"] for entry in provenance_report}
 
     declared_facts, declared_declarations = paper_declarations.read_satisfied(paper_dir)

@@ -216,12 +216,17 @@ def _producers_by_fact(sections_dir: Path) -> dict:
     return {fact: (tuple(block_ids), None) for fact, block_ids in by_fact.items()}
 
 
-def _compute_contract_drift(main_tex_bytes: bytes, provenance: dict | None) -> dict:
+def _compute_contract_drift(
+    main_tex_bytes: bytes, provenance: dict | None, sections_dir: Path | None = None,
+) -> dict:
     if provenance is None:
         return {}
     result: dict = {}
     for entry in provenance["body"]["records"]:
-        contract_path = Path(entry["contract"])
+        contract_path = paper_provenance.locate_contract(entry["contract"], sections_dir)
+        if contract_path is None:
+            result[entry["block"]] = None
+            continue
         try:
             result[entry["block"]] = paper_provenance.drift(
                 main_tex_bytes, entry["block"], contract_path
@@ -387,7 +392,7 @@ def gather(paper_dir: Path, sections_dir: Path) -> Evidence:
 
     record = _read_declaration_record(paper_dir)
     provenance = paper_provenance.read_provenance(main_tex_bytes)
-    contract_drift = _compute_contract_drift(main_tex_bytes, provenance)
+    contract_drift = _compute_contract_drift(main_tex_bytes, provenance, sections_dir)
 
     parsed = paper_block.parse(main_tex_bytes)
     block_bodies = {
