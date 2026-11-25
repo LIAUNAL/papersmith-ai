@@ -4,8 +4,10 @@ Each reader turns one harness's local session store into ``(ts, role, text)``
 turns (``role`` is ``user``, ``assistant`` or ``error``); :func:`attribute`
 assigns them to phases the same way for every harness: a phase command opens
 its phase and the turns that follow belong to it until the next one; what comes
-before the first one is ``unassigned``. These turns are clipped for the graph:
-:mod:`ai_archive` keeps them in full.
+before the first one is ``unassigned``. In a review workspace the phases are
+the review steps (``review_board``) and a ``/systematic-review <verb>`` command
+opens the step that runs its verb (:func:`review_verbs`). These turns are
+clipped for the graph: :mod:`ai_archive` keeps them in full.
 
 Stores (read-only, bounded; a missing store is ``absent``, never an error):
 
@@ -46,6 +48,7 @@ prompts, OpenCode commands) and a literal ``/x args``.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
@@ -120,13 +123,56 @@ def model_label(harness: str, meta: dict[str, Any] | None) -> str:
     return f"{name} · {detail}" if detail else name
 
 
-def skill_stages() -> dict[str, str]:
-    """Skill name -> the first phase whose actions list it."""
+#: The review line's kind (kept for callers; the boards live in ``lines``).
+REVIEW = "review"
+
+
+def _board(kind: str) -> tuple[tuple[str, ...], dict[str, dict[str, Any]]]:
+    """The phases (or steps) of ``kind``'s board in order, and their actions."""
+    from . import lines  # lazy: it reads phase_actions, state_extractor and review_board
+    board = lines.board(kind)
+    return board.stages, board.actions
+
+
+def skill_stages(kind: str = "experimental") -> dict[str, str]:
+    """Skill name -> the first phase (step of ``kind``'s board) whose actions
+    list it."""
+    stages, actions = _board(kind)
     out: dict[str, str] = {}
-    for stage in phase_actions.STAGES:
-        for skill in (phase_actions.ACTIONS.get(stage) or {}).get("skills", ()):
+    for stage in stages:
+        for skill in (actions.get(stage) or {}).get("skills", ()):
             out.setdefault(skill, stage)
     return out
+
+
+@functools.lru_cache(maxsize=32)
+def command_verbs(kind: str) -> dict[tuple[str, str], str]:
+    """``(skill, verb)`` -> the step of ``kind``'s board that runs it, for a
+    board whose commands carry a verb (``verb_skill``; empty otherwise): each
+    prompt action's slash command and prefix (``/systematic-review screen``),
+    each ``<verb_cli> <verb>`` command as ``/<verb_skill> <verb>``, and the
+    skill's verbs no action names; the first step that names a verb keeps it."""
+    from . import lines
+    board = lines.board(kind)
+    out: dict[tuple[str, str], str] = {}
+    if not board.verb_skill:
+        return out
+    cli = f"{board.verb_cli} " if board.verb_cli else None
+    for stage in board.stages:
+        for action in board.actions[stage]["actions"]:
+            if action.get("kind") == "prompt" and str(action.get("prefix") or "").strip():
+                out.setdefault((str(action["slash"]).lstrip("/"), action["prefix"].strip()), stage)
+            elif (cli and action.get("kind") == "command"
+                  and str(action.get("command") or "").startswith(cli)):
+                out.setdefault((board.verb_skill, action["command"][len(cli):].split(" ", 1)[0]), stage)
+    for key, stage in board.verb_aliases.items():
+        out.setdefault(key, stage)
+    return out
+
+
+def review_verbs() -> dict[tuple[str, str], str]:
+    """The review board's :func:`command_verbs`."""
+    return command_verbs(REVIEW)
 
 
 def _unmarked(args: str) -> str:
@@ -149,7 +195,14 @@ def command_of(text: str) -> tuple[str, str] | None:
     return None
 
 
-def stage_for(name: str, args: str, skills: dict[str, str]) -> str | None:
+def stage_for(name: str, args: str, skills: dict[str, str], kind: str = "experimental") -> str | None:
+    """The phase a ``/<name> <args>`` command opens; on a board whose
+    commands carry a verb (the review line's), the step its verb (the first
+    word of ``args``) runs, else the first step that lists the skill."""
+    verbs = command_verbs(kind)
+    if verbs:
+        head = args.strip().split(" ", 1)[0].lower()
+        return verbs.get((name, head)) or skills.get(name)
     if name == "paper-writing":
         head = args.strip().split(" ", 1)[0].lower()
         return "declarations" if head == "mark" else "writing"
@@ -191,9 +244,10 @@ def compact(ts: Any, role: str, text: str) -> Compact | None:
 
 
 def attribute(turns: Iterable[Compact], ref: str, skills: dict[str, str],
-              events: dict[str, list[dict[str, Any]]]) -> None:
-    """Assign one session's compacted turns to phases. Only the agent's last
-    reply before the next user turn is kept."""
+              events: dict[str, list[dict[str, Any]]], kind: str = "experimental") -> None:
+    """Assign one session's compacted turns to phases (``kind``'s: the review
+    steps for ``"review"``). Only the agent's last reply before the next user
+    turn is kept."""
     stage: str = UNASSIGNED
     reply: dict[str, Any] | None = None
 
@@ -220,7 +274,7 @@ def attribute(turns: Iterable[Compact], ref: str, skills: dict[str, str],
                 flush()
                 stage = skills[text]
             continue
-        target = stage_for(*command, skills) if command else None
+        target = stage_for(*command, skills, kind) if command else None
         flush()
         if target is not None:
             stage = target
@@ -714,8 +768,8 @@ def _antigravity_turns(lines: Iterable[str],
 
 # --- the combined read -----------------------------------------------------
 
-def _read_files(directory: Path | None, harness: str,
-                skills: dict[str, str], events: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+def _read_files(directory: Path | None, harness: str, skills: dict[str, str],
+                events: dict[str, list[dict[str, Any]]], kind: str = "experimental") -> dict[str, Any]:
     if directory is None or not directory.is_dir():
         return {"status": "absent", "sessions": 0}
     line_turn, markers = LINE_READERS[harness]
@@ -727,7 +781,7 @@ def _read_files(directory: Path | None, harness: str,
                 skipped += 1
                 continue
             turns = session_turns(path, line_turn, markers, LINE_MODELS.get(harness))
-            attribute(turns, f"{harness}:{path.stem[-8:]}", skills, events)
+            attribute(turns, f"{harness}:{path.stem[-8:]}", skills, events, kind)
             read += 1
         except OSError:
             skipped += 1
@@ -743,16 +797,19 @@ def _read_files(directory: Path | None, harness: str,
 
 
 def read_all(root: Path, locations: dict[str, Path | None] | None = None,
-             original: Path | None = None) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
+             original: Path | None = None,
+             kind: str = "experimental") -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
     """Phase events from every harness and a per-harness status.
 
     ``locations`` overrides where each harness's store is (tests, unusual
-    installs); a harness mapped to ``None`` is skipped as ``absent``.
+    installs); a harness mapped to ``None`` is skipped as ``absent``. ``kind``
+    is the workspace's paper line: ``"review"`` attributes the turns to the
+    review steps, any other line to the experimental phases.
     """
     roots = {str(root).rstrip("/\\")}
     if original is not None:
         roots.add(str(original).rstrip("/\\"))
-    skills = skill_stages()
+    skills = skill_stages(kind)
     events: dict[str, list[dict[str, Any]]] = {}
     status: dict[str, Any] = {}
     overrides = locations or {}
@@ -765,9 +822,9 @@ def read_all(root: Path, locations: dict[str, Path | None] | None = None,
 
     guarded("claude-code", lambda: _read_files(
         overrides["claude-code"] if "claude-code" in overrides else claude_dir(roots),
-        "claude-code", skills, events))
+        "claude-code", skills, events, kind))
     guarded("pi", lambda: _read_files(
-        overrides["pi"] if "pi" in overrides else pi_dir(roots), "pi", skills, events))
+        overrides["pi"] if "pi" in overrides else pi_dir(roots), "pi", skills, events, kind))
 
     def opencode() -> dict[str, Any]:
         db = overrides["opencode"] if "opencode" in overrides else opencode_db()
@@ -775,7 +832,7 @@ def read_all(root: Path, locations: dict[str, Path | None] | None = None,
             return {"status": "absent", "sessions": 0}
         sessions, state = opencode_sessions(db, roots)
         for session_id, turns in sessions:
-            attribute(turns, f"opencode:{session_id[-8:]}", skills, events)
+            attribute(turns, f"opencode:{session_id[-8:]}", skills, events, kind)
         return {"status": state, "sessions": len(sessions)}
 
     guarded("opencode", opencode)
@@ -786,7 +843,7 @@ def read_all(root: Path, locations: dict[str, Path | None] | None = None,
             return {"status": "absent", "sessions": 0}
         sessions, state = antigravity_sessions(db, roots)
         for session_id, turns in sessions:
-            attribute(turns, f"antigravity:{session_id[-8:]}", skills, events)
+            attribute(turns, f"antigravity:{session_id[-8:]}", skills, events, kind)
         return {"status": state, "sessions": len(sessions)}
 
     guarded("antigravity", antigravity)
@@ -801,6 +858,6 @@ def clear_cache() -> None:
         _antigravity_cache.clear()
 
 
-__all__ = ["HARNESSES", "HARNESS_NAMES", "LINE_MODELS", "UNASSIGNED", "antigravity_model_at", "antigravity_models",
+__all__ = ["HARNESSES", "HARNESS_NAMES", "LINE_MODELS", "REVIEW", "UNASSIGNED", "antigravity_model_at", "antigravity_models",
            "attribute", "clear_cache", "command_of", "compact", "model_label",
-           "operator_text", "read_all", "related_dirs", "session_turns", "skill_stages", "stage_for"]
+           "operator_text", "read_all", "related_dirs", "review_verbs", "command_verbs", "session_turns", "skill_stages", "stage_for"]

@@ -73,6 +73,7 @@ CLI_COMMANDS: tuple[str, ...] = (
     "init",
     "env",
     "upgrade",
+    "kind",
     "status",
     "ingest",
     "deliberate",
@@ -1620,6 +1621,10 @@ CLI_DISPOSITIONS: dict[str, str] = {
     "mcp": "out",
     # Operator environment provisioning: long-running multi-gigabyte command.
     "env": "out",
+    # `kind set` moves a workspace to another paper line on the operator's
+    # agreement (`--by`), removing the old line's files: the operator's
+    # decision, never a tool an agent calls on their behalf.
+    "kind": "out",
     # The team registry records people and their own attestation that they
     # own one account per service: a person's declaration, never an agent's.
     "team": "out",

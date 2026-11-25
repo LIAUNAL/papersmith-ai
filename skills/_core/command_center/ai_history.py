@@ -18,6 +18,11 @@ Each phase reports ``metrics``: rounds, prompts, replies, corrections, approvals
 tool errors, sessions, each outcome, and ``first_pass_rate``, the share of rounds
 that needed no rework.
 
+In a review workspace (``paper_kind: "review"``, read from the workspace on
+every call) the phases are the review steps (``review_board``): their labels,
+their evidence and their skills; the declarations belong to its writing step
+and the proposal revisions, the experiments and the remote runs to none.
+
 Colour: ``red`` when the phase has not passed and shows no friction;
 ``orange`` when it shows errors, rework (more than one revision) or user
 iterations (a follow-up message, a repeated command, a deliberation edit);
@@ -31,18 +36,23 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from . import ai_archive, ai_transcripts, decisions, phase_actions
+from . import ai_archive, ai_transcripts, decisions, lines, phase_actions
+
+try:
+    from ..paper_types import decision as paper_type
+except ImportError:
+    # The paper-writing scripts import this package as top-level
+    # ``command_center`` (``skills/_core`` on ``sys.path``), where the relative
+    # import has no parent; ``paper_types`` is then a sibling top-level package.
+    from paper_types import decision as paper_type  # type: ignore[no-redef]
 
 MAX_PHASE_EVENTS = 60
 TEXT_MAX = 240
 
-#: decisions source -> the phase it belongs to.
-SOURCE_STAGES = {
-    "declarations": "declarations",
-    "proposal": "proposal",
-    "experiment": "poc_experiments",
-    "remote-execution": "poc_experiments",
-}
+#: decisions source -> the phase it belongs to (each board's ``decision_stages``).
+SOURCE_STAGES = lines.EXPERIMENTAL.decision_stages
+#: decisions source -> the review step it belongs to (review workspaces).
+REVIEW_SOURCE_STAGES = lines.REVIEW.decision_stages
 
 #: decisions event kinds that count as an error.
 ERROR_KINDS = frozenset({"errored"})
@@ -71,11 +81,24 @@ def _workspace_file(root: Path, ref: Any) -> str | None:
         return None
 
 
-def phase_artifacts(root: Path, stage: str) -> list[dict[str, Any]]:
-    """The files that evidence ``stage`` (``phase_actions.EVIDENCE``), newest
-    first; a matched directory contributes its direct, visible files."""
+def _line(root: Path) -> lines.Board:
+    """The workspace's board (``lines.board``): its own line's, or the
+    experimental one with a notice for a line with no board."""
+    return lines.board(paper_type.current_line(root))
+
+
+def _definitions(kind: str) -> tuple[tuple[str, ...], dict[str, str], dict[str, Any], dict[str, Any]]:
+    """``kind``'s phases in order, their labels, actions and evidence."""
+    board = lines.board(kind)
+    return board.stages, board.labels, board.actions, board.evidence
+
+
+def phase_artifacts(root: Path, stage: str, kind: str = "experimental") -> list[dict[str, Any]]:
+    """The files that evidence ``stage`` (``phase_actions.EVIDENCE``, or the
+    review step's for ``kind="review"``), newest first; a matched directory
+    contributes its direct, visible files."""
     seen: dict[str, dict[str, Any]] = {}
-    for label, pattern in phase_actions.EVIDENCE.get(stage, ()):
+    for label, pattern in _definitions(kind)[3].get(stage, ()):
         try:
             matches = list(root.glob(pattern))[:phase_actions.MAX_MATCHES]
         except (OSError, ValueError):
@@ -277,11 +300,15 @@ def _sort_key(event: dict[str, Any]) -> tuple[int, str]:
 
 
 def _collect(root: Path | str, sessions: dict[str, Path | None] | None
-             ) -> tuple[Path, dict[str, list[dict[str, Any]]], dict[str, Any]]:
-    """Every phase's events (decisions, revisions, chats) and each source's
-    status: the one read both the pane and the AI-usage record build on."""
+             ) -> tuple[Path, lines.Board, dict[str, list[dict[str, Any]]], dict[str, Any]]:
+    """The workspace's line, every phase's events (decisions, revisions,
+    chats) and each source's status: the one read both the pane and the
+    AI-usage record build on."""
     original = Path(root).expanduser().absolute()
     root = original.resolve()
+    board = _line(root)
+    kind = board.kind
+    source_stages = board.decision_stages
     by_stage: dict[str, list[dict[str, Any]]] = {}
     sources: dict[str, Any] = {}
 
@@ -289,38 +316,41 @@ def _collect(root: Path | str, sessions: dict[str, Path | None] | None
         merged = decisions.build_decisions(root)
         sources["decisions"] = merged.get("sources", {})
         for event in merged.get("events", []):
-            stage = SOURCE_STAGES.get(event.get("source"))
+            stage = source_stages.get(event.get("source"))
             if stage:
                 by_stage.setdefault(stage, []).append(
                     {**event, "summary": _clip(event.get("summary")), "actor": "agent"})
     except Exception as exc:  # noqa: BLE001 - one broken source never fails the pane
         sources["decisions"] = {"status": "unreadable", "detail": type(exc).__name__}
 
-    revisions = _revision_events(root)
-    by_stage.setdefault("proposal", []).extend(revisions)
+    # A line with no proposal phase (the review) assigns its revisions to no step.
+    revisions = _revision_events(root) if board.revisions_stage else []
+    if board.revisions_stage:
+        by_stage.setdefault(board.revisions_stage, []).extend(revisions)
     sources["revisions"] = {"status": "ok" if revisions else "absent", "count": len(revisions)}
 
-    chats, sources["chats"] = ai_transcripts.read_all(root, sessions, original)
+    chats, sources["chats"] = ai_transcripts.read_all(root, sessions, original, kind=kind)
     live = {event.get("ref") for items in chats.values() for event in items}
-    skills = ai_transcripts.skill_stages()
+    skills = ai_transcripts.skill_stages(kind)
     kept = 0
     for harness, name, records in ai_archive.archived_sessions(root, live):
         ref = f"{harness}:{name[-8:]}"
         turns = ai_transcripts._compacted((r.get("ts"), r.get("role", ""), r.get("text", ""),
                                            r if r.get("model") else None) for r in records)
-        ai_transcripts.attribute(turns, ref, skills, chats)
+        ai_transcripts.attribute(turns, ref, skills, chats, kind)
         kept += 1
     sources["archive"] = {"status": "ok" if kept else "absent", "sessions": kept,
                           "last_run": ai_archive.last_report(root)}
     for stage, items in chats.items():
         by_stage.setdefault(stage, []).extend(items)
-    return root, by_stage, sources
+    return root, board, by_stage, sources
 
 
 def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
                      sessions: dict[str, Path | None] | None = None) -> dict[str, Any]:
     """``sessions`` overrides each harness's store (see :func:`ai_transcripts.read_all`)."""
-    root, by_stage, sources = _collect(root, sessions)
+    root, board, by_stage, sources = _collect(root, sessions)
+    kind, labels = board.kind, board.labels
     phases = []
     totals = dict.fromkeys(OUTCOMES, 0)
     pending = []
@@ -340,11 +370,11 @@ def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
             path = _workspace_file(root, event.get("ref"))
             if path:
                 event["path"] = path
-        artifacts = phase_artifacts(root, stage)
+        artifacts = phase_artifacts(root, stage, kind)
         colour, reasons, counts = _assess(status, events)
         phases.append({
             "id": fase.get("id"), "stage_id": stage,
-            "label": phase_actions.PHASE_LABELS.get(stage, stage),
+            "label": labels.get(stage, stage),
             "name": fase.get("name"), "gate": fase.get("gate"), "status": status,
             "agent": fase.get("agent"), "color": colour, "reasons": reasons, "counts": counts,
             "total_events": len(events), "events": events[-MAX_PHASE_EVENTS:],
@@ -359,7 +389,8 @@ def build_ai_history(root: Path | str, fases: list[dict[str, Any]],
     return {"phases": phases, "sources": sources, "decision_summary": totals, "pending": pending,
             "unassigned": unassigned,
             "note": ("Summary of the persisted decisions, the revisions and the chat sessions of this "
-                     "workspace; full conversations live in .papersmith/ai-history/.")}
+                     "workspace; full conversations live in .papersmith/ai-history/."),
+            **({"board_notice": board.notice} if board.notice else {})}
 
 
 def _harness_of(ref: Any) -> str | None:
@@ -375,17 +406,19 @@ def build_ai_usage(root: Path | str,
     """What the pipeline record shows about AI use, per phase, for a paper's
     AI-use declaration. Read-only; same sources as :func:`build_ai_history`.
 
-    Each phase with any recorded event reports its agent roles
-    (``phase_actions.ACTIONS``), the harnesses (tools) whose chat sessions
+    Each phase (each review step, in a review workspace) with any recorded
+    event reports its agent roles (``phase_actions.ACTIONS``, or the review
+    step's), the harnesses (tools) whose chat sessions
     worked on it and how many sessions, the operator's commands, follow-up
     messages and approvals, the revisions, the persisted decisions and the
     errors. Phases with nothing recorded are omitted. The harness model or
     version comes from the pane's ``metrics``, not from here: ``model`` stays
     ``None`` so a declaration never states what it has not checked."""
-    root, by_stage, sources = _collect(root, sessions)
+    root, board, by_stage, sources = _collect(root, sessions)
+    stages, labels, actions = board.stages, board.labels, board.actions
     phases = []
     harnesses: set[str] = set()
-    for stage in phase_actions.STAGES:
+    for stage in stages:
         events = by_stage.get(stage, [])
         if not events:
             continue
@@ -405,8 +438,8 @@ def build_ai_usage(root: Path | str,
         }
         phases.append({
             "stage_id": stage,
-            "label": phase_actions.PHASE_LABELS.get(stage, stage),
-            "agent": (phase_actions.ACTIONS.get(stage) or {}).get("agent"),
+            "label": labels.get(stage, stage),
+            "agent": (actions.get(stage) or {}).get("agent"),
             "harnesses": tools, "model": None, "counts": counts,
         })
     harnesses.update(h for h in (_harness_of(e.get("ref")) for e in by_stage.get(ai_transcripts.UNASSIGNED, [])) if h)

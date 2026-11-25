@@ -43,7 +43,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from . import agents_view, ai_archive, ai_history, banco_suggest, ai_transcripts, atlas, atlas_build, atlas_manuscript, atlas_coverage, atlas_reference, decisions, experiments_tutor, experiments_view, math_view, office, phase_actions, phase_steps, terminal, tutor, history, paper_preview, novelty_graph, model_spec, manuscript_graph, paper_explorer
-from . import board_refresh, caztor, doctor_view, keys_view, localize, prompt_gate, prompt_review, toolchain
+from . import board_refresh, caztor, doctor_view, keys_view, lines, localize, paper_type_view, prompt_gate, prompt_review, review_view, study_view, toolchain
+from ..paper_types import decision as paper_line
 from .health_inspector import get_wiring_health
 from .state_extractor import get_workspace_state, memo_by_file
 from .watcher import EventBus, WorkspaceWatcher, is_health_path
@@ -1587,12 +1588,21 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         ai_archive.sync_in_background(root_path)
         return status_payload()
 
-    def status_payload() -> JSONResponse:
+    def status_payload(paper_kind: str | None = None) -> JSONResponse:
         """What ``/api/status`` answers, without the archive sync its route
-        starts, so a read-only caller (``smith doctor``) writes nothing."""
+        starts, so a read-only caller (``smith doctor``) writes nothing.
+        ``paper_kind`` is the paper line a caller already read for the same
+        request; read here otherwise."""
         import re
         from datetime import datetime, timezone
 
+        # The paper line, read on every call: `smith kind set` can move the
+        # workspace to another line while the dashboard runs.
+        if paper_kind is None:
+            paper_kind = paper_line.current_line(root_path)
+        # Its board (lines.board): the experimental one, with a notice, for a
+        # line that has none.
+        board = lines.board(paper_kind)
         state = get_workspace_state(root_path)
         paper_meta = state.get("paper_metadata", {})
         project_name = root_path.name
@@ -1630,6 +1640,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 total_words = max(total_words, len(words))
             except Exception:
                 pass
+        if board.blocks_total is None:
+            # The line's contracts declare their own blocks; 46 is the experimental paper's.
+            total_blocks = totals_meta.get("blocks_total", 0)
 
         # Dynamic PDF page count
         pdf_pages = 0
@@ -1835,7 +1848,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                     {"id": "2.1", "name": "SOTA Article Discovery", "status": fase2_status, "detail": "Search and filtering of Q1/Q2 literature"},
                     {"id": "2.2", "name": "Metadata & Family Extraction", "status": fase2_status, "detail": "Taxonomic classification of candidates"},
                     {"id": "2.3", "name": "Spatial Embedding & 3D Constellation", "status": fase2_status, "detail": "Generation of atlas.json for the WebGL view"},
-                    {"id": "2.4", "name": "Novelty Gap Detection", "status": fase2_status, "detail": "Identification of conceptual voids and opportunity"}
+                    {"id": "2.4", "name": "Novelty Gap Detection", "status": fase2_status, "detail": "Identification of conceptual voids and opportunity"},
+                    # Advisory: the type agreed after plausibility; it locks nothing (paper-type-lines S1).
+                    paper_type_view.safe_subphase(root_path),
                 ]
             },
             {
@@ -2040,9 +2055,21 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             )
         )
 
-        phase_actions.attach(fases, root_path,
-                             gates={"G-EXP-POC": g_exp_poc_status, "G-NOVELTY": g_nov_status,
-                                    phase_actions.CITATIONS_GATE: p5_citations_status})
+        line_gates = None
+        if board.build is not None:
+            # The line's own steps and gates replace the experimental phases.
+            fases, line_gates = board.build(root_path, {
+                "harness_ok": harness_ok, "has_scaffold": has_scaffold, "has_decl": has_decl,
+                "blocks_written": written_blocks, "blocks_total": total_blocks, "words": total_words,
+                "figures": len([f for f in fig_dir.glob("*") if f.suffix in (".pdf", ".svg")]) if fig_dir.is_dir() else 0,
+                "pdf_exists": pdf_exists, "pdf_pages": pdf_pages, "pdf_kb": round(pdf_size / 1024, 1),
+                "audit": _audit_verdict(root_path)})
+            phase_actions.attach(fases, root_path, gates={g["id"]: g["status"] for g in line_gates},
+                                 kind=board.kind)
+        else:
+            phase_actions.attach(fases, root_path,
+                                 gates={"G-EXP-POC": g_exp_poc_status, "G-NOVELTY": g_nov_status,
+                                        phase_actions.CITATIONS_GATE: p5_citations_status})
 
         artifacts = []
         for p in (root_path / "proposals").glob("*.md"):
@@ -2060,6 +2087,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "category": "LaTeX Manuscript",
                 "size_kb": round(tex.stat().st_size / 1024, 1)
             })
+        artifacts.extend(board.artifacts(root_path))
         guidance_guide = root_path / "guidance" / "paper-guide"
         if guidance_guide.is_dir():
             for gp in sorted(guidance_guide.glob("*.md")):
@@ -2223,6 +2251,12 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             }
         }
 
+        if board.section_metadata is not None:
+            # Keyed by file stem per line: the review contracts share section
+            # names (limitations, conclusions) with the experimental ones.
+            SECTION_METADATA = {**board.section_metadata(root_path),
+                                "10-back-matter": SECTION_METADATA["10-back-matter"]}
+
         sections_data = []
         for s in state.get("sections", []):
             sec_meta = SECTION_METADATA.get(s["id"], {})
@@ -2233,7 +2267,8 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "filename": f"{s['id']}.md",
                 "words": s.get("word_count", 0),
                 "citations": s.get("citations", {}).get("verified", 0),
-                "has_figures": s.get("section") in ("materials-and-methods", "experimental-setup", "results-and-discussion"),
+                "has_figures": sec_meta.get("has_figures",
+                                            s.get("section") in ("materials-and-methods", "experimental-setup", "results-and-discussion")),
                 "status": s.get("status", "CONTRACTED"),
                 "blocks_written": s.get("blocks_written", 0),
                 "blocks_total": s.get("blocks_total", 0),
@@ -2243,7 +2278,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "cross_relations": sec_meta.get("cross_relations", "Cross traceability with the rest of the manuscript.")
             })
 
-        gates_list = [
+        gates_list = line_gates if line_gates is not None else [
             {
                 "id": "G-EXP-POC",
                 "name": "Proof-of-Concept Verification Gate",
@@ -2309,15 +2344,19 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         }
         telemetria = []
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        for f in fases:
-            fid = f["id"]
-            if f["status"] in ("PASS", "ACTIVE") and fid in telemetry_defaults:
-                t_info = dict(telemetry_defaults[fid])
-                t_info["veredicto"] = f["status"]
-                t_info["fecha"] = today_str
-                telemetria.append(t_info)
+        if board.telemetry is not None:
+            # No numbers are recorded for the line's steps: none are invented.
+            telemetria = board.telemetry(fases, today_str)
+        else:
+            for f in fases:
+                fid = f["id"]
+                if f["status"] in ("PASS", "ACTIVE") and fid in telemetry_defaults:
+                    t_info = dict(telemetry_defaults[fid])
+                    t_info["veredicto"] = f["status"]
+                    t_info["fecha"] = today_str
+                    telemetria.append(t_info)
 
-        tokens_sum = sum(int(t.get("tokens", "0").replace(",", "")) for t in telemetria)
+        tokens_sum = sum(int(str(t.get("tokens") or "0").replace(",", "")) for t in telemetria)
         totals_payload = {
             "sections_count": len(sections_data),
             "total_words": total_words,
@@ -2326,7 +2365,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             "gates_total": len(gates_list),
             "total_tokens": f"{tokens_sum:,}" if tokens_sum else "0",
             "pdf_pages": pdf_pages,
-            "total_tool_uses": sum(t.get("tool_uses", 0) for t in telemetria),
+            "total_tool_uses": sum(t.get("tool_uses") or 0 for t in telemetria),
             "blocks_written": written_blocks,
             "blocks_total": total_blocks,
             "phases_completed": sum(1 for f in fases if f["status"] == "PASS"),
@@ -2345,6 +2384,9 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
 
         return JSONResponse({
             "project_name": project_name,
+            "paper_kind": paper_kind,
+            # Only for a line with no board: which board is shown, and why.
+            **({"board_kind": board.kind, "board_notice": board.notice} if board.notice else {}),
             "framework_version": _framework_version(root_path),
             "target_title": target_title,
             "topic": topic,
@@ -2418,10 +2460,14 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
     @app.get("/api/flow")
     def api_flow() -> Response:
         # A workspace's own flow wins; otherwise the framework's, shipped with
-        # the dashboard (a copy of docs/diagrams/papersmith-pi-flow.html).
+        # the dashboard: the line's board names it (lines.board, read per
+        # request like the board): the review line's (a copy of
+        # docs/diagrams/papersmith-review-flow.html) for a review workspace,
+        # else the Pi flow (a copy of docs/diagrams/papersmith-pi-flow.html).
         flow_path = root_path / "docs" / "papersmith-flow.html"
         if not flow_path.is_file():
-            flow_path = Path(__file__).resolve().parent / "static" / "papersmith-flow.html"
+            shipped = lines.board(paper_type_view.decision.current_line(root_path)).flow_html
+            flow_path = Path(__file__).resolve().parent / "static" / shipped
         if flow_path.is_file():
             return HTMLResponse(flow_path.read_text(encoding="utf-8"))
         return JSONResponse({"detail": "flow diagram not found"}, status_code=404)
@@ -2931,16 +2977,29 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         if not origin_is_same(request):
             return JSONResponse({"ok": False, "error": "cross-origin request rejected"},
                                 status_code=403)
-        response = await _phase_check(request)
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        payload = payload if isinstance(payload, dict) else {}
+        # The paper line, read once: the stage is resolved, run and verified
+        # under the same line even when `smith kind set` moves it meanwhile.
+        line = paper_line.current_line(root_path)
+        response = await _phase_check(payload, line)
         try:
             body = json.loads(bytes(response.body))
-            payload = await request.json()
         except ValueError:
             return response
-        stage = phase_actions.stage_for(str((payload or {}).get("phase_id", "")))
+        stage = _stage_of(str(payload.get("phase_id", "")), line)
         if stage:
-            fases = json.loads(bytes(api_status_adapter().body)).get("fases", [])
+            ai_archive.sync_in_background(root_path)
+            fases = json.loads(bytes(status_payload(line).body)).get("fases", [])
             phase = next((f for f in fases if f.get("stage_id") == stage), {})
+            if lines.board(line).shared_checks is not None:
+                # A step that shares a check (the review's writing, paper,
+                # audit) answers with its own step id; the experimental body
+                # is unchanged.
+                body["stage"] = stage
             body["status"] = phase.get("status", "PENDING")
             body["verified"] = body["status"] == "PASS"
             body["evidence"] = phase.get("evidence", [])
@@ -2974,6 +3033,76 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         except Exception:
             return None
 
+    @app.get("/api/paper-type")
+    def api_paper_type() -> JSONResponse:
+        """The Paper type panel: catalogue, accepted idea, scores, agreement."""
+        return JSONResponse(paper_type_view.view(root_path))
+
+    @app.post("/api/paper-type/score")
+    async def api_paper_type_score(request: Request) -> JSONResponse:
+        """Score the accepted idea again; the operator's click."""
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "cross-origin request rejected"}, status_code=403)
+        try:
+            result = await asyncio.to_thread(paper_type_view.rescore, root_path)
+        except paper_type_view.decision.DecisionError as exc:
+            result = {"ok": False, "code": exc.code, "error": str(exc)}
+        return JSONResponse(result, status_code=200 if result.get("ok") else 422)
+
+    @app.post("/api/paper-type/agree")
+    async def api_paper_type_agree(request: Request) -> JSONResponse:
+        """Record the paper type the operator agreed in the panel."""
+        if not origin_is_same(request):
+            return JSONResponse({"ok": False, "error": "cross-origin request rejected"}, status_code=403)
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = None
+        try:
+            return JSONResponse(await asyncio.to_thread(paper_type_view.agree, root_path, payload))
+        except paper_type_view.decision.DecisionError as exc:
+            return JSONResponse({"ok": False, "code": exc.code, "error": str(exc)}, status_code=422)
+
+    @app.get("/api/review")
+    def api_review() -> JSONResponse:
+        """The Review tab of a review workspace: protocol, search log, screening,
+        PRISMA flow, extraction, risk of bias and sign-offs; 409 elsewhere."""
+        refused = review_view.refusal(root_path)
+        if refused:
+            return JSONResponse(refused, status_code=409)
+        return JSONResponse(review_view.view(root_path))
+
+    @app.get("/api/review/checklist")
+    async def api_review_checklist() -> JSONResponse:
+        """The 27 PRISMA 2020 items, on the operator's click only: the verb runs
+        paper_cli.py as subprocesses, so it runs off the event loop."""
+        refused = review_view.refusal(root_path)
+        if refused:
+            return JSONResponse(refused, status_code=409)
+        return JSONResponse(await asyncio.to_thread(review_view.checklist, root_path))
+
+    @app.get("/api/study")
+    def api_study() -> JSONResponse:
+        """The Study tab of an empirical workspace: protocol lock, ethics and
+        registration, own data, analysis log, participant flow and the agreed
+        variant's guideline; 409 elsewhere."""
+        refused = study_view.refusal(root_path)
+        if refused:
+            return JSONResponse(refused, status_code=409)
+        return JSONResponse(study_view.view(root_path))
+
+    @app.get("/api/study/checklist")
+    async def api_study_checklist(guideline: str | None = None) -> JSONResponse:
+        """The agreed variant's reporting checklist, or ``?guideline=<id>`` (one of
+        the line's guidelines; 400 otherwise), on the operator's click only: the
+        engine runs paper_cli.py as subprocesses, so it runs off the event loop."""
+        refused = study_view.refusal(root_path)
+        if refused:
+            return JSONResponse(refused, status_code=409)
+        if (wrong := study_view.checklist_refusal(root_path, guideline)) is not None:
+            return JSONResponse(wrong, status_code=400)
+        return JSONResponse(await asyncio.to_thread(study_view.checklist, root_path, guideline))
+
     @app.post("/api/prompt/check")
     async def api_prompt_check(request: Request) -> JSONResponse:
         """The prompt gate's deterministic score of a phase prompt (no model
@@ -3000,15 +3129,27 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
             return JSONResponse({"ok": False, "code": "PROMPT_INVALID", "error": str(exc)}, status_code=422)
         return JSONResponse(result)
 
-    async def _phase_check(request: Request) -> JSONResponse:
-        try:
-            payload = await request.json()
-        except Exception:
-            payload = {}
+    def _stage_of(phase_id: str, line: str) -> str | None:
+        """The stage a phase id names in the paper line ``line``."""
+        return lines.board(line).stage_for(phase_id)
+
+    async def _phase_check(payload: dict, line: str) -> JSONResponse:
         phase_id = str(payload.get("phase_id", ""))
-        stage = phase_actions.stage_for(phase_id)
+        stage = _stage_of(phase_id, line)
         if stage is None:
             return JSONResponse({"ok": False, "error": f"unknown phase: {phase_id}"}, status_code=422)
+        board = lines.board(line)
+        if board.shared_checks is not None:
+            # A step that compiles, builds or audits shares that check; every
+            # other one runs from its card.
+            shared = board.shared_checks.get(stage)
+            if shared is None:
+                return JSONResponse({
+                    "ok": True, "phase_id": phase_id, "stage": stage,
+                    "message": f"Phase {board.stages.index(stage) + 1}: it runs from its card (agent command or panel).",
+                    "outputs": []
+                })
+            stage = shared
 
         if stage == "paper" and not (root_path / "paper" / "main.tex").is_file():
             return JSONResponse({

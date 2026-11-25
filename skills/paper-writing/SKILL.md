@@ -325,20 +325,24 @@ sole producer from `introduction.block-4b` to
 `materials-and-methods.mm-proposal`, pulling the methods section's
 `mm-proposal` block (and everything after it in the graph) earlier.
 
-**The three closed vocabularies** a header may draw from: ten
+**The three closed vocabularies** a header may draw from: fifteen
 `requires_facts` ids (`formulation`, `contributions`, `problem-statement`,
 `gap`, `dataset`, `experimental-design`, `implementation`, `results`,
-`limitations`, `skeleton`), eight `requires_declarations` ids (`author-roles`,
-`grant-title`, `grant-code`, `repository-url`, `keyword-bounds`,
-`classification-line`, `ethics-approval`, `review-registration`), and three `citations` regimes (`discovery`,
+`limitations`, `skeleton`, and the study facts `protocol`, `sample`,
+`outcomes`, `analysis-plan`, `participant-flow`), nine
+`requires_declarations` ids (`author-roles`, `grant-title`, `grant-code`,
+`repository-url`, `keyword-bounds`, `classification-line`, `ethics-approval`,
+`review-registration`, `study-registration`), and three `citations` regimes (`discovery`,
 `resolution`, `none`). A value outside any of the three refuses
 immediately — this is deliberately closed, not a convention.
 
 ### A fact is declared, or it is produced
 
-Every one of the ten `requires_facts` ids resolves through exactly one of
-two routes, never both: the five OBSERVABLE facts (`dataset`,
-`experimental-design`, `implementation`, `results`, `formulation`) and the
+Every one of the fifteen `requires_facts` ids resolves through exactly one
+of two routes, never both: the ten OBSERVABLE facts (`dataset`,
+`experimental-design`, `implementation`, `results`, `formulation`, and the
+study facts `protocol`, `sample`, `outcomes`, `analysis-plan`,
+`participant-flow`) and the
 structural `skeleton` fact stay `declare`-only, resolved from an operator
 measurement or the skeleton-startup mechanism; the remaining four —
 `contributions`, `problem-statement`, `gap`, `limitations` — are PRODUCED:
@@ -354,7 +358,7 @@ A `produces_facts` entry is the same rich `{value, source: {file, quote}}`
 shape `requires_facts` already uses. A block whose `produces_facts` and
 `requires_facts` name the same fact refuses `FACT_SELF_REQUIRED`; a
 `produces_facts` entry naming a fact that only resolves through `declare`
-(one of the five observable facts, or `skeleton`) refuses
+(one of the ten observable facts, or `skeleton`) refuses
 `FACT_ROUTE_AMBIGUOUS`; a required fact resolving to no producer anywhere
 and absent from the declarable route refuses `FACT_PRODUCER_ABSENT`; and a
 block requiring a produced fact whose own `### Internal chain` table
@@ -459,12 +463,13 @@ readable by Phase 1's block scanner: both markers share the `%% paper-writing
 `MARKER_PREFIX`'s own `startswith` check skips them (proven in
 `tests/test_paper_decisions.py::DisjointGrammarTests`).
 
-`declare` records two kinds of value: a `declaration` (one of the eight
+`declare` records two kinds of value: a `declaration` (one of the nine
 operator-input ids — `author-roles`, `grant-title`, `grant-code`,
 `repository-url`, `keyword-bounds`, `classification-line`, `ethics-approval`,
-`review-registration`, the last one used by review workspaces only)
-or a `fact`
-resolution (one of the ten fact ids). Recording either fixes it immediately
+`review-registration`, used by review workspaces only, and
+`study-registration`, a primary study's registry, registration id,
+registration date and first-enrolment date, copied from the operator's
+registration record) or a `fact` resolution (one of the fifteen fact ids). Recording either fixes it immediately
 — a further `declare` on the same id refuses `DECLARATION_FIXED` until
 `--reopen <id>` clears exactly that entry.
 
@@ -475,7 +480,7 @@ resolution (one of the ten fact ids). Recording either fixes it immediately
     --reopen repository-url
 ```
 
-`declare --fact` records the digest of the fact's source (`proposals/`, `experiments/`, the ingested evidence; `dataset` also covers `experiments/`). `readiness` and `phases` list `stale_facts` when that source changed since the declaration; that is a warning, not a refusal: check the value, then `declare --reopen <fact>` and declare it again.
+`declare --fact` records the digest of the fact's source (`proposals/`, `experiments/`, the ingested evidence; `dataset` also covers `experiments/`; `protocol`, `sample`, `outcomes` and `analysis-plan` the study protocol revisions under `protocol/`; `participant-flow` the counts in `study/flow.json`, a structured record hashed as the participant flow module hashes it, timestamp keys aside, so a re-stamped but unchanged record is no change). `readiness` and `phases` list `stale_facts` when that source changed since the declaration; that is a warning, not a refusal: check the value, then `declare --reopen <fact>` and declare it again.
 
 **A fact can also be DECLINED, not just resolved.** `declare --decline
 <fact-id> --reason <text> --condition <json>` records a fact the operator
@@ -558,8 +563,8 @@ are drawn from the SAME four-value vocabulary: `"undeclared"` (no marker),
 `"declared-unsealed"` (a valid marker with no seal — every marker written
 before this skill could seal one, and every marker written with `mark
 ... --unsealed`), `"declared-sealed"` (a valid marker whose recorded seal
-matches), or `"n/a"` (a `REPOSITORY`- or `INGESTED`-kind source root, which
-carries no revisions rule at all — never applies to a `guidance/` folder,
+matches), or `"n/a"` (a `REPOSITORY`-, `INGESTED`- or `STRUCTURED`-kind
+source root, which carries no revisions rule at all — never applies to a `guidance/` folder,
 since every listed one is classifiable). A worked `plan` reply, invented
 names throughout:
 
@@ -662,6 +667,14 @@ this is one subject (a directory's own declaration), not two.
 .venv/bin/python skills/paper-writing/scripts/paper_cli.py mark class \
     --folder style-corpus --class style-reference
 ```
+
+The study protocol revisions take the same marker as `experiments/`:
+`mark revisions --root protocol --revision-prefix v --ordinal-digits 2`
+(names `protocol/study-protocol-<slug>-vNN.md`, the lineage being
+`study-protocol-<slug>`). `study/flow.json` is a `STRUCTURED` root, one JSON
+record its own module writes and hashes: never prose, so it takes no marker
+(`SOURCE_ROOT_UNDECLARABLE` names its kind) and is reported `unmeasured` for
+section binding.
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
@@ -992,9 +1005,11 @@ noun-phrase citation is prohibited; under `resolution`, a citation attaches
 to the object it credits wherever that sits, and a noun-phrase citation is
 exactly what that asks for; under `none`, no citation is allowed at all.
 
-**Observing before declaring: the `insumos-observer` agent.** For the five
+**Observing before declaring: the `insumos-observer` agent.** For the ten
 facts an outside observer can check against evidence (`formulation`,
-`dataset`, `experimental-design`, `implementation`, `results`), this skill
+`dataset`, `experimental-design`, `implementation`, `results`, and the study
+facts `protocol`, `sample`, `outcomes`, `analysis-plan` from `protocol/` and
+`participant-flow` from `study/flow.json`), this skill
 delegates to the `insumos-observer` agent — it reports satisfaction and
 evidence, never a value, and never calls `declare` itself. Its JSON report
 is shuttled to a file and read back through `observe`, which validates it
@@ -1021,18 +1036,20 @@ workaround.
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `observe --report <path> [--proposals <dir>] [--experiments <dir>] [--implementation <dir>]` | Read-only: validates an `insumos-observer` report against the ten observable facts and the `implementation`/`results` evidence-conflation guard, THEN reconciles it against a real disk measurement this process takes itself for every root given; writes nothing and never calls `declare` | `OBSERVATION_REPORT_UNREADABLE`, `NOT_AN_OBSERVABLE_FACT`, `EVIDENCE_CONFLATED`, `OBSERVATION_DISK_CONFLICT` |
+| `observe --report <path> [--proposals <dir>] [--experiments <dir>] [--implementation <dir>] [--protocol <dir>] [--flow <file>]` | Read-only: validates an `insumos-observer` report against the ten observable facts and the `implementation`/`results` evidence-conflation guard, THEN reconciles it against a real disk measurement this process takes itself for every root given; writes nothing and never calls `declare` | `OBSERVATION_REPORT_UNREADABLE`, `NOT_AN_OBSERVABLE_FACT`, `EVIDENCE_CONFLATED`, `OBSERVATION_DISK_CONFLICT` |
 
 **The skill measures source availability itself — it does not trust an
 agent's word for it, and it does not trust a human's memory either.**
-`--proposals`/`--experiments`/`--implementation` each name a root this
-process measures directly (`Path.iterdir()`, gitignore-blind by
+`--proposals`/`--experiments`/`--implementation`/`--protocol`/`--flow` each
+name a root this process measures directly (`Path.iterdir()`, gitignore-blind by
 construction — the same mechanism `ingested_papers` already uses for
 `guidance/`, never a shell call, never `fd`/`rg`, both of which honor
 `.gitignore` by default and can report a genuinely populated directory
 empty). Pass all three you can: when a fact's own source root
 (`formulation`/`dataset` from `proposals/`, `experimental-design` from
-`experiments/`, `implementation`/`results` from the target repository) is
+`experiments/`, `implementation`/`results` from the target repository, the
+study facts from `protocol/`, `participant-flow` from `study/flow.json`, a
+file that is available when it is non-empty) is
 measurably non-empty right now while the report claims that fact
 UNSATISFIED with no evidence at all, `observe` refuses
 `OBSERVATION_DISK_CONFLICT` naming the exact disagreement — never averaged
@@ -2079,11 +2096,167 @@ round that is not an object (never overwritten), or a history that would grow
 past the dashboard's 2 MB cap with this round. A refused round leaves the file unchanged: send the agent's
 round back with the refusal detail rather than editing it yourself.
 
+**A review paper is judged on its own rubric.** A round declares the form it
+was judged on in `rubric`: absent (or `ml-conference`) it is the main-track
+form above, validated and stored exactly as always. In a review workspace
+(`paper_kind: review` in `.papersmith/config.json`) the `paper-reviewer`
+returns a `"rubric": "systematic-review"` round instead: no `overall`,
+`confidence` or `ratings`, but `amstar2`, one `{"item", "answer",
+"justification"}` per AMSTAR 2 item 1-16 (Shea et al., 2017, BMJ 358:j4008),
+`answer` one of `yes`, `partial yes` (items 2, 4, 7, 8, 9 only), `no` or `not
+applicable` (items 11, 12, 15 only, without a meta-analysis; items 9 and 13
+too when `review/protocol.json` declares a `review_type` containing `scoping`
+or `bibliometric`, any case, a review that appraises no risk of bias); and
+`prisma_gaps`, `{"item": 1-27, "gap"}` per PRISMA 2020 item the manuscript
+does not fully report (Page et al., 2021, BMJ 372:n71). The verb marks the
+seven critical domains (items 2, 4, 7, 9, 11, 13, 15) and derives the
+`overall_confidence` by the AMSTAR 2 rule from the `no` answers, storing
+`critical_flaws` and `non_critical_weaknesses` beside it: no or one
+non-critical weakness is `high`, more than one `moderate`, one critical flaw
+`low`, more than one `critically low` (`partial yes` and `not applicable`
+count as neither). The round also stores `amstar2_basis`, `{"protocol":
+"review/protocol.json", "review_type", "risk_of_bias_not_applicable"}`: the
+review type the verb read (null when the protocol, the key or a text value is
+missing) and whether items 9 and 13 could be `not applicable`; any other review
+type, or no readable protocol, keeps both applicable. A round may state `overall_confidence`, but one that
+disagrees with the rule is refused (`REVIEW_ROUND_INVALID`), as are a missing
+or repeated item, an answer outside the scale or where AMSTAR 2 does not offer
+it, an empty justification and a gap without an item 1-27. `recommendation`,
+`items`, `revisions`, `excluded` and `report` keep their rules on both
+rubrics, so a review round from the second on still judges every revision the
+previous round raised. The PDF tab's final-judge panel shows the confidence,
+the flaws and weaknesses, the sixteen answers and the PRISMA gaps of such a
+round.
+
+**Each line has one rubric, and the verb checks it.** The verb reads the
+workspace's line (`paper_kind` in `.papersmith/config.json`, `experimental`
+when unset) and judges a round without `rubric` on that line's rubric:
+`ml-conference` for `experimental`, `systematic-review` for `review`,
+`empirical-study` for the empirical lines (`observational-measurement`,
+`experiment-intervention`), `measurement-science` for `hardware` and
+`lab-simulation`, `data-descriptor` for `data-resource`, `qualitative-study`
+for `qualitative-participatory`. A round whose rubric does not serve the
+line is refused with `RUBRIC_KIND_MISMATCH`, whose detail names the line's
+rubric, and a line no rubric serves with `RUBRIC_LINE_UNKNOWN`; an unknown
+rubric id stays `REVIEW_ROUND_INVALID`. The mapping is data
+(`paper_review.RUBRICS`): a new line joins a rubric by adding its id there.
+
+**An empirical paper is judged on the empirical-study rubric.** The
+`paper-reviewer` returns a `"rubric": "empirical-study"` round: no `overall`,
+`confidence` or `ratings`, but `protocol_adherence` (`primary_outcome` and
+`analysis_plan`, each `followed`, `deviated` or `no protocol` against the
+locked study protocol; `deviations`, `{"deviation", "declared": true|false}`,
+required when either is `deviated`; a `justification`), `design_validity`
+(`rating` one of `adequate`, `limited`, `inadequate`, and a `justification`),
+`risk_of_bias` (one `{"domain", "rating", "justification"}` per domain
+`selection`, `measurement`, `confounding`, `missing data`, `reporting`,
+`rating` one of `low`, `some concerns`, `high`), and `checklist` with
+`checklist_gaps`, `{"item", "gap"}` per item of the line's reporting
+checklist the manuscript does not fully report, the item by its number (`12`
+or `12b`). The verb counts the `undeclared_deviations` and derives
+`overall_risk_of_bias`: any `high` domain is `high`, else any `some concerns`
+is `some concerns`, else `low`. A round may state it, but one that disagrees
+with the rule is refused (`REVIEW_ROUND_INVALID`), as are a missing or
+repeated domain, a rating outside the scale, an empty justification, a
+`deviated` answer with no deviation listed, a gap without an item number and
+gaps without a named checklist. The shared fields keep their rules. The PDF
+tab's final-judge panel shows the overall risk of bias, the adherence and its
+deviations, the design validity, the domains and the checklist gaps.
+
+**A hardware or lab-simulation paper is judged on the measurement-science
+rubric.** The `paper-reviewer` returns a `"rubric": "measurement-science"`
+round: no `overall`, `confidence` or `ratings`, but five criteria, each
+`{"rating", "justification"}` with `rating` one of `adequate`, `limited`,
+`inadequate`: `design_validity`, `calibration_traceability` (instruments
+calibrated and traceable, reference values used), `uncertainty` (a budget per
+reported quantity with type A and type B components, combined and expanded
+with its coverage factor), `reproducibility` (design files, data, code and
+protocol available under a licence) and `agreement` (for hardware, agreement
+with a reference device with its bias and limits of agreement; for
+lab-simulation, calibration against known values), which alone may also be
+`not applicable`, its justification giving the reason; plus `checklist_gaps`,
+`{"item", "gap"}`, by item number (`7` or `7b`) in the line's checklist. The
+verb fills `checklist` with that checklist (`hardwarex` for hardware,
+`gum-reporting` for lab-simulation) and refuses a round that names another, and
+derives `overall_rating`: any `inadequate` criterion is `major concerns`, else
+any `limited` is `minor concerns`, else `sound` (`not applicable` counts as
+neither). A round may state it, but one that disagrees with the rule is refused
+(`REVIEW_ROUND_INVALID`), as are a missing criterion, a rating outside its
+scale, an empty justification and a gap without an item number. The shared
+fields keep their rules. The PDF tab's final-judge panel shows the overall
+rating, the five criteria and the checklist gaps.
+
+**A data-resource paper is judged on the data-descriptor rubric.** The
+`paper-reviewer` returns a `"rubric": "data-descriptor"` round: no `overall`,
+`confidence` or `ratings`, but five criteria, each `{"rating",
+"justification"}` with `rating` one of `adequate`, `limited`, `inadequate`
+(none may be `not applicable`): `documentation_completeness` (data records,
+data dictionary and datasheet describe every file, variable and unit),
+`collection_consent` (the collection protocol, and the ethics approval,
+consent or own-data statement and the source licences), `technical_validation`
+(the quality checks and technical validation, baselines labelled),
+`access_licence` (deposited under a licence with a persistent identifier, the
+access conditions stated) and `reuse_potential` (usage notes, code
+availability, the uses the data supports); plus `checklist_gaps`, `{"item",
+"gap"}`, by item number (`4` or `4b`) in `datasheets`. The verb fills
+`checklist` with `datasheets` and refuses a round that names another, and
+derives `overall_rating` by the measurement-science rule: any `inadequate`
+criterion is `major concerns`, else any `limited` is `minor concerns`, else
+`sound`. A round may state it, but one that disagrees with the rule is refused
+(`REVIEW_ROUND_INVALID`), as are a missing criterion, a rating outside the
+scale, an empty justification and a gap without an item number. The shared
+fields keep their rules. The PDF tab's final-judge panel shows the overall
+rating, the five criteria and the datasheets gaps.
+
+**A qualitative-participatory paper is judged on the qualitative-study
+rubric.** The `paper-reviewer` returns a `"rubric": "qualitative-study"` round:
+no `overall`, `confidence` or `ratings`, but a `variant`
+(`qualitative-mixed`, `consensus-foresight` or `experience-report`) and the
+criteria that variant rates, each `{"rating", "justification"}` with `rating`
+one of `adequate`, `limited`, `inadequate`. Every variant rates
+`reflexivity` (the researchers' position and influence), `sampling_sufficiency`
+(who, why, and when sampling stopped), `analytic_rigour` (codebook, how the
+themes were derived, who signed them off), `quote_claim_fit` (every claim
+supported by verbatim data) and `transferability` (the context described so
+readers can judge); `consensus-foresight` adds `panel_composition`,
+`consensus_threshold` (pre-specified), `rounds_feedback` and
+`dissent_reported`; `experience-report` adds `context`, `what_was_done`,
+`what_it_taught` and `honest_limits` (no effect claimed without an
+evaluation). Only an experience report may rate `sampling_sufficiency` or
+`quote_claim_fit` `not applicable` (no participant data), the justification
+then the reason; a criterion of another variant is refused. The variant must
+be the one the operator agreed (`agreed_variant` in
+`.papersmith/paper_type.json`); a round that names none takes it, and is
+refused when none is agreed. The verb fills `checklist` with the variant's
+checklist (`srqr` for `qualitative-mixed`, which may name `coreq` instead;
+`accord` for `consensus-foresight`) and refuses any other; an experience
+report has no checklist (stored null) and lists no `checklist_gaps`. It
+derives `overall_rating` by the measurement-science rule (`not applicable`
+counts as neither); a round that states a different one is refused
+(`REVIEW_ROUND_INVALID`), as are a missing criterion, a rating outside the
+scale, an empty justification and a gap without an item number. The shared
+fields keep their rules. The PDF tab's final-judge panel shows the variant,
+the overall rating, the criteria and the checklist gaps.
+
 **Measure this before delegating (paper-reviewer):** confirm `paper/main.tex`
 exists and no section under `sections/` is empty, and note whether
 `paper/main.pdf` and `sota-pool/candidates.json` exist; a reviewer asked to
 judge an unfinished paper or novelty without a pool cannot tell a weak paper
-from a missing input.
+from a missing input. In a review workspace note instead whether
+`review/protocol.lock.json` and `review/prisma.json` exist: AMSTAR 2 judges
+the protocol and the flow the paper reports against those records. On an
+empirical line note whether a locked study protocol exists under `protocol/`:
+without it the reviewer answers `no protocol` on adherence. On a hardware or
+lab-simulation line note whether `study/instruments.json` and the registered
+raw measurement files exist: calibration, uncertainty and agreement are judged
+against them. On a data-resource line note whether the data dictionary, the
+quality-check results and the deposit record (`datasets_cli.py deposit`) exist
+under `datasets/`: documentation, validation and access are judged against
+them. On a qualitative-participatory line note the agreed variant
+(`.papersmith/paper_type.json`) and whether the qualitative records exist
+(`skills/_core/qualitative/qual_cli.py`: the registered transcripts, the
+codebook versions and the theme sign-off, or the consensus rounds): the audit
+trail and the fit between quotes and claims are judged against them.
 
 **Measure this before delegating (diagram-author):** confirm the block's
 `figure:` declaration is already readable (`contract --file <path>`) and,
@@ -2213,6 +2386,15 @@ named booleans — evidence a human can act on without making the reading
 themselves.
 
 **Coherence warnings (#180, #183).** `verify` also reports, under its own `coherence` key, eleven advisory checks computed by `paper_coherence.py`: `caption-results`, `caption-interpretation`, `caption-duplicates`, `caption-identifiers` (a caption states what the artefact is and decodes its key: no result values, interpretive verbs, sentences repeated from the body, or identifier codes such as `K1`, `r0h0`, `subject-v300`), `overclaiming` and `claims-findings` (abstract and introduction claims need a results sentence sharing a number or two key terms), `not-performed` (excluded or not-run work outside the limitations), `symbol-redefinition` (the methods' `$x$ denotes ...` table against later definitions) `naming-consistency` (variants of the declared contribution and chain names), `iteration-history` (a sentence narrating the rounds, attempts, pilot runs or proof of concept behind the final experiments, in any section) and `future-work-uncited` (a future-work sentence in the conclusions with no `\cite`). Each entry is `severity: warning` with verdict `pass`, `warn` or `unmeasured`, its findings and its rule; none counts toward `holds`/`fails`/`unmeasured` or changes `clean`.
+
+**Study checks (S7).** In a workspace with a study protocol (a managed revision under `protocol/`, `study/protocol.lock.json` or `analysis/log.jsonl`), `verify` also reports, under its own `study` key, four checks computed by `paper_coherence.run_study` from the manuscript, its `outcomes` fact and the disk read of `skills/_core/empirical/analysis_log.py` (`manuscript_inputs`). An applied-AI or review workspace has none of these files and gets no `study` key: its report is unchanged. In a study workspace whose kit does not ship that module, or whose module fails, the four checks are still reported, `unmeasured` (`CHECK_FAILED`) with the reason under `evidence.unavailable`, so the hard check never disappears silently.
+
+- `primary-outcome-switch` (`severity: error`, verdict `pass`, `fail` or `unmeasured`): the primary outcome the `outcomes` fact names by protocol id (`declare --fact outcomes --value "primary: O1 -- HbA1c at 12 weeks; secondary: O2"`; `Primary outcome:` and `Primary outcomes:` read the same, the id in either case) must be the primary outcome of the revision `study/protocol.lock.json` pins, read by the study protocol's parser. A primary that differs from the one first approved passes only because an amendment of the lock moved it there (`evidence.declared_switches` names the amendment and its reason); any other difference is a `fail` and makes `clean` false, leaving `holds`/`fails`/`unmeasured` untouched. `unmeasured` when the protocol is not locked (`PROTOCOL_NOT_LOCKED`), its locked bytes are gone (`PROTOCOL_LOCK_NOT_CURRENT`), node cannot run the parser (`PROTOCOL_PARSER_UNAVAILABLE`), or the fact is undeclared or names no single primary id (`OUTCOMES_FACT_UNDECLARED`, `PRIMARY_OUTCOME_UNNAMED`); `unmeasured` never changes `clean`. The fact, not the prose, is the source: it is the paper's declared decision, bound by its basis to `protocol/`, and it names the outcome by the id the lock pins.
+- `exploratory-as-confirmatory` (warning): a results sentence citing an outcome the way the protocol does (`(Outcome O3)`, `[outcome:O3]`) that only exploratory entries of the analysis log support, and that does not say so (`exploratory`, `post hoc`, `hypothesis-generating`).
+- `outcome-not-in-protocol` (warning): the log analysed an outcome the locked protocol does not name.
+- `protocol-outcome-not-analysed` (warning): an outcome of the locked protocol has no confirmatory entry in the log.
+
+The analysis log and its labels are the empirical module's ([`skills/_core/empirical/README.md`](../_core/empirical/README.md)); an agent never relabels an entry and never changes the `outcomes` fact to silence a switch.
 
 ### Putting back matter in order: `reorder`
 

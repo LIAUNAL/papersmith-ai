@@ -1,0 +1,555 @@
+{
+  "version": 2,
+  "types": [
+    {
+      "id": "applied-ai",
+      "name": "Applied AI method",
+      "status": "available",
+      "line": "experimental",
+      "summary": "A new or adapted AI method for a problem, shown against state-of-the-art baselines through a proof of concept and full experiments.",
+      "novelty": "The method and the evidence that it improves on the state of the art.",
+      "stages": [
+        "SOTA and gap",
+        "Proposal and mathematics",
+        "Proof of concept",
+        "Experiments against baselines",
+        "Novelty decision",
+        "Writing"
+      ],
+      "guidelines": [
+        {
+          "name": "TRIPOD+AI (when the model is clinical)",
+          "url": "https://www.equator-network.org/reporting-guidelines/tripod-statement/"
+        }
+      ],
+      "signals": [
+        "propos",
+        "model",
+        "network",
+        "neural",
+        "deep learning",
+        "machine learning",
+        "algorithm",
+        "architecture",
+        "baseline",
+        "outperform",
+        "transformer",
+        "classifier",
+        "red neuronal",
+        "aprendizaje",
+        "algoritmo",
+        "arquitectura",
+        "supera"
+      ]
+    },
+    {
+      "id": "review",
+      "name": "Review",
+      "status": "available",
+      "line": "review",
+      "summary": "A systematic, scoping or bibliometric review that maps and synthesizes the literature on a question under a registered protocol.",
+      "novelty": "The synthesis: what the literature shows, where it disagrees and what is missing.",
+      "stages": [
+        "Scoping",
+        "Protocol",
+        "Search",
+        "Screening",
+        "Appraisal and extraction",
+        "Synthesis",
+        "Writing"
+      ],
+      "guidelines": [
+        {
+          "name": "PRISMA 2020",
+          "url": "https://www.prisma-statement.org/"
+        }
+      ],
+      "signals": [
+        "review",
+        "systematic",
+        "scoping",
+        "bibliometric",
+        "state of the art",
+        "literature",
+        "meta-analysis",
+        "survey of",
+        "revision sistematica",
+        "estado del arte",
+        "literatura",
+        "prisma"
+      ]
+    },
+    {
+      "id": "observational-measurement",
+      "name": "Observational and measurement study",
+      "status": "available",
+      "line": "observational-measurement",
+      "summary": "Studies that measure what exists without assigning an intervention: populations and datasets, diagnostic or prediction accuracy, and measurement instruments.",
+      "novelty": "The population, dataset or measure studied, and what its analysis or validation shows.",
+      "stages": [
+        "Question and outcome",
+        "Ethics and consent when people take part",
+        "Sampling, data sources and instruments",
+        "Data dictionary and quality",
+        "Analysis plan and analysis",
+        "Discussion against prior studies"
+      ],
+      "guidelines": [],
+      "signals": [],
+      "variants": [
+        {
+          "id": "observational",
+          "name": "Observational study",
+          "summary": "Surveys, cohorts, cross-sectional, econometric, spatial or network analyses of own or secondary data.",
+          "checklist": "strobe",
+          "flow_template": null,
+          "guidelines": [
+            {
+              "name": "STROBE",
+              "url": "https://www.equator-network.org/reporting-guidelines/strobe/"
+            },
+            {
+              "name": "CROSS (surveys)",
+              "url": "https://www.equator-network.org/reporting-guidelines/a-consensus-based-checklist-for-reporting-of-survey-studies-cross/"
+            }
+          ],
+          "signals": [
+            "survey",
+            "cohort",
+            "cross-sectional",
+            "prevalence",
+            "population",
+            "patients",
+            "households",
+            "municipalit",
+            "territor",
+            "regression",
+            "econometric",
+            "panel data",
+            "encuesta",
+            "cohorte",
+            "poblacion",
+            "pacientes",
+            "hogares",
+            "municipio"
+          ]
+        },
+        {
+          "id": "diagnostic-validation",
+          "name": "Diagnostic or clinical validation",
+          "summary": "Accuracy, agreement or prediction of a test, measure or model against a reference standard, across sites or languages.",
+          "checklist": "stard-2015",
+          "flow_template": null,
+          "guidelines": [
+            {
+              "name": "STARD 2015",
+              "url": "https://www.equator-network.org/reporting-guidelines/stard/"
+            },
+            {
+              "name": "TRIPOD+AI",
+              "url": "https://www.equator-network.org/reporting-guidelines/tripod-statement/"
+            }
+          ],
+          "signals": [
+            "diagnos",
+            "accuracy",
+            "sensitivity",
+            "specificity",
+            "agreement",
+            "reference standard",
+            "gold standard",
+            "biomarker",
+            "validation",
+            "prediction",
+            "diagnostico",
+            "sensibilidad",
+            "especificidad",
+            "concordancia",
+            "validacion"
+          ]
+        },
+        {
+          "id": "measurement-instrument",
+          "name": "Measurement instrument",
+          "summary": "An index, scale or questionnaire: dimensions and items, weighting, reliability, validity, robustness and adoption.",
+          "checklist": "cosmin",
+          "flow_template": null,
+          "guidelines": [
+            {
+              "name": "COSMIN (health measurement instruments)",
+              "url": "https://www.cosmin.nl/"
+            }
+          ],
+          "signals": [
+            "index",
+            "composite",
+            "indicator",
+            "multidimensional",
+            "weighting",
+            "policy",
+            "ranking",
+            "alkire",
+            "indice",
+            "indicador",
+            "ponderacion",
+            "politica publica",
+            "questionnaire",
+            "psychometric",
+            "cronbach",
+            "test-retest",
+            "cuestionario",
+            "psicometric"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "experiment-intervention",
+      "name": "Experiment or intervention",
+      "status": "available",
+      "line": "experiment-intervention",
+      "summary": "Studies that assign a treatment and measure its effect against a control: trials with people, or field, crop and animal experiments.",
+      "novelty": "The measured effect of the treatment on its participants, plots, crops or animals.",
+      "stages": [
+        "Protocol (and registration with people)",
+        "Ethics and consent with people or animals",
+        "Allocation, blocks and sample size",
+        "Intervention and follow-up",
+        "Pre-specified analysis",
+        "Flow of units and results"
+      ],
+      "guidelines": [],
+      "signals": [
+        "treatment",
+        "tratamiento",
+        "control group",
+        "grupo control"
+      ],
+      "variants": [
+        {
+          "id": "human-trial",
+          "name": "Trial with people",
+          "summary": "Clinical, educational or consumer trials that assign an intervention to people; ethics, consent and prospective registration.",
+          "checklist": "consort-2025",
+          "flow_template": null,
+          "guidelines": [
+            {
+              "name": "CONSORT 2025",
+              "url": "https://www.equator-network.org/reporting-guidelines/consort/"
+            },
+            {
+              "name": "SPIRIT (protocols)",
+              "url": "https://www.equator-network.org/reporting-guidelines/spirit-2013-statement-defining-standard-protocol-items-for-clinical-trials/"
+            }
+          ],
+          "signals": [
+            "trial",
+            "randomi",
+            "intervention",
+            "placebo",
+            "pre-test",
+            "ensayo",
+            "aleatori",
+            "intervencion"
+          ]
+        },
+        {
+          "id": "field-experiment",
+          "name": "Field or agricultural experiment",
+          "summary": "Plots, blocks, crops or animals under controlled treatments, with true replication and mixed models.",
+          "checklist": "arrive-2",
+          "flow_template": null,
+          "guidelines": [
+            {
+              "name": "ARRIVE 2.0 (animals)",
+              "url": "https://arriveguidelines.org/"
+            }
+          ],
+          "signals": [
+            "field trial",
+            "plots",
+            "block design",
+            "parcelas",
+            "split-plot",
+            "crop",
+            "cultivar",
+            "livestock",
+            "ganado",
+            "cultivo",
+            "bloques"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "qualitative-participatory",
+      "name": "Qualitative, participatory and consensus study",
+      "status": "available",
+      "line": "qualitative-participatory",
+      "summary": "Studies built on people's accounts and judgement: case studies and mixed methods, expert consensus, foresight and guidelines, and experience reports.",
+      "novelty": "The case, the agreed judgement of experts, or the experience and what it teaches.",
+      "stages": [
+        "Case, panel or experience and its framework",
+        "Ethics and consent",
+        "Fieldwork, rounds or implementation",
+        "Coding, consensus or reflection",
+        "Integration with prior work",
+        "Implications"
+      ],
+      "guidelines": [],
+      "signals": [],
+      "variants": [
+        {
+          "id": "qualitative-mixed",
+          "name": "Qualitative or mixed methods",
+          "summary": "Case studies, interviews, focus groups, participatory research and mixed-methods designs.",
+          "checklist": "srqr",
+          "flow_template": null,
+          "guidelines": [
+            {
+              "name": "SRQR",
+              "url": "https://www.equator-network.org/reporting-guidelines/srqr/"
+            },
+            {
+              "name": "COREQ",
+              "url": "https://www.equator-network.org/reporting-guidelines/coreq/"
+            },
+            {
+              "name": "GRAMMS (mixed methods)",
+              "url": "https://www.equator-network.org/reporting-guidelines/guidance-for-reporting-mixed-methods-research-gramms/"
+            }
+          ],
+          "signals": [
+            "interview",
+            "focus group",
+            "case study",
+            "qualitative",
+            "thematic",
+            "participatory",
+            "workshop",
+            "mixed method",
+            "entrevista",
+            "grupo focal",
+            "estudio de caso",
+            "cualitativ",
+            "participativ",
+            "taller"
+          ]
+        },
+        {
+          "id": "consensus-foresight",
+          "name": "Consensus, foresight and guidelines",
+          "summary": "Expert panels: Delphi, structural foresight (MICMAC, MACTOR), scenarios, and clinical practice guidelines agreed by consensus.",
+          "checklist": "accord",
+          "flow_template": null,
+          "guidelines": [
+            {
+              "name": "ACCORD (consensus methods)",
+              "url": "https://doi.org/10.1371/journal.pmed.1004326"
+            },
+            {
+              "name": "AGREE II (practice guidelines)",
+              "url": "https://www.agreetrust.org/"
+            }
+          ],
+          "signals": [
+            "delphi",
+            "foresight",
+            "prospectiva",
+            "consensus",
+            "expert panel",
+            "micmac",
+            "mactor",
+            "scenario",
+            "practice guideline",
+            "clinical guideline",
+            "consenso",
+            "panel de expertos",
+            "guia de practica",
+            "guia clinica",
+            "escenario"
+          ]
+        },
+        {
+          "id": "experience-report",
+          "name": "Experience report",
+          "summary": "A teaching innovation or a programme described with what it taught, without a formal evaluation of its effect.",
+          "checklist": null,
+          "flow_template": null,
+          "guidelines": [],
+          "signals": [
+            "experience report",
+            "teaching",
+            "classroom",
+            "course design",
+            "pedagog",
+            "experiencia docente",
+            "ensenanza",
+            "aula",
+            "didactic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hardware",
+      "name": "Hardware or instrument",
+      "status": "available",
+      "line": "hardware",
+      "checklist": "hardwarex",
+      "summary": "A device, sensor or instrument built and validated against a reference instrument, with open design files, bill of materials and measured performance.",
+      "novelty": "The artefact, its cost and its measured performance against existing devices.",
+      "stages": [
+        "Requirements and specifications",
+        "Design and bill of materials",
+        "Build",
+        "Calibration and uncertainty",
+        "Agreement with a reference device",
+        "Field or user validation",
+        "Open design files and data"
+      ],
+      "guidelines": [
+        {
+          "name": "HardwareX template",
+          "url": "https://zenodo.org/records/5078227"
+        },
+        {
+          "name": "GUM, JCGM 100:2008",
+          "url": "https://www.bipm.org/en/doi/10.59161/jcgm100-2008e"
+        }
+      ],
+      "signals": [
+        "sensor",
+        "prototype",
+        "device",
+        "instrument",
+        "hardware",
+        "microcontroller",
+        "embedded",
+        "iot",
+        "wearable",
+        "bill of materials",
+        "low-cost",
+        "acquisition board",
+        "prototipo",
+        "dispositivo",
+        "instrumento",
+        "bajo costo",
+        "embebido",
+        "microcontrolador"
+      ]
+    },
+    {
+      "id": "lab-simulation",
+      "name": "Laboratory and simulation science",
+      "status": "available",
+      "line": "lab-simulation",
+      "summary": "Physical-science studies that define a sample or a model, calibrate it against known values, sweep its parameters and quantify the error.",
+      "novelty": "What the process does to the material, or the regimes the model reveals.",
+      "stages": [
+        "Sample matrix or model definition",
+        "Synthesis or simulation protocol",
+        "Characterization or observables",
+        "Calibration against known values",
+        "Uncertainty, replicates or statistical error",
+        "Open data and code"
+      ],
+      "guidelines": [
+        {
+          "name": "GUM, JCGM 100:2008",
+          "url": "https://www.bipm.org/en/doi/10.59161/jcgm100-2008e"
+        }
+      ],
+      "signals": [],
+      "variants": [
+        {
+          "id": "materials",
+          "name": "Materials and processes",
+          "summary": "Synthesis, deposition or processing that varies the process and measures structure and properties by several techniques.",
+          "checklist": "gum-reporting",
+          "flow_template": null,
+          "guidelines": [],
+          "signals": [
+            "deposition",
+            "sputtering",
+            "thin film",
+            "synthesis",
+            "annealing",
+            "xrd",
+            "xps",
+            "sem",
+            "band gap",
+            "crystalline",
+            "nanowire",
+            "electrodeposition",
+            "deposicion",
+            "sintesis",
+            "pelicula delgada",
+            "recocido",
+            "nanohilos"
+          ]
+        },
+        {
+          "id": "modelling-simulation",
+          "name": "Modelling and simulation",
+          "summary": "A model solved by simulation (Monte Carlo, molecular dynamics, finite elements) or analytically, calibrated and explored over its parameters.",
+          "checklist": "gum-reporting",
+          "flow_template": null,
+          "guidelines": [],
+          "signals": [
+            "simulation",
+            "monte carlo",
+            "molecular dynamics",
+            "hamiltonian",
+            "ising",
+            "heisenberg",
+            "finite element",
+            "numerical model",
+            "parameter sweep",
+            "ab initio",
+            "simulacion",
+            "dinamica molecular",
+            "modelo numerico",
+            "hamiltoniano",
+            "analytical model",
+            "modelo analitico",
+            "closed-form"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "data-resource",
+      "name": "Data resource or benchmark",
+      "status": "available",
+      "line": "data-resource",
+      "checklist": "datasheets",
+      "summary": "A corpus, dataset or benchmark released for others: its collection protocol, consent, documentation, licence and baseline results.",
+      "novelty": "The resource itself and the questions it lets others answer.",
+      "stages": [
+        "Collection protocol",
+        "Ethics, consent and licence",
+        "Curation and documentation",
+        "Quality checks",
+        "Baselines",
+        "Deposit with a persistent identifier"
+      ],
+      "guidelines": [],
+      "signals": [
+        "dataset",
+        "corpus",
+        "benchmark",
+        "database",
+        "repository",
+        "recordings",
+        "annotation",
+        "data descriptor",
+        "challenge",
+        "base de datos",
+        "grabaciones",
+        "anotacion",
+        "repositorio"
+      ]
+    }
+  ]
+}

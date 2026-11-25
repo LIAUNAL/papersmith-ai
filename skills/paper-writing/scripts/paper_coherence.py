@@ -74,6 +74,19 @@ Checks, in report order (`COHERENCE_CHECKS`):
   without a `\\cite` in that sentence: every direction for overcoming a
   stated limitation carries a reference that supports it.
 
+**Study checks** (S7, decision D9; `run_study`, reported under `verify`'s
+own `study` key, apart from this roster): only for a workspace with a study
+protocol, the caller handing in the disk read of
+`skills/_core/empirical/analysis_log.manuscript_inputs`. `primary-outcome-switch`
+is the one hard check here: the primary outcome the `outcomes` fact names
+(`primary: O1`) must be the locked protocol's, a difference from the first
+approval passing only through an amendment of the lock. Three warnings
+follow it: `exploratory-as-confirmatory` (a results sentence cites an
+outcome, `(Outcome O2)`, that only exploratory analysis-log entries support
+and does not say so), `outcome-not-in-protocol` (the log analysed an
+outcome the locked protocol does not name) and `protocol-outcome-not-analysed`
+(a protocol outcome has no confirmatory log entry).
+
 Sections are found two ways: a block marker `<section>.<block>` names its
 section; elsewhere `\\begin{abstract}` and each `\\section{...}` title
 (classified by keyword) set it.
@@ -772,3 +785,185 @@ def run_guarded(main_tex: bytes, record: dict | None = None) -> list[dict]:
     except Exception as exc:  # noqa: BLE001 -- an advisory check must never fail verify
         rule = f"the coherence checks could not run ({type(exc).__name__})"
         return [_result(check, "unmeasured", [], reason="CHECK_FAILED", rule=rule) for check in COHERENCE_CHECKS]
+
+
+# --------------------------------------------------------------------------
+# S7, decision D9: the manuscript diffed against the study protocol
+# --------------------------------------------------------------------------
+
+#: The study checks, in report order, reported under `verify`'s own `study`
+#: key and only for a workspace with a study protocol (`study` input not
+#: None): an applied-AI or review paper gets no entry at all. The first is a
+#: hard check (`severity` `error`, verdict `pass|fail|unmeasured`, a `fail`
+#: makes the report unclean); the other three are advisory warnings. Restated
+#: in `paper_verify.STUDY_CHECKS`; `tests/test_paper_protocol_switch.py`
+#: holds the two equal.
+STUDY_CHECKS: tuple[str, ...] = (
+    "primary-outcome-switch",
+    "exploratory-as-confirmatory",
+    "outcome-not-in-protocol",
+    "protocol-outcome-not-analysed",
+)
+STUDY_UNMEASURED_REASONS: tuple[str, ...] = (
+    "PROTOCOL_NOT_LOCKED",
+    "PROTOCOL_LOCK_NOT_CURRENT",
+    "PROTOCOL_PARSER_UNAVAILABLE",
+    "OUTCOMES_FACT_UNDECLARED",
+    "PRIMARY_OUTCOME_UNNAMED",
+    "ANALYSIS_LOG_ABSENT",
+    "ANALYSIS_LOG_CORRUPT",
+    "RESULTS_SECTION_ABSENT",
+    "CHECK_FAILED",
+)
+#: The `outcomes` fact names the paper's primary outcome by its protocol id.
+_FACT_PRIMARY_RE = re.compile(r"\bprimary\b(?:\s+outcomes?)?\W{0,4}(O[1-9][0-9]*)\b", re.IGNORECASE)
+#: The prose cites an outcome as the protocol does: `(Outcome O1)`, `[outcome:O1]`.
+_OUTCOME_CITE_RE = re.compile(r"\b[Oo]utcome\s*:?\s*(O[1-9][0-9]*)\b")
+_EXPLORATORY_RE = re.compile(r"\b(?:exploratory|post[- ]hoc|hypothesis[- ]generating|not pre-?specified|unplanned)\b",
+                             re.IGNORECASE)
+
+
+def _study_result(check: str, verdict: str, findings: list, *, rule: str, evidence: dict | None = None,
+                  reason: str | None = None) -> dict:
+    hard = check == STUDY_CHECKS[0]
+    if verdict not in (("pass", "fail", "unmeasured") if hard else COHERENCE_VERDICTS):
+        raise AssertionError(f"{verdict!r} is not a verdict of {check}")
+    if (verdict == "unmeasured") != (reason is not None) or (reason and reason not in STUDY_UNMEASURED_REASONS):
+        raise AssertionError(f"{reason!r} is not a declared study reason for verdict {verdict!r}")
+    return {"check": check, "classification": "mechanical", "severity": "error" if hard else SEVERITY,
+            "verdict": verdict, "findings": findings, "evidence": evidence or {}, "rule": rule,
+            "unmeasured_reason": reason}
+
+
+def fact_primary(outcomes_fact: str | None) -> list[str]:
+    """The distinct outcome ids the `outcomes` fact names as primary."""
+    return list(dict.fromkeys(m.group(1).upper() for m in _FACT_PRIMARY_RE.finditer(outcomes_fact or "")))
+
+
+def _protocol_gap(study: dict) -> str | None:
+    """Why the locked protocol cannot be compared, or None."""
+    parser = (study.get("parser") or {}).get("code")
+    if parser:
+        return parser if parser in STUDY_UNMEASURED_REASONS else "CHECK_FAILED"
+    state = (study.get("protocol") or {}).get("state")
+    if state == "absent":
+        return "PROTOCOL_NOT_LOCKED"
+    if state not in ("current", "changed") or study.get("locked") is None:
+        return "PROTOCOL_LOCK_NOT_CURRENT"
+    return None
+
+
+def check_primary_outcome_switch(outcomes_fact: str | None, study: dict) -> dict:
+    rule = ("the `outcomes` fact names the paper's primary outcome by its protocol id (`primary: O1`); it must "
+            "be the locked protocol's primary outcome, and a primary that differs from the one first approved "
+            "passes only because an amendment of the lock moved it there")
+    gap = _protocol_gap(study)
+    if gap:
+        return _study_result(STUDY_CHECKS[0], "unmeasured", [], reason=gap, rule=rule,
+                             evidence={"protocol": study.get("protocol")})
+    if outcomes_fact is None:
+        return _study_result(STUDY_CHECKS[0], "unmeasured", [], reason="OUTCOMES_FACT_UNDECLARED", rule=rule)
+    named = fact_primary(outcomes_fact)
+    if len(named) != 1:
+        return _study_result(STUDY_CHECKS[0], "unmeasured", [], reason="PRIMARY_OUTCOME_UNNAMED", rule=rule,
+                             evidence={"named": named})
+    manuscript, locked = named[0], study["locked"].get("primary")
+    history = study.get("history") or []
+    switches = [{"amendment": after["amendment"], "from": before["primary"], "to": after["primary"],
+                 "measure_from": before["measure"], "measure_to": after["measure"], "by": after.get("by"),
+                 "reason": after.get("reason")}
+                for before, after in zip(history, history[1:])
+                if before["primary"] is not None and after["primary"] is not None
+                and (before["primary"], before["measure"]) != (after["primary"], after["measure"])]
+    evidence = {"manuscript": manuscript, "locked": locked, "approved": history[0]["primary"] if history else None,
+                "declared_switches": switches, "protocol": study.get("protocol")}
+    if manuscript == locked:
+        return _study_result(STUDY_CHECKS[0], "pass", [], rule=rule, evidence=evidence)
+    earlier = next((s for s in reversed(switches) if s["from"] == manuscript), None)
+    message = (f"the manuscript's primary outcome is {manuscript}, the primary before amendment "
+               f"{earlier['amendment']} ({earlier['reason']}); the amended protocol's primary outcome is {locked}"
+               if earlier else
+               f"the manuscript's primary outcome is {manuscript}, the locked protocol's is {locked}, and no "
+               "amendment declares the switch: report the locked primary outcome, or amend the protocol "
+               "(`study_cli.py protocol amend --by <operator> --reason <why>`) and say so in the paper")
+    return _study_result(STUDY_CHECKS[0], "fail", [{"manuscript": manuscript, "locked": locked,
+                                                    "message": message}], rule=rule, evidence=evidence)
+
+
+def _log_gap(study: dict) -> str | None:
+    state = (study.get("log") or {}).get("state")
+    return {"absent": "ANALYSIS_LOG_ABSENT", "corrupt": "ANALYSIS_LOG_CORRUPT", "torn": "ANALYSIS_LOG_CORRUPT"}.get(state)
+
+
+def check_exploratory_as_confirmatory(segs, study: dict) -> dict:
+    rule = ("a results sentence that cites an outcome (`(Outcome O2)`, `[outcome:O2]`) only exploratory analysis "
+            "log entries support must say so (exploratory, post hoc, hypothesis-generating)")
+    gap = _log_gap(study)
+    results = [(s, t) for s, t in segs if s in RESULTS_SECTIONS or s.startswith("result")]
+    if gap or not results:
+        return _study_result(STUDY_CHECKS[1], "unmeasured", [], rule=rule,
+                             reason=gap or "RESULTS_SECTION_ABSENT")
+    counts = study["log"].get("outcomes") or {}
+    findings = []
+    for section, sentence in _section_sentences(results):
+        if _EXPLORATORY_RE.search(sentence):
+            continue
+        for outcome in dict.fromkeys(_OUTCOME_CITE_RE.findall(sentence)):
+            tally = counts.get(outcome) or {}
+            if tally.get("exploratory") and not tally.get("confirmatory"):
+                findings.append({"outcome": outcome, "section": section, "excerpt": _excerpt(sentence)})
+    return _study_result(STUDY_CHECKS[1], _verdict(findings), findings, rule=rule)
+
+
+def check_outcome_not_in_protocol(study: dict) -> dict:
+    rule = "every outcome the analysis log analysed is an outcome of the locked protocol, or the paper reports it as exploratory"
+    gap = _protocol_gap(study) or _log_gap(study)
+    if gap:
+        return _study_result(STUDY_CHECKS[2], "unmeasured", [], reason=gap, rule=rule)
+    locked = study["locked"]
+    planned = ([locked["primary"]] if locked.get("primary") else []) + list(locked.get("secondary") or [])
+    findings = [{"outcome": outcome, "exploratory": tally.get("exploratory", 0)}
+                for outcome, tally in (study["log"].get("outcomes") or {}).items() if outcome not in planned]
+    return _study_result(STUDY_CHECKS[2], _verdict(findings), findings, rule=rule, evidence={"protocol": planned})
+
+
+def check_protocol_outcome_not_analysed(study: dict) -> dict:
+    rule = "every outcome of the locked protocol has a confirmatory analysis in the log (none is left unreported)"
+    gap = _protocol_gap(study) or _log_gap(study)
+    if gap:
+        return _study_result(STUDY_CHECKS[3], "unmeasured", [], reason=gap, rule=rule)
+    locked = study["locked"]
+    planned = ([locked["primary"]] if locked.get("primary") else []) + list(locked.get("secondary") or [])
+    counts = study["log"].get("outcomes") or {}
+    findings = [{"outcome": outcome} for outcome in planned if not (counts.get(outcome) or {}).get("confirmatory")]
+    return _study_result(STUDY_CHECKS[3], _verdict(findings), findings, rule=rule, evidence={"protocol": planned})
+
+
+def run_study(main_tex: bytes, outcomes_fact: str | None, study: dict | None) -> list[dict]:
+    """One entry per `STUDY_CHECKS` member, or `[]` when the workspace has no study protocol.
+
+    `outcomes_fact`: the paper's fixed `outcomes` fact (`paper_declarations.read_fact`);
+    `study`: `skills/_core/empirical/analysis_log.manuscript_inputs(root)`, read by the caller,
+    or `{"unavailable": <why>}` when the workspace is a study but that module is
+    missing or raised: every check is then `unmeasured` (`CHECK_FAILED`), never dropped."""
+    if study is None:
+        return []
+    if isinstance(study, dict) and study.get("unavailable"):
+        why = str(study["unavailable"])
+        return [_study_result(check, "unmeasured", [], reason="CHECK_FAILED",
+                              rule=f"the study checks could not run: {why}", evidence={"unavailable": why})
+                for check in STUDY_CHECKS]
+    segs = segments(main_tex)
+    entries = [check_primary_outcome_switch(outcomes_fact, study), check_exploratory_as_confirmatory(segs, study),
+               check_outcome_not_in_protocol(study), check_protocol_outcome_not_analysed(study)]
+    assert [e["check"] for e in entries] == list(STUDY_CHECKS)
+    return entries
+
+
+def run_study_guarded(main_tex: bytes, outcomes_fact: str | None, study: dict | None) -> list[dict]:
+    """`run_study`, but a failure on unusual input reports every check `unmeasured` (`CHECK_FAILED`)."""
+    try:
+        return run_study(main_tex, outcomes_fact, study)
+    except Exception as exc:  # noqa: BLE001 -- a malformed input must not abort the verify report
+        rule = f"the study checks could not run ({type(exc).__name__})"
+        return [_study_result(check, "unmeasured", [], reason="CHECK_FAILED", rule=rule) for check in STUDY_CHECKS]

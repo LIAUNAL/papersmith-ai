@@ -22,12 +22,14 @@ from memory:
     prioritization.json  the reference budget: included studies ranked by
                          topical relation and journal quartile, kept or dropped
     scope.json           the existing reviews found while scoping
+    signoffs.json        the operator's screening sign-off and synthesis
+                         acceptance, each pinned to the hash of what it signed
 
 Verbs (every one prints one JSON object; a refusal exits 2):
 
     init | protocol check|approve|amend | scope | search | import | dedupe |
     queue | screen | conflicts | kappa | appraise | extract | prisma | flow |
-    biblio | prioritize | checklist | status
+    biblio | prioritize | signoff | checklist | status
 
 Environment: PAPERSMITH_CONTACT_EMAIL (polite pool), OPENALEX_API_KEY,
 PAPERSMITH_OPENALEX_URL, PAPERSMITH_CROSSREF_URL, PAPERSMITH_EUROPEPMC_URL
@@ -1228,6 +1230,121 @@ def cmd_prioritize(args) -> dict:
             "recorded": recorded, "notes": notes}
 
 
+# --------------------------------------------------------------------------- operator sign-offs
+
+#: The two human gates of the review besides G-PROTOCOL: the operator signs the
+#: screening off once every record is decided with no conflict left, and
+#: accepts the synthesis once its PRISMA counts and flow diagram exist. Each
+#: sign-off pins the hash of the state it signed, so it is current only while
+#: that state is unchanged. An agent never signs on the operator's behalf.
+SIGNOFF_GATES = ("screening", "synthesis")
+SIGNOFF_BASIS = {"screening": "review/screening.jsonl",
+                 "synthesis": "review/prisma.json + paper/Figures/prisma-flow.svg"}
+
+
+def signoffs_path(root: Path) -> Path:
+    return review_dir(root) / "signoffs.json"
+
+
+def _flow_figure(root: Path) -> Path:
+    return root / "paper" / "Figures" / "prisma-flow.svg"
+
+
+def signoff_basis(root: Path, gate: str) -> str | None:
+    """The sha256 of the state a sign-off of ``gate`` covers, ``None`` while it
+    does not exist: the screening log itself, or the PRISMA counts (their
+    ``generated_at`` aside, so counting again the same records changes
+    nothing) together with the flow diagram drawn from them."""
+    if gate == "screening":
+        path = review_dir(root) / "screening.jsonl"
+        return _sha256(path) if path.is_file() else None
+    prisma, figure = review_dir(root) / "prisma.json", _flow_figure(root)
+    if not (prisma.is_file() and figure.is_file()):
+        return None
+    counts = _read_json(prisma, "PRISMA_CORRUPT")
+    if isinstance(counts, dict):
+        counts = {key: value for key, value in counts.items() if key != "generated_at"}
+    digest = hashlib.sha256(json.dumps(counts, sort_keys=True, ensure_ascii=False).encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(figure.read_bytes())
+    return digest.hexdigest()
+
+
+def read_signoffs(root: Path) -> dict:
+    path = signoffs_path(root)
+    if not path.is_file():
+        return {"schema": SCHEMA, "gates": {}}
+    data = _read_json(path, "SIGNOFFS_CORRUPT")
+    if not isinstance(data, dict) or not isinstance(data.get("gates"), dict) or not all(
+            isinstance(entries, list) for entries in data["gates"].values()):
+        raise Refusal("SIGNOFFS_CORRUPT", f"{path} is not a sign-off record: a \"gates\" object of lists")
+    return data
+
+
+def signoff_status(root: Path) -> dict:
+    """gate -> ``None`` (never signed) or its latest sign-off with ``current``."""
+    gates = read_signoffs(root)["gates"]
+    out = {}
+    for gate in SIGNOFF_GATES:
+        entries = gates.get(gate) or []
+        last = entries[-1] if entries and isinstance(entries[-1], dict) else None
+        out[gate] = None if last is None else {
+            "by": last.get("by"), "at": last.get("at"), "note": last.get("note", ""),
+            "sha256": last.get("sha256"),
+            "current": bool(last.get("sha256")) and last.get("sha256") == signoff_basis(root, gate)}
+    return out
+
+
+def _screening_open(root: Path) -> None:
+    """Refuse while a record is in conflict or still undecided at either stage."""
+    counts = prisma_counts(root)
+    required = _required_reviewers(root)
+    conflicts = {stage: sorted(rid for rid, outcome in stage_outcomes(root, stage, required).items()
+                               if outcome["state"] == "conflict") for stage in STAGES}
+    if any(conflicts.values()):
+        listed = "; ".join(f"{stage}: {', '.join(ids)}" for stage, ids in conflicts.items() if ids)
+        raise Refusal("SCREENING_CONFLICTS",
+                      f"the reviewers disagree on {sum(map(len, conflicts.values()))} record(s) ({listed}); "
+                      "the operator settles each with `screen --final` before signing the screening off")
+    pending = counts["screening"]["records_pending"] + counts["screening"]["reports_pending"]
+    if pending:
+        raise Refusal("SCREENING_PENDING",
+                      f"{pending} record(s) still await a screening decision; "
+                      "`queue --stage ta|ft --reviewer <name>` lists what each reviewer owes")
+
+
+def cmd_signoff(args) -> dict:
+    root = Path(args.root)
+    by = (args.by or "").strip()
+    if not by:
+        raise Refusal("APPROVER_MISSING",
+                      "--by names the operator who signs; an agent never signs on the operator's behalf")
+    require_approved(root)
+    if args.gate == "screening":
+        _screening_open(root)
+    digest = signoff_basis(root, args.gate)
+    # A sign-off always pins the hash of what it signed: never record one
+    # over a state that does not exist.
+    if digest is None and args.gate == "screening":
+        raise Refusal("SCREENING_EMPTY",
+                      "nothing has been screened yet: review/screening.jsonl holds no decision to sign off")
+    if digest is None:
+        raise Refusal("SYNTHESIS_INCOMPLETE",
+                      "the synthesis is accepted after its counts and flow diagram exist: "
+                      "run `prisma` and `flow` (review/prisma.json, paper/Figures/prisma-flow.svg)")
+    data = read_signoffs(root)
+    entries = data["gates"].setdefault(args.gate, [])
+    if entries and isinstance(entries[-1], dict) and entries[-1].get("sha256") == digest:
+        raise Refusal("SIGNOFF_UNCHANGED",
+                      f"the {args.gate} sign-off is already current: nothing changed since it was signed")
+    entry = {"by": by, "at": _now(), "note": (args.note or "").strip(), "sha256": digest,
+             "basis": SIGNOFF_BASIS[args.gate]}
+    entries.append(entry)
+    data["schema"] = SCHEMA
+    _write_json(signoffs_path(root), data)
+    return {"ok": True, "gate": args.gate, "path": str(signoffs_path(root)), "signoffs": signoff_status(root)}
+
+
 def cmd_checklist(args) -> dict:
     root = Path(args.root)
     evidence = _evidence(root)
@@ -1264,6 +1381,7 @@ def cmd_status(args) -> dict:
         summary["prisma"] = prisma_counts(root)
     summary["appraised"] = len({r["record_id"] for r in _read_jsonl(base / "appraisal.jsonl")})
     summary["extracted"] = len({r["record_id"] for r in _read_jsonl(base / "extraction.jsonl")})
+    summary["signoffs"] = signoff_status(root)
     return summary
 
 
@@ -1375,6 +1493,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--criterion", default=None, help="the protocol's exclusion criterion for the budget, E<n>")
     p.add_argument("--reviewer", default=None, help="who applied the budget")
     p.set_defaults(func=cmd_prioritize)
+
+    p = sub.add_parser("signoff", help="the operator signs the screening off or accepts the synthesis")
+    p.add_argument("--gate", required=True, choices=SIGNOFF_GATES)
+    p.add_argument("--by", default=None, help="the operator signing; an agent never signs on the operator's behalf")
+    p.add_argument("--note", default=None)
+    p.set_defaults(func=cmd_signoff)
 
     p = sub.add_parser("checklist", help="the 27 PRISMA 2020 items and what each still owes")
     p.set_defaults(func=cmd_checklist)

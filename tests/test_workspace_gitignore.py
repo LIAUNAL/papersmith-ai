@@ -119,6 +119,27 @@ class EngineStateIsIgnoredTests(unittest.TestCase):
                 self.assertTrue(_ignored(self.workspace, f"backup/{directory}/t/x.md"))
                 self.assertTrue(_ignored(self.workspace, f"backup/{directory}/t/{sidecar}/s.json"))
 
+    def test_the_study_protocol_lines_ship_without_adding_a_folder(self) -> None:
+        # T7-U1 (D4): the study-protocol skill ships to every workspace, so its revisions,
+        # sidecar and backups are ignored from the start, while the experimental layout
+        # gains no `protocol/` folder: the engine creates it on the first revision.
+        text = (self.workspace / ".gitignore").read_text(encoding="utf-8")
+        for line in ("protocol/*", "!protocol/.gitkeep", ".study-protocol-deliberation/", "backup/protocol/"):
+            with self.subTest(line=line):
+                self.assertIn(f"\n{line}\n", text)
+        self.assertFalse((self.workspace / "protocol").exists())
+        self.assertTrue(_ignored(self.workspace, "protocol/study-protocol-x-v01.md"))
+        self.assertTrue(_ignored(self.workspace, ".study-protocol-deliberation/state/x.md.json"))
+
+    def test_captured_analysis_streams_are_ignored_and_the_log_is_not(self) -> None:
+        # T7-U9: `analysis_cli.py run` stores each command's stdout and stderr
+        # under analysis/streams/, which may hold participant-level values; the
+        # hash-chained log beside it stays tracked.
+        text = (self.workspace / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("\nanalysis/streams/\n", text)
+        self.assertTrue(_ignored(self.workspace, "analysis/streams/" + "0" * 64))
+        self.assertFalse(_ignored(self.workspace, "analysis/log.jsonl"))
+
     def test_running_the_engine_leaves_nothing_new_for_git_to_track(self) -> None:
         link_node_modules(self.workspace)
         if not (self.workspace / "node_modules").exists() or shutil.which("node") is None:

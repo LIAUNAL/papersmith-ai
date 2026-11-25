@@ -28,6 +28,9 @@
   <script src="./math-panel.js?v=0.82.0"></script>
   <script src="./contribution-affinity.js?v=0.82.0"></script>
   <script src="./model-panel.js?v=0.82.0"></script>
+  <script src="./paper-type-panel.js?v=0.82.0"></script>
+  <script src="./review-panel.js?v=0.82.0"></script>
+  <script src="./study-panel.js?v=0.82.0"></script>
   <script type="importmap">{"imports": {"three": "./vendor/three/three.module.min.js"}}</script>
   <script type="module" src="./office3d.js?v=0.82.0"></script>
   <script src="./office-panel.js?v=0.82.0"></script>
@@ -2928,6 +2931,44 @@
     .kw-help__actions { display: flex; gap: 0.5rem; }
     .kw-help__unavailable { border: 1px solid var(--bad); background: rgba(248, 113, 113, 0.12); border-radius: 6px; padding: 0.5rem 0.65rem; font-size: 0.8rem; }
     .kw-help__unavailable span { color: var(--text-dim); font-size: 0.76rem; }
+    /* Paper type pane: one card per catalogue type (paper-type-panel.js). */
+    .pt-head { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.8rem; }
+    .pt-head p { margin: 0; }
+    .pt-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .pt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.75rem; }
+    .pt-card { border: 1px solid var(--border); border-radius: 8px; padding: 0.65rem 0.75rem; display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.82rem; background: var(--surface-2); }
+    .pt-card p { margin: 0; }
+    .pt-card--suggested { border-color: var(--warn); }
+    .pt-card--agreed { border-color: var(--ok); }
+    .pt-card__head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+    .pt-card__summary, .pt-card__guidelines, .pt-card__score { color: var(--text-muted); }
+    .pt-bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+    .pt-bar span { display: block; height: 100%; background: var(--accent); }
+    .pt-agree { display: flex; flex-direction: column; gap: 0.35rem; }
+    .pt-agree input, .pt-agree select { font: inherit; width: 100%; padding: 0.25rem 0.4rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text); }
+    .pt-agree__actions { display: flex; gap: 0.5rem; }
+    .pt-error { margin: 0; color: var(--bad); }
+    .pt-notice { margin: 0 0 0.5rem; color: var(--text-muted); }
+    .pt-empty { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
+    /* Review tab: the review/ records of a review workspace (review-panel.js). */
+    .rv-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .rv-summary { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.75rem; padding: 0; list-style: none; }
+    .rv-summary li { border: 1px solid var(--border); border-radius: 999px; padding: 0.15rem 0.6rem; font-size: 0.78rem; color: var(--text-muted); }
+    .rv-section { border: 1px solid var(--border); border-radius: 8px; padding: 0.65rem 0.8rem; margin-bottom: 0.75rem; background: var(--surface-2); font-size: 0.82rem; }
+    .rv-section h3 { margin: 0 0 0.45rem; font-size: 0.92rem; }
+    .rv-section h4 { margin: 0.6rem 0 0.3rem; font-size: 0.84rem; }
+    .rv-section p { margin: 0.2rem 0; }
+    .rv-section ul { margin: 0.2rem 0; padding-left: 1.1rem; }
+    .rv-table-wrap { overflow-x: auto; }
+    .rv-table { border-collapse: collapse; width: 100%; font-size: 0.78rem; }
+    .rv-table th, .rv-table td { border: 1px solid var(--border); padding: 0.25rem 0.4rem; text-align: left; vertical-align: top; }
+    .rv-table th { color: var(--text-muted); font-weight: 600; }
+    .rv-quote { display: block; color: var(--text-muted); font-style: italic; }
+    .rv-muted { color: var(--text-muted); }
+    .rv-error { color: var(--bad); }
+    .rv-warn { color: var(--warn); }
+    .rv-ok { color: var(--ok); }
+    .rv-flow img { max-width: 100%; height: auto; background: #fff; border: 1px solid var(--border); border-radius: 4px; }
     /* Prompt quality gate: the alert a failed phase prompt raises in its card. */
     .phase-gate { margin-top: 0.5rem; border: 1px solid var(--warn); background: rgba(245, 158, 11, 0.1); border-radius: 8px; padding: 0.6rem 0.75rem; display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.8rem; }
     .phase-gate__title { margin: 0; font-weight: 600; }
@@ -3379,6 +3420,23 @@
   .office-card-host .office-card { max-height: 46vh; overflow: auto; }
   .office-card__open { margin-top: 6px; background: #1d4ed8; color: #fff; border: 0;
     border-radius: 6px; padding: 4px 10px; cursor: pointer; font: 12px system-ui, sans-serif; }
+  /* A review workspace (paper_kind "review") has no concept map, experiments,
+     novelty gate or SOTA constellation: the views only the experimental line
+     uses carry data-kinds="experimental" and are hidden for it. */
+  body[data-paper-kind="review"] [data-kinds="experimental"] { display: none !important; }
+  /* The Review tab (review-panel.js) is the review line's own: hidden in an
+     experimental workspace and until the page knows the workspace's line. */
+  body:not([data-paper-kind="review"]) [data-kinds="review"] { display: none !important; }
+  /* Another line's own views (a board registered in lines.py) stay hidden
+     until the page knows the line; applyPaperKind then hides, for any line,
+     the views whose data-kinds does not list it. */
+  body:not([data-paper-kind]) [data-kinds]:not([data-kinds~="experimental"]) { display: none !important; }
+  /* The same rule, static, for the first two lines (another line's views, such
+     as the Study tab of the empirical lines, never show under them). */
+  body[data-paper-kind="experimental"] [data-kinds]:not([data-kinds~="experimental"]), body[data-paper-kind="review"] [data-kinds]:not([data-kinds~="review"]) { display: none !important; }
+  /* A line with no board (lines.py) shows the experimental board under this notice. */
+  .board-notice { margin: 0 1rem 0.75rem; padding: 0.5rem 0.75rem; border: 1px solid var(--warn);
+    border-radius: 6px; background: var(--warn-dim); font-size: 0.85rem; }
   </style>
 </head>
 <body>
@@ -3433,9 +3491,12 @@
   <nav class="tabs-nav" aria-label="Dashboard navigation" data-i18n-attr="aria-label:nav.label">
     <button class="tab-nav__btn active" onclick="navigateTab('flow')" data-i18n="nav.flow">Archify Flow</button>
     <button class="tab-nav__btn" onclick="navigateTab('pipeline')" data-i18n="nav.pipeline">Pipeline and Progress</button>
-    <button class="tab-nav__btn" onclick="navigateTab('modelo')" data-i18n="nav.model">🧠 Concept Map &amp; Model</button>
-    <button class="tab-nav__btn" onclick="navigateTab('experiments')" data-i18n="nav.experiments">🧪 Experiments</button>
-    <button class="tab-nav__btn" onclick="navigateTab('novelty')" data-i18n="nav.novelty">✨ Novelty &amp; Findings</button>
+    <button class="tab-nav__btn" onclick="navigateTab('review')" data-kinds="review" data-i18n="nav.review">📋 Review</button>
+    <button class="tab-nav__btn" onclick="navigateTab('study')" data-kinds="observational-measurement experiment-intervention qualitative-participatory hardware lab-simulation data-resource" data-i18n="nav.study">🔬 Study</button>
+    <button class="tab-nav__btn" onclick="navigateTab('papertype')" data-i18n="nav.paperType">🧭 Paper Type</button>
+    <button class="tab-nav__btn" onclick="navigateTab('modelo')" data-kinds="experimental" data-i18n="nav.model">🧠 Concept Map &amp; Model</button>
+    <button class="tab-nav__btn" onclick="navigateTab('experiments')" data-kinds="experimental" data-i18n="nav.experiments">🧪 Experiments</button>
+    <button class="tab-nav__btn" onclick="navigateTab('novelty')" data-kinds="experimental" data-i18n="nav.novelty">✨ Novelty &amp; Findings</button>
     <button class="tab-nav__btn" onclick="navigateTab('office')" data-i18n="nav.office">🏢 Agents Office</button>
     <button class="tab-nav__btn" onclick="navigateTab('sections')" data-i18n="nav.sections">Paper Sections</button>
     <button class="tab-nav__btn" onclick="navigateTab('atlas')" data-i18n="nav.atlas">Graph Atlas</button>
@@ -3533,6 +3594,40 @@
         </div>
         <div id="agentsPanel"><p class="agents-empty" data-i18n="agents.loading">Loading agents…</p></div>
       </div>
+    </div>
+
+    <!-- TAB: REVIEW (review workspaces only; review-panel.js, GET /api/review) -->
+    <div id="pane-review" class="tab-pane">
+      <section class="panel" id="reviewCard">
+        <div class="panel__header">
+          <div class="panel__title" data-i18n="sysreview.title">📋 Review records</div>
+          <span class="panel__meta" data-i18n="sysreview.meta">Protocol, searches, screening, PRISMA flow, extraction and risk of bias, read from review/</span>
+        </div>
+        <div id="reviewPanel" data-i18n="sysreview.loading">Loading the review records…</div>
+      </section>
+    </div>
+
+    <!-- TAB: STUDY (empirical workspaces only; study-panel.js, GET /api/study) -->
+    <div id="pane-study" class="tab-pane">
+      <section class="panel" id="studyCard">
+        <div class="panel__header">
+          <div class="panel__title" data-i18n="study.title">🔬 Study records</div>
+          <span class="panel__meta" data-i18n="study.meta">Protocol lock, ethics and registration, own data, analysis log and participant flow</span>
+        </div>
+        <div id="studyPanel" data-i18n="study.loading">Loading the study records…</div>
+      </section>
+    </div>
+
+    <!-- TAB: PAPER TYPE -->
+    <div id="pane-papertype" class="tab-pane">
+      <!-- PAPER TYPE: the accepted idea scored against the catalogue (paper-type-panel.js, GET /api/paper-type) -->
+      <section class="panel" id="paperTypeCard">
+        <div class="panel__header">
+          <div class="panel__title" data-i18n="paperType.title">🧭 Paper type: which kind of paper the idea becomes</div>
+          <span class="panel__meta" data-i18n="paperType.meta">Scored against smith's catalogue after plausibility; you agree the type</span>
+        </div>
+        <div id="paperTypePanel" data-i18n="paperType.loading">Loading the paper type…</div>
+      </section>
     </div>
 
     <!-- TAB: CONCEPT MAP AND MATHEMATICAL MODEL -->
@@ -3843,13 +3938,13 @@
             <span id="atlasPanelTitle" data-i18n="atlas.title.atlas">🌌 3D SOTA Constellation — Literature and Plausibility Atlas</span>
           </div>
           <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-            <button id="btnGraphAtlas" class="btn btn--primary" onclick="switchGraph('atlas')" data-i18n="atlas.btn.atlas">🌌 3D Constellation (Solar Atlas)</button>
-            <button id="btnGraphNovelty" class="btn" onclick="switchGraph('novelty')" data-i18n="atlas.btn.novelty">🕸️ 3D Novelty Graph of the Manuscript</button>
+            <button id="btnGraphAtlas" class="btn btn--primary" onclick="switchGraph('atlas')" data-kinds="experimental" data-i18n="atlas.btn.atlas">🌌 3D Constellation (Solar Atlas)</button>
+            <button id="btnGraphNovelty" class="btn" onclick="switchGraph('novelty')" data-kinds="experimental" data-i18n="atlas.btn.novelty">🕸️ 3D Novelty Graph of the Manuscript</button>
             <button id="btnGraphPapers" class="btn" onclick="switchGraph('papers')" data-i18n="atlas.btn.papers">📊 Candidate Matrix</button>
             <button id="btnGraphCited" class="btn" onclick="switchGraph('cited')" title="Search every paper the manuscript cites, by title, author, year, journal, section or abstract" data-i18n-attr="title:explorer.btnTitle" data-i18n="explorer.btn">🔎 Cited papers</button>
-            <button id="btnBuildGraph" class="btn" onclick="triggerBuildAtlas()" title="Regenerates the SOTA constellation from sota-pool/atlas.json (checker + renderer; also: smith atlas build)" data-i18n-attr="title:atlas.buildTitle" data-i18n="atlas.build">⚡ Regenerate graph</button>
-            <button id="btnGroupLayout" class="btn" onclick="toggleAtlasGroupLayout()" title="Rearranges the systems by cluster (family); press it again to return to the original layout" data-i18n-attr="title:atlas.groupTitle" data-i18n="atlas.group">🧩 Group layout</button>
-            <button id="btnAtlasManuscript" class="btn" onclick="toggleAtlasManuscript()" title="Shows which SOTA systems the manuscript cites (sota-pool/atlas.manuscript.json)" data-i18n-attr="title:atlas.manuscript.btnTitle" data-i18n="atlas.manuscript.btn">📚 Cited in manuscript</button>
+            <button id="btnBuildGraph" class="btn" onclick="triggerBuildAtlas()" data-kinds="experimental" title="Regenerates the SOTA constellation from sota-pool/atlas.json (checker + renderer; also: smith atlas build)" data-i18n-attr="title:atlas.buildTitle" data-i18n="atlas.build">⚡ Regenerate graph</button>
+            <button id="btnGroupLayout" class="btn" onclick="toggleAtlasGroupLayout()" data-kinds="experimental" title="Rearranges the systems by cluster (family); press it again to return to the original layout" data-i18n-attr="title:atlas.groupTitle" data-i18n="atlas.group">🧩 Group layout</button>
+            <button id="btnAtlasManuscript" class="btn" onclick="toggleAtlasManuscript()" data-kinds="experimental" title="Shows which SOTA systems the manuscript cites (sota-pool/atlas.manuscript.json)" data-i18n-attr="title:atlas.manuscript.btnTitle" data-i18n="atlas.manuscript.btn">📚 Cited in manuscript</button>
             <a id="linkOpenGraph" href="/api/atlas/view" target="_blank" class="btn" data-i18n="common.openInNewTab">Open in a new tab ↗</a>
           </div>
         </div>
@@ -4634,13 +4729,79 @@
     renderThemeButton();
     syncFrameThemes(savedTheme);
 
+    // A tab the workspace's paper line hides (data-kinds) opens the pipeline instead.
+    function visibleTab(tabId) {
+      const kind = document.body.dataset.paperKind;
+      const btn = Array.from(document.querySelectorAll('.tab-nav__btn')).find(b => b.getAttribute('onclick')?.includes(`'${tabId}'`));
+      const kinds = btn?.dataset.kinds;
+      return kind && kinds && !kinds.split(/\s+/).includes(kind) ? 'pipeline' : tabId;
+    }
+
+    // The views only the experimental line uses (the SOTA constellation, the
+    // novelty graph) are hidden under any other line's board.
+    function experimentalViewsHidden() {
+      const line = document.body.dataset.paperKind;
+      return Boolean(line) && line !== 'experimental';
+    }
+
+    // Hides, under the board in view, every view whose data-kinds does not
+    // list it, for any registered line (an adopted sheet: no DOM change).
+    let paperKindSheet = null;
+    function applyPaperKindRule(line) {
+      try {
+        if (!paperKindSheet) {
+          paperKindSheet = new CSSStyleSheet();
+          document.adoptedStyleSheets = [...document.adoptedStyleSheets, paperKindSheet];
+        }
+        const name = CSS.escape(line);
+        paperKindSheet.replaceSync(`body[data-paper-kind="${name}"] [data-kinds]:not([data-kinds~="${name}"]) { display: none !important; }`);
+      } catch (_) { /* the static rules still cover the experimental and review lines */ }
+    }
+
+    // The paper line of the workspace (/api/status paper_kind), read on every
+    // poll: `smith kind set` can change it while the dashboard runs. The page
+    // shows the line's board: board_kind when the line has none of its own
+    // (the experimental one, under a notice).
+    function applyPaperKind(kind) {
+      const line = (window.currentStatus && window.currentStatus.board_kind) || kind || 'experimental';
+      if (document.body.dataset.paperKind === line) return;
+      document.body.dataset.paperKind = line;
+      applyPaperKindRule(line);
+      if (experimentalViewsHidden() && (currentGraphKind === 'atlas' || currentGraphKind === 'novelty')) {
+        if (graphFramePath() === 'blank') currentGraphKind = 'cited';
+        else switchGraph('cited');
+      }
+      // Either line may hide the tab in view (the Review tab is the review line's).
+      if (visibleTab(activeTab) !== activeTab) navigateTab(activeTab);
+    }
+
+    // A line with no board of its own (/api/status board_notice): a visible
+    // notice above the panes; nothing is added to the page otherwise.
+    function applyBoardNotice(data) {
+      let note = document.getElementById('boardNotice');
+      if (!data.board_notice) {
+        if (note) note.remove();
+        return;
+      }
+      if (!note) {
+        note = document.createElement('div');
+        note.id = 'boardNotice';
+        note.className = 'board-notice';
+        note.setAttribute('role', 'status');
+        document.querySelector('main')?.before(note);
+      }
+      note.textContent = t('board.noBoard', { kind: data.paper_kind || '' });
+    }
+
     function navigateTab(tabId) {
+      tabId = visibleTab(tabId);
       activeTab = tabId;
       window.location.hash = `#${tabId}`;
       document.querySelectorAll('.tab-nav__btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
       
-      const targetBtn = Array.from(document.querySelectorAll('.tab-nav__btn')).find(b => b.getAttribute('onclick')?.includes(tabId));
+      // Matched by the quoted id: 'review' is a substring of 'preview'.
+      const targetBtn = Array.from(document.querySelectorAll('.tab-nav__btn')).find(b => b.getAttribute('onclick')?.includes(`'${tabId}'`));
       if (targetBtn) targetBtn.classList.add('active');
       const targetPane = document.getElementById(`pane-${tabId}`);
       if (targetPane) targetPane.classList.add('active');
@@ -4666,6 +4827,15 @@
       }
       if (tabId === 'novelty') {
         window.refreshNoveltyPanel?.();
+      }
+      if (tabId === 'papertype') {
+        window.refreshPaperTypePanel?.();
+      }
+      if (tabId === 'review') {
+        window.refreshReviewPanel?.();
+      }
+      if (tabId === 'study') {
+        window.refreshStudyPanel?.();
       }
       if (tabId === 'novelty') window.showManuscriptGraph?.();
       else window.hideManuscriptGraph?.();
@@ -4923,6 +5093,8 @@
     });
 
     function switchGraph(kind) {
+      // The SOTA constellation and the novelty graph belong to the experimental line.
+      if (experimentalViewsHidden() && (kind === 'atlas' || kind === 'novelty')) kind = 'cited';
       currentGraphKind = kind;
       clearAtlasSelection();
       const btnAtlas = document.getElementById('btnGraphAtlas');
@@ -6076,6 +6248,8 @@
         liveChannel.lastStatusAt = Date.now();
         currentStatus = data;
         window.currentStatus = data;
+        applyPaperKind(data.paper_kind);
+        applyBoardNotice(data);
         if (window.phaseRuns) window.phaseRuns.onStatus(data);
         refreshDrawerStatus(data);
 
@@ -6341,15 +6515,17 @@
         (data.telemetria || []).forEach(row => {
           const tr = document.createElement('tr');
           const tokVal = Number(row.tokens);
-          const tokDisplay = !isNaN(tokVal) ? tokVal.toLocaleString() : row.tokens;
+          // A row without numbers (the review steps) shows a dash and says why.
+          const noData = row.tokens == null;
+          const tokDisplay = noData ? '—' : (!isNaN(tokVal) ? tokVal.toLocaleString() : row.tokens);
           tr.innerHTML = `
-            <td><strong>${row.fase}</strong></td>
+            <td><strong>${row.fase}</strong>${row.note ? `<div style="color: var(--text-dim); font-size: 0.72rem;">${escapeHtml(row.note)}</div>` : ''}</td>
             <td><code>${row.gate}</code></td>
             <td><span class="badge badge--ok">${row.veredicto}</span></td>
             <td>${row.fecha}</td>
             <td><strong>${tokDisplay}</strong></td>
-            <td>${row.tool_uses}</td>
-            <td>${row.duracion}</td>
+            <td>${row.tool_uses == null ? '—' : row.tool_uses}</td>
+            <td>${row.duracion == null ? '—' : row.duracion}</td>
           `;
           teleTbody.appendChild(tr);
         });
@@ -8186,7 +8362,7 @@
         // The gates tab merged into the pipeline; old links still land on it.
         navigateTab('pipeline');
         document.getElementById('gatesPanel')?.scrollIntoView();
-      } else if (hash && ['pipeline', 'flow', 'modelo', 'experiments', 'novelty', 'sections', 'historia', 'telemetria', 'doctor', 'atlas', 'preview', 'artifacts'].includes(hash)) {
+      } else if (hash && ['pipeline', 'flow', 'review', 'study', 'modelo', 'experiments', 'novelty', 'sections', 'historia', 'telemetria', 'doctor', 'atlas', 'preview', 'artifacts'].includes(hash)) {
         navigateTab(hash);
       }
       loadStatus();
@@ -8209,6 +8385,8 @@
       flow: () => window.refreshAgentsPanel?.(),
       experiments: () => { window.refreshExperimentsPanel?.(); window.refreshExperimentsTutor?.(); },
       novelty: () => window.refreshNoveltyPanel?.(),
+      review: () => window.refreshReviewPanel?.(),
+      study: () => window.refreshStudyPanel?.(),
       historia: () => window.refreshAiHistoryPanel?.(),
       doctor: () => { window.refreshDoctorPanel?.(); window.refreshKeysPanel?.(); },
       modelo: () => { refreshModelData(); window.refreshMathPanel?.(); },

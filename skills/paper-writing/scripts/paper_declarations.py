@@ -2,8 +2,9 @@
 declarations and fact resolutions, collected progressively, fixed once
 recorded, reopened only by name.
 
-Two record kinds, `declaration` (seven operator-input ids, field `value`) and
-`fact` (ten fact ids, field `resolution`) — deliberately different field
+Two record kinds, `declaration` (the operator-input ids of
+`paper_vocabulary.DECLARATIONS`, field `value`) and `fact` (the fact ids of
+`paper_vocabulary.FACTS`, field `resolution`) — deliberately different field
 names, so the two vocabularies can never share a code path by accident
 (design.md, `JSON region bodies, comment-prefixed, canonically serialized`:
 "a shared field name invites a shared code path, and a shared code path is
@@ -18,7 +19,7 @@ repository's roster exists to prevent").
 
 Public surface:
 
-    OBSERVABLE_FACTS / DERIVED_FACTS / STRUCTURAL_FACTS  -> the ten facts,
+    OBSERVABLE_FACTS / DERIVED_FACTS / STRUCTURAL_FACTS  -> every fact,
         partitioned (design.md, `A fact the agent may observe is a
         partition, not a guideline`)
     set_declaration(paper_dir, id, value, *, clock=...) -> dict
@@ -74,8 +75,9 @@ Public surface:
                                                      EVIDENCE_CONFLATED)
     FACT_SOURCE_ROOT -> dict[str, SourceRoot]  (fact id -> the root it is read from,
         AND that root's kind -- PROSE (a document revision, section-bindable),
-        REPOSITORY (a target code repository, measured by running it), or
-        INGESTED (a published paper under guidance/, identity-resolved))
+        REPOSITORY (a target code repository, measured by running it),
+        INGESTED (a published paper under guidance/, identity-resolved), or
+        STRUCTURED (a JSON record its own module writes and hashes))
     declarable_source_roots() -> dict[str, SourceRoot]  (PROSE-kind roots only, derived)
     declaration_state(status, root) -> str  ('undeclared' | 'declared-unsealed' |
         'declared-sealed' | 'n/a' -- design.md Decision C/I, S2's four-value widening)
@@ -83,7 +85,7 @@ Public surface:
         (`mark revisions`'s own engine; design.md Decision F)
     resolve_ingested_document(evidence_dir, lineage) -> Path  (pure disk read;
         the INGESTED-kind counterpart to resolve_lineage above)
-    source_available(root) -> bool  (pure disk measurement; gitignore-blind, `Path.iterdir()`)
+    source_available(root, *, structured=False) -> bool  (pure disk measurement; gitignore-blind, `Path.iterdir()`)
     reconcile_observation_report(report, measured) -> list[dict]  (pure; every
         disagreement between the agent's account and a real disk measurement)
 """
@@ -110,9 +112,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implemen
 from impl_refusals import Refused  # noqa: E402
 import impl_layout  # noqa: E402
 
-#: The five facts an outside observer (`insumos-observer`) may report on —
-#: read from `proposals/`, `experiments/`, or the target implementation
-#: repository. Held by exact equality against `paper_vocabulary.FACTS`
+#: The facts an outside observer (`insumos-observer`) may report on —
+#: read from `proposals/`, `experiments/`, the target implementation
+#: repository, and, for the study facts (S7), `protocol/` and
+#: `study/flow.json`. Held by exact equality against `paper_vocabulary.FACTS`
 #: below, so a fact Phase 2 ever adds goes red here until somebody
 #: classifies it (design.md, `A fact the agent may observe is a partition,
 #: not a guideline`).
@@ -122,6 +125,11 @@ OBSERVABLE_FACTS: tuple[str, ...] = (
     "experimental-design",
     "implementation",
     "results",
+    "protocol",
+    "sample",
+    "outcomes",
+    "analysis-plan",
+    "participant-flow",
 )
 
 #: Facts the agent reports the MATERIAL for, never the derivation itself.
@@ -336,8 +344,9 @@ _BASIS_MAX_BYTES = 64 * 1024 * 1024
 
 def _basis_roots(fact_id: str) -> tuple:
     """The `FACT_SOURCE_ROOT` roots a fact's declared value was read from:
-    its own root when it is read as prose or as ingested evidence (a
-    REPOSITORY root is measured by running it, never digested), plus the
+    its own root when it is read as prose, as ingested evidence or as a
+    structured record (a REPOSITORY root is measured by running it, never
+    digested), plus the
     experimental protocol's root for `dataset`, since the protocol names the
     dataset an experiment uses (issue #184 item 7)."""
     own = FACT_SOURCE_ROOT.get(fact_id)
@@ -370,9 +379,64 @@ def _root_files(base: Path, root) -> list | None:
     return files
 
 
+#: Where the participant flow module lives beside this skill; it owns the
+#: hash of `study/flow.json` (`model.flow_sha256`: canonical JSON, timestamp
+#: keys aside), so a STRUCTURED basis is the hash its sign-off binds to.
+_FLOW_MODEL_PATH = Path(__file__).resolve().parents[2] / "_core" / "participant_flow" / "model.py"
+_flow_model_cache: list = []
+
+
+def _flow_model():
+    """`_core/participant_flow/model.py`, loaded once by path (stdlib only, no
+    side effects at import), or None when this workspace does not carry it."""
+    if not _flow_model_cache:
+        module = None
+        if _FLOW_MODEL_PATH.is_file():
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "_paper_writing_participant_flow_model", _FLOW_MODEL_PATH)
+            if spec is not None and spec.loader is not None:
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+        _flow_model_cache.append(module)
+    return _flow_model_cache[0]
+
+
+def _structured_digest(base: Path, root) -> str | None:
+    """The digest of a STRUCTURED root, the JSON record `base / root.name`:
+    its owning module's hash of the parsed record (timestamp keys aside, so a
+    re-stamped but unchanged record is no change); the sha256 of its bytes when
+    it is not valid JSON, so a broken record is a change too; the sha256 of
+    nothing when it is absent, so a record that appears later is a change.
+    The sha256 of its bytes also when no module owns it (a kit without
+    `_core/participant_flow`: every byte change, a re-stamp included, then
+    counts as a change, never silently none) and when the module cannot hash
+    what was parsed (a lone surrogate, nesting deeper than the parser allows).
+    None when it cannot be read or exceeds the bounds."""
+    path = base / root.name
+    if not path.exists():
+        return hashlib.sha256().hexdigest()
+    try:
+        if path.stat().st_size > _BASIS_MAX_BYTES:
+            return None
+        data = path.read_bytes()
+    except OSError:
+        return None
+    model = _flow_model()
+    if model is None:
+        return hashlib.sha256(data).hexdigest()
+    try:
+        return model.flow_sha256(json.loads(data.decode("utf-8")))
+    except (ValueError, TypeError, RecursionError):  # UnicodeError and JSONDecodeError are ValueErrors
+        return hashlib.sha256(data).hexdigest()
+
+
 def _root_digest(base: Path, root) -> str | None:
     """sha256 over each covered file's base-relative path and bytes, in
-    sorted order; None when the root cannot be read or exceeds the bounds."""
+    sorted order; None when the root cannot be read or exceeds the bounds.
+    A STRUCTURED root is one record, hashed by `_structured_digest`."""
+    if root.kind is SourceRootKind.STRUCTURED:
+        return _structured_digest(base, root)
     files = _root_files(base, root)
     if files is None or len(files) > _BASIS_MAX_FILES:
         return None
@@ -406,6 +470,13 @@ def source_basis(base: Path, fact_id: str) -> dict:
     return out
 
 
+def _root_label(name: str) -> str:
+    """How a stale-fact detail names a root: a folder as `name/`, a
+    STRUCTURED record as its own path."""
+    kinds = {root.name: root.kind for root in FACT_SOURCE_ROOT.values()}
+    return name if kinds.get(name) is SourceRootKind.STRUCTURED else f"{name}/"
+
+
 def read_stale_facts(paper_dir: Path, *, source_base: Path | None = None) -> dict:
     """Read-only: every FIXED, non-declined fact whose recorded `basis` no
     longer matches its source on disk, as `{fact_id: {"roots": [root, ...],
@@ -436,7 +507,7 @@ def read_stale_facts(paper_dir: Path, *, source_base: Path | None = None) -> dic
                          if name in current and current[name] != digest)
         if not changed:
             continue
-        folders = ", ".join(f"{name}/" for name in changed)
+        folders = ", ".join(_root_label(name) for name in changed)
         stale[entry["id"]] = {
             "roots": changed,
             "recorded": entry.get("recorded", ""),
@@ -1530,11 +1601,16 @@ class SourceRootKind(enum.Enum):
     INGESTED-kind root is not a revisioned lineage at all -- a published
     paper gets no `r22` -- so its resolution is IDENTITY (the lineage IS
     the document), never the PROSE branch's marker-driven max-ordinal
-    search."""
+    search. T7-U8 (D10): a STRUCTURED-kind root is one JSON record a module
+    of its own writes, validates and hashes (`study/flow.json`, the
+    participant flow) -- never prose, so it is unmeasured for section
+    binding BY KIND, carries no revisions marker, and its basis digest is
+    the owning module's hash of the record (`_structured_digest`)."""
 
     PROSE = "prose"
     REPOSITORY = "repository"
     INGESTED = "ingested"
+    STRUCTURED = "structured"
 
 
 class SourceRoot(NamedTuple):
@@ -1589,6 +1665,19 @@ FACT_SOURCE_ROOT: dict = {
     "experimental-design": SourceRoot("experiments", SourceRootKind.PROSE),
     "implementation": SourceRoot("implementation", SourceRootKind.REPOSITORY),
     "results": SourceRoot("implementation", SourceRootKind.REPOSITORY),
+    # The study facts (S7, T7-U8). The four protocol facts share one PROSE
+    # root, the managed revisions `protocol/study-protocol-<slug>-vNN.md`
+    # that `study-protocol-deliberation` publishes (labelled fields parsed by
+    # its `protocol-fields.ts`, never here); its `.paper-writing.json`
+    # marker is `mark revisions --root protocol --revision-prefix v
+    # --ordinal-digits 2`, as for `experiments/`. `participant-flow` is read
+    # from the operator-entered counts `study/flow.json`, a STRUCTURED root
+    # (D10) named by its own path.
+    "protocol": SourceRoot("protocol", SourceRootKind.PROSE),
+    "sample": SourceRoot("protocol", SourceRootKind.PROSE),
+    "outcomes": SourceRoot("protocol", SourceRootKind.PROSE),
+    "analysis-plan": SourceRoot("protocol", SourceRootKind.PROSE),
+    "participant-flow": SourceRoot("study/flow.json", SourceRootKind.STRUCTURED),
 }
 
 
@@ -1759,7 +1848,8 @@ def declaration_state(status: dict, root: SourceRoot) -> str:
     that `paper_marker.py` exists).
 
     `root.kind is not PROSE` reports `'n/a'` BY KIND, never by name --
-    `REPOSITORY` and `INGESTED` roots carry no revisions rule at all. A
+    `REPOSITORY`, `INGESTED` and `STRUCTURED` roots carry no revisions rule
+    at all. A
     `PROSE` root whose directory does not exist yet (`status['path']` is
     `None`) can carry no marker file, so it reports `'undeclared'` without
     ever calling the reader. Otherwise this calls `read_revisions_marker`
@@ -1878,6 +1968,9 @@ def source_root_status(base: Path, root: SourceRoot) -> dict:
     `_ingested_root_status` below — its path is DERIVED from `guidance/`'s
     own per-folder classification, never resolved from `root.name`.
 
+    A `SourceRootKind.STRUCTURED` root (D10) is ALWAYS `unmeasured` too: a
+    JSON record, never prose; `path` is the record when it exists.
+
     Otherwise (`SourceRootKind.PROSE`), document-rooted iff `base /
     root.name` is a directory holding at least one `*.md` file — a
     property computed on disk, never keyed by a fact id
@@ -1897,6 +1990,16 @@ def source_root_status(base: Path, root: SourceRoot) -> dict:
         }
     if root.kind is SourceRootKind.INGESTED:
         return _ingested_root_status(base)
+    if root.kind is SourceRootKind.STRUCTURED:
+        record = base / root.name
+        return {
+            "state": "unmeasured", "path": record if record.is_file() else None,
+            "documents": 0,
+            "reason": (
+                f"{root.name!r} is a {root.kind.value} record, read as JSON by its own "
+                "module, not as prose for section binding"
+            ),
+        }
     path = base / root.name
     if not path.is_dir():
         return {
@@ -2045,7 +2148,7 @@ def is_bindable_fact(fact_id: str) -> bool:
     return fact_id in FACT_SOURCE_ROOT
 
 
-def source_available(root: Path) -> bool:
+def source_available(root: Path, *, structured: bool = False) -> bool:
     """Gitignore-blind disk measurement of one source root's real
     availability, taken by THIS process -- `Path.iterdir()`, the same
     mechanism `paper_guidance.ingested_papers` already proved correct for
@@ -2054,8 +2157,13 @@ def source_available(root: Path) -> bool:
     in the session that produced this fix; `Path.iterdir()` is gitignore-
     blind by construction, never by instruction). A non-existent root and
     an existing-but-empty one both report `False` -- indistinguishable to
-    a fact this root is supposed to ground either way.
+    a fact this root is supposed to ground either way. A STRUCTURED root
+    (`structured=True`) is one file (`study/flow.json`): available when it is
+    a non-empty file. Every other root is a folder, so a file given for it
+    measures unavailable, as it always did.
     """
+    if structured:
+        return root.is_file() and root.stat().st_size > 0
     return root.is_dir() and any(root.iterdir())
 
 

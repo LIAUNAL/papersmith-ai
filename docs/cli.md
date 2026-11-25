@@ -46,7 +46,7 @@ smith init ~/papers/sparse-ae \
 | `--topic TEXT` | Research topic |
 | `--tools TEXT` | Runtimes to provision, comma-separated |
 | `--remote {kaggle,local,slurm}` | Default compute target (default: `kaggle`) |
-| `--kind {experimental,review}` | The paper line (default: `experimental`). `review` creates a PRISMA 2020 systematic review workspace with no experiments: the review section contracts in `sections/`, a `review/` folder for the protocol, searches, screening and synthesis records of `/systematic-review`, the review flow in every harness entrypoint, and `paper_kind: "review"` in `.papersmith/config.json`, which `smith upgrade` keeps. An experimental workspace never receives the review-only files. See [The review line](../README.md#the-review-line-systematic-reviews) |
+| `--kind {experimental,review,observational-measurement,hardware,lab-simulation,data-resource,experiment-intervention,qualitative-participatory}` | The paper line (default: `experimental`). `review` creates a PRISMA 2020 systematic review workspace with no experiments: the review section contracts in `sections/`, a `review/` folder for the protocol, searches, screening and synthesis records of `/systematic-review`, the review flow in every harness entrypoint, and `paper_kind: "review"` in `.papersmith/config.json`, which `smith upgrade` keeps. `observational-measurement` creates an observational, diagnostic-validation or measurement-instrument study workspace: the study section contracts in `sections/`, the `protocol/`, `study/`, `analysis/` and `datasets/` folders of the shared empirical tools, the `/observational-measurement` skill, the line's flow in every harness entrypoint and `paper_kind: "observational-measurement"`. `hardware` creates an open hardware or instrument workspace with the same folders: the HardwareX section contracts in `sections/` (specifications table, hardware in context, hardware description, design files, bill of materials, build and operation instructions, validation and characterization), the measurement core's records under `study/`, the `/hardware` skill and its flow. `lab-simulation` creates a laboratory or simulation study workspace with the same folders and the measurement core. `data-resource` creates a data resource workspace (a corpus, dataset or benchmark released as the contribution) with the same folders: the data descriptor section contracts in `sections/` (background and summary, methods, data records, technical validation, usage notes, code availability), the `/data-resource` skill and its flow. `experiment-intervention` creates a trial with people or a field, crop or animal experiment workspace with the same folders: the CONSORT 2025-shaped section contracts in `sections/` (trial design, randomisation from the operator's allocation record, blinding, participant flow, harms, with optional field-experiment blocks for plots, blocks and experimental units, mixed models and animal husbandry), the `/experiment-intervention` skill and its flow. `qualitative-participatory` creates a qualitative or mixed-methods study, expert consensus or foresight study, or experience report workspace with the same folders: the SRQR-shaped section contracts in `sections/` (approach and paradigm, reflexivity, sampling and its sufficiency, data processing from the operator's transcript register, the analysis from the codebook versions and the theme sign-off, participant quotes checked verbatim, with optional consensus blocks for the panel, the pre-specified threshold, the rounds and the MICMAC map, and optional experience-report blocks), the `/qualitative-participatory` skill and its flow. A workspace never receives another line's files. See [The review line](../README.md#the-review-line-systematic-reviews), [The observational and measurement line](../README.md#the-observational-and-measurement-line), [The hardware line](../README.md#the-hardware-line), [The data-resource line](../README.md#the-data-resource-line), [The experiment-intervention line](../README.md#the-experiment-intervention-line) and [The qualitative-participatory line](../README.md#the-qualitative-participatory-line) |
 | `<dir>` | Where the workspace goes; omitted, it is the current directory (`smith init` alone sets up the folder you are in, on every operating system) |
 | `--import-existing` | Explicitly initialize a nonempty directory while preserving existing files: keeps its `README.md`, merges papersmith's block into its `.gitignore`, and refuses any other file or symlink collision before copying |
 | `--no-npm` | Skips the best-effort `npm install` (offline/hermetic use) |
@@ -94,7 +94,7 @@ smith upgrade ~/papers/sparse-ae
 | Flag | Effect |
 |------|--------|
 | `--tools TEXT` | Replaces the active runtime generators |
-| `--force` | Forces framework files to be written |
+| `--force` | Forces framework files to be written, replacing edited section contracts with the kit's |
 | `--allow-downgrade` | Allows installing a framework version older than the one the workspace records |
 | `--no-migrate` | Syncs the framework files without migrating artifacts; the recorded version does not advance |
 | `--plan-migrations` | Reports the pending artifact migrations and exits without writing anything |
@@ -103,6 +103,10 @@ smith upgrade ~/papers/sparse-ae
 It only touches files the framework manages — never `guidance/`,
 `proposals/`, `paper/`, `experiments/`, `implementations/`, `kaggle-inbox/`,
 `papersmith.yaml`, `package.json`, `README.md` or the `.env*` files.
+A section contract in `sections/` that the workspace edited (its bytes differ
+from the copy the manifest records) is kept and reported as
+`Kept edited contract: <path>`; `status` lists it as drift, and `--force`
+replaces it with the kit's.
 Against a kit checkout without reinstalling:
 `PAPERSMITH_KIT_ROOT=/path/to/papersmith-ai smith upgrade <dir>`.
 
@@ -197,6 +201,42 @@ byte, alongside the downgrade guard and for the same reason. Reading it as empty
 would re-apply every migration it was recording. `status` answers differently on
 purpose: it reports it as a warning, because a command that only informs and
 also crashes leaves the workspace with no way to ask what is wrong with it.
+
+### `smith kind set <type> [<dir>]`
+
+```bash
+smith kind set review --by "Ana" ~/papers/gnn-drug
+```
+
+Moves a workspace to the line of the paper type the operator agreed after
+plausibility (`/paper-type`). `<type>` is a catalogue id
+(`skills/_core/paper_types/paper_types.json`): `applied-ai` maps to the
+`experimental` line, `review` to the `review` line, and
+`observational-measurement`, `hardware`, `lab-simulation`, `data-resource`,
+`experiment-intervention` and `qualitative-participatory` each to the line of the
+same name. Every catalogue type has a line today; a type the catalogue marks
+planned would have none yet and refuses. The command records the agreement in
+`.papersmith/paper_type.json` (the idea must be scored first, or it refuses
+with `SCORES_ABSENT`), writes `paper_kind` in `.papersmith/config.json` and
+runs `smith upgrade`, which applies the line's section contracts and
+regenerates the flow text of every harness entrypoint. The other line's files
+are removed only when unedited; an edited one stays and is reported as
+`Stranded (edited, kept): <path>`; a skill with one edited file stays whole.
+The new line's research folders (`review/`; `protocol/`, `study/`,
+`analysis/`, `datasets/`; or `proposals/`, `experiments/`, `implementations/`,
+`kaggle-inbox/`) are created when missing. Leaving an empirical-line workspace
+(`observational-measurement`, `hardware`, `lab-simulation`, `data-resource`, `experiment-intervention`, `qualitative-participatory`) also refuses once a study-protocol revision
+(`protocol/study-protocol-*-v*.md`) or the protocol lock
+(`study/protocol.lock.json`) exists, unless `--force`. A refusal
+(including `upgrade`'s own, such as a downgrade) leaves the records as they
+were. When the workspace already follows the type's line, only the agreement
+is recorded.
+
+| Flag | Effect |
+|------|--------|
+| `--by TEXT` | The operator who agreed the type (required) |
+| `--force` | Moves the workspace even when a proposal revision (`proposals/*-r*.md`) or `paper/main.tex` exists (in an empirical-line workspace, also a study-protocol revision or the protocol lock) |
+| `--allow-dirty-kit` | Moves the workspace even when the kit source has uncommitted changes, as `smith upgrade --allow-dirty-kit` |
 
 ### `smith status [<dir>]`
 
@@ -702,6 +742,107 @@ table `smith doctor` prints). The English catalogue calls them Archify Flow,
 Pipeline and Progress, Concept Map & Model, Experiments, Novelty & Findings, Paper
 Sections, Graph Atlas, PDF Preview, Artifacts, AI History, Telemetry and Costs, and
 Smith Doctor.
+
+**The Review tab (review workspaces only).** A workspace whose `paper_kind` is
+`review` shows a *Review* tab (*Revisión* in Spanish) right after *Pipeline and
+Progress*; an experimental workspace never shows it, and its routes answer `409`
+with `{"ok": false, "code": "NOT_A_REVIEW_WORKSPACE", "paper_kind": ...}`.
+`GET /api/review` reads the `review/` records through the workspace's own
+`review_cli.py` (the dashboard's copy, with a visible warning, when that one does
+not load) and answers one section per panel: `summary` (`review_cli.py status`),
+`protocol` (research questions, criteria, sources and queries, dates, the G-PROTOCOL
+approval, whether the protocol changed after it, and the amendments; the
+registration is the `review-registration` declaration of `/paper-writing`), `searches`
+(the search log and the protocol sources not searched yet), `screening` (per stage:
+eligible, decided, partial, conflicts with each reviewer's vote, pending per reviewer,
+and Cohen's kappa or why it is not computable, since it needs exactly two reviewers),
+`prisma` (the PRISMA 2020 counts, whether `review/prisma.json` still matches them, and
+the flow figure `paper/Figures/prisma-flow.svg`, embedded through `/api/artifact`),
+`extraction` (the protocol's fields by included study, each value with its quote or
+page), `appraisal` (the risk of bias as the protocol records it: each study's
+appraisal score against the protocol's threshold; no risk-of-bias domains are
+invented) and `signoffs` (G-SCREENING and G-SYNTHESIS, and whether each is still
+current). A record that cannot be read turns only its section into
+`{"available": false, "code", "message"}`. The 27-item PRISMA 2020 checklist runs
+`paper_cli.py`, so it loads only when the operator clicks its button, from
+`GET /api/review/checklist`, off the server's event loop.
+
+**The Study tab (empirical workspaces only).** A workspace whose `paper_kind` is an
+empirical line (`observational-measurement`, `hardware`, `lab-simulation`, `data-resource`,
+`experiment-intervention`, `qualitative-participatory`) shows a
+*Study* tab (*Estudio* in Spanish) after *Pipeline and Progress*; an experimental or
+review workspace never shows it, and its routes answer `409` with
+`{"ok": false, "code": "NOT_A_STUDY_WORKSPACE", "paper_kind": ...}`. `GET /api/study`
+reads the study records through the shared readers (`skills/_core/empirical`,
+`skills/_core/participant_flow` and the workspace's `datasets_cli.py`, the dashboard's
+copy with a visible warning when that one does not load) and answers one section per
+panel: `protocol` (the G-STUDY-PROTOCOL lock, whether the protocol changed after it,
+the latest managed revision and the amendments), `ethics` and `registration` (the latest
+record, whether it is bound to the current lock or stale after an amendment, the
+retrospective flag, the reason when not applicable), `data` (each own dataset's
+data-use statement, dictionary summary, QC status with its domain checks, and the
+de-identification and whether it is current; never a data value), `analysis` (every
+logged analysis with its label and why, outcome, plan entry and exit code, the
+interrupted runs, the repairs and the log's warnings), `flow` (whether
+`study/flow.json` is valid, the figure `paper/Figures/participant-flow.svg` current
+and embedded through `/api/artifact`, the sign-off current, and the counts) and
+`reporting` (the agreed type and variant, the guideline the catalogue names for them,
+and the line's other guidelines under `additional_guidelines`: a hardware workspace
+names `hardwarex` and `gum-reporting`). A `hardware` or `lab-simulation` workspace, or any
+workspace holding measurement records, adds `instruments`, `measurements` (each
+registered raw data file, never a reading), `uncertainty` (each GUM budget with its type
+A/B components, sensitivity coefficients, combined and expanded uncertainty, effective
+degrees of freedom and coverage, current or stale with why, and any past-due override)
+and `agreement` (bias, limits of agreement and ICC(2,1)), read through
+`skills/_core/measurement/records.py`. A `data-resource` workspace, or any workspace
+whose `datasets/registry.json` holds a deposit record, adds `deposit`: each dataset of
+the resource (every registry entry but a toy set) with the repository, the persistent
+identifier and its scheme, the licence, the landing page, the version, the deposit date,
+who recorded it and the files it binds, and whether it is current or stale (a file
+changed, added or missing since), read only through `datasets_cli.py`'s
+`deposit_state`; a data-resource workspace's `reporting` names `datasheets`. An
+`experiment-intervention` workspace, or any workspace with a `study/allocation.json`,
+adds `allocation` (gate G-ALLOCATION): the method, block size, strata, concealment
+statement, the list's path, row count and short sha256, the protocol revision it is
+bound to, who recorded it, and whether it is current or stale (the list changed,
+missing, unreadable or outside the workspace, or the protocol amended or not current),
+read only through `records.allocation_state`; the allocation list itself stays the
+operator's and concealed, and the tab never shows any of its values. A
+`qualitative-participatory` workspace, or any workspace holding the matching record,
+adds `transcripts` (gate G-TRANSCRIPTS: per registration the participant code, kind,
+file, character count, short sha256, consent and de-identification statements, who
+and when, current or stale, and the totals), `themes` (gate G-ANALYSIS: the codebook
+versions and the operator's theme sign-off with the codebook version and the number
+of transcripts it covers) and `consensus` (gate G-ROUNDS: the panel's codes and
+expertise, the plan, per round and item n, percent agreement, median, IQR, consensus
+and the change from the previous round, and the MICMAC ranks and quadrant per
+variable at the power used), read only through `qualitative/records.py` and
+`consensus.py`; never a transcript's text, a comment or an individual rating. The
+`experiment-intervention` board has eleven steps with the gates G-STUDY-PROTOCOL,
+G-REGISTRATION, G-ETHICS, G-ALLOCATION, G-DATA-QC and G-FLOW. A trial with people
+(`human-trial`, and any workspace with no variant agreed) needs a current
+registration made on or before its first enrolment (ICMJE): a retrospective
+registration, one without `--first-enrolment` and a not-applicable record fail
+with their reason; it also needs the signed-off CONSORT 2025 participant flow
+before writing. A field experiment passes with any current registration record,
+and its flow is optional and never blocks writing. G-ALLOCATION is current while
+the operator's allocation list and the protocol lock are unchanged; the board
+shows the record's method, row count and concealment, never the list, and the
+pre-specified analyses wait for it. The `qualitative-participatory` board has ten steps with G-STUDY-PROTOCOL, G-ETHICS,
+G-TRANSCRIPTS, G-ROUNDS (consensus-foresight only) and G-ANALYSIS, decided by the
+agreed variant. A qualitative or mixed study (and any workspace with no variant
+agreed) needs the protocol, the ethics record, current transcript registrations and
+a current theme sign-off. A consensus study needs the protocol, the ethics record,
+the consensus plan and every planned round, with any recorded MICMAC analysis
+current; its transcripts are optional. An experience report keeps the protocol and
+the transcripts optional, and G-ANALYSIS does not apply. Writing waits for every
+gate. The board never shows a transcript's text, a response or a comment. A record
+that cannot be read turns only its section into `{"available": false, "code",
+"message"}`. The variant's reporting checklist runs the checklist engine, so it loads
+only when the operator clicks its button, from `GET /api/study/checklist` (another of
+the line's guidelines with `?guideline=<id>`; any other answers `400`
+`GUIDELINE_NOT_THIS_LINE`), off the server's event loop; without an agreed variant or
+guideline data it says "no checklist data yet".
 
 **Experiment protocol visibility.** In *Experiments*, the protocol and its
 hypotheses appear immediately after any launch-blocking warnings, before service

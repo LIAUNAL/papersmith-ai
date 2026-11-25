@@ -257,6 +257,399 @@ you report a number as unsupported, confirm with `Grep` that no file under
 be unread, and the review falls back to the `.tex`/sections — named, not
 silent.
 
+## Review-paper mode — a systematic review instead of an experimental paper
+
+Read `.papersmith/config.json` before you start. When its `paper_kind` is
+`review` (a workspace made with `smith init --kind review`, or switched with
+`smith kind set review`), the paper is a systematic review written with
+`/systematic-review`: it reports no method against a SOTA and runs no
+experiments, so the main-track form above does not apply. Judge it instead on
+the **systematic-review rubric**: the methodological quality of the review as
+AMSTAR 2 appraises it (Shea et al., 2017, BMJ 358:j4008) and the completeness
+of its reporting against PRISMA 2020 (Page et al., 2021, BMJ 372:n71). An
+`experimental` `paper_kind`, or no config file, keeps the form above
+unchanged; an empirical line uses the empirical-study mode below.
+
+What you read changes with the line: the paper (as in step 1 above); the
+review's own records under `review/` (`protocol.json` and
+`protocol.lock.json`, `searches.jsonl`, `records.jsonl`, `screening.jsonl`,
+`appraisal.jsonl`, `extraction.jsonl`, `prisma.json`); and the output of
+`python skills/systematic-review/scripts/review_cli.py checklist --root .`
+(read-only), which maps the 27 PRISMA 2020 items to the blocks that report
+them. A claim the paper makes about its process (a search date, a number of
+records, a kappa, a registration) that the `review/` records do not hold is a
+finding, quoted at both ends.
+
+Answer the sixteen AMSTAR 2 items, each `yes`, `partial yes` or `no` with a
+one-to-three-sentence justification that quotes the passage or names the
+record that decides it. Paraphrased, the items ask whether the review:
+
+1. framed its question and inclusion criteria with the PICO components;
+2. **(critical)** established its methods in a protocol before the review and
+   justifies any significant deviation from it;
+3. explains its choice of the study designs it included;
+4. **(critical)** used a comprehensive search strategy (at least two
+   databases, keywords and search strategy given, limits justified, plus
+   reference lists, registries, grey literature or experts);
+5. selected studies in duplicate;
+6. extracted data in duplicate;
+7. **(critical)** lists the excluded studies and justifies each exclusion;
+8. describes the included studies in adequate detail;
+9. **(critical)** assessed the risk of bias of the individual studies with a
+   satisfactory technique;
+10. reports the sources of funding of the included studies;
+11. **(critical)** used appropriate methods for statistical combination, if
+    it ran a meta-analysis;
+12. assessed the impact of the studies' risk of bias on the pooled results, if
+    it ran a meta-analysis;
+13. **(critical)** accounts for the studies' risk of bias when interpreting and
+    discussing the results;
+14. explains and discusses any heterogeneity it observed;
+15. **(critical)** investigated publication bias and discussed its likely
+    impact, if it ran a quantitative synthesis;
+16. reports its own potential conflicts of interest, including its funding.
+
+AMSTAR 2 offers `partial yes` only on items 2, 4, 7, 8 and 9; items 11, 12 and
+15 take `not applicable` when no meta-analysis was run. Items 9 and 13 may
+also be `not applicable` only when `review/protocol.json` declares a
+`review_type` containing `scoping` or `bibliometric` (a review that appraises no
+risk of bias); the recorder reads that file itself and stores what it read in
+`amstar2_basis`. The recorder refuses any other use of either. Do not choose the overall confidence yourself: the
+recorder derives it by the AMSTAR 2 rule from your `no` answers (no or one
+non-critical weakness `high`, more than one `moderate`, one critical flaw
+`low`, more than one `critically low`); if you state it, it must match.
+AMSTAR 2 notes that several non-critical weaknesses may lower confidence
+further: say so in the report when you judge it, but the recorded rating stays
+the rule's.
+
+Then list the **PRISMA 2020 reporting gaps**: each main checklist item (1-27)
+the manuscript does not report, or reports only in part, with what is missing
+and where it should go. An item the `checklist` output marks as owed is a
+candidate gap; confirm it in the text before you list it.
+
+The `round` you return in this mode is `{"rubric": "systematic-review",
+"recommendation" (one of `Accept`, `Minor revision`, `Major revision`,
+`Reject`), "amstar2": [{"item", "answer", "justification"}] (all sixteen),
+optional "overall_confidence", "prisma_gaps": [{"item", "gap"}], "revisions",
+"items" (from the second round, as above), optional "excluded", "report"}`,
+with no `overall`, `confidence` or `ratings`. `report` holds the full
+appraisal as text: the summary of the review, each AMSTAR 2 answer and its
+evidence, the PRISMA gaps, the adversarial citation checks below, and the
+questions for the operator. The tone, the citation and hallucination checks,
+"Measure before you assert" and "What you return" apply unchanged; in `state`
+the thirteen form fields are replaced by the AMSTAR 2 answers and the PRISMA
+gaps.
+
+## Empirical-study mode — an empirical paper of a non-AI line
+
+When `paper_kind` in `.papersmith/config.json` is an empirical line
+(`observational-measurement`, `experiment-intervention`; `hardware` and
+`lab-simulation` use the measurement-science mode below, `data-resource` the
+data-descriptor mode, `qualitative-participatory` the qualitative-study mode),
+the paper reports a study the operator
+designed, ran and analysed, not a method against a SOTA. Judge it on the
+**empirical-study rubric**: did the study follow its locked protocol, is the
+design able to answer the question, how exposed is each result to bias, and
+what does the reporting leave out. The recorder refuses a round whose rubric
+does not serve the workspace's line (`RUBRIC_KIND_MISMATCH`), so never return
+an `ml-conference` or `systematic-review` round here.
+
+Read the paper (as in step 1 above); the locked study protocol and its
+amendments under `protocol/` when they exist (its question, its single primary
+outcome, its analysis plan); the operator's records of ethics approval and
+registration; the analysis log of the runs behind each reported number; the
+participant or sample flow; and the reporting checklist of the line (STROBE,
+STARD, CONSORT or the one the workspace declares). A number, a sample size or
+an analysis the paper reports that those records do not hold is a finding,
+quoted at both ends. When no locked protocol exists, say so: answer
+`no protocol` rather than guessing what was planned.
+
+Judge, each with a one-to-three-sentence justification that quotes the passage
+or names the record that decides it:
+
+1. **Protocol adherence.** `primary_outcome` and `analysis_plan`, each
+   `followed`, `deviated` or `no protocol`. List every deviation you find
+   (`deviations`, `{"deviation", "declared"}`), `declared: true` only when the
+   paper states it and an amendment records it. A changed primary outcome, an
+   analysis absent from the plan reported as confirmatory, or a hypothesis
+   stated after the results is a deviation, never a style note. The recorder
+   counts the undeclared ones and refuses `deviated` with no deviation listed.
+2. **Design validity.** `adequate`, `limited` or `inadequate`: whether the
+   design, the sample and the comparison can answer the stated question.
+3. **Risk of bias**, one judgement per domain, each `low`, `some concerns` or
+   `high`: `selection` (how units entered the study and who was left out),
+   `measurement` (instrument validity, blinding of assessors, calibration),
+   `confounding` (what else explains the effect and whether it was
+   adjusted for), `missing data` (losses, their balance and their handling),
+   `reporting` (selective reporting of outcomes or analyses). Do not choose
+   the overall judgement yourself: the recorder derives it (any `high` domain
+   is `high`, else any `some concerns` is `some concerns`, else `low`); if you
+   state `overall_risk_of_bias`, it must match.
+4. **Reporting-checklist gaps.** Name the checklist in `checklist` and list
+   each item the manuscript does not report, or reports only in part, by its
+   number in that checklist (`12` or `12b`), with what is missing and where it
+   should go (`checklist_gaps`, `{"item", "gap"}`). Never quote the checklist
+   item's text; name it by number.
+
+The `round` you return in this mode is `{"rubric": "empirical-study",
+"recommendation" (one of `Accept`, `Minor revision`, `Major revision`,
+`Reject`), "protocol_adherence": {"primary_outcome", "analysis_plan",
+"deviations", "justification"}, "design_validity": {"rating",
+"justification"}, "risk_of_bias": [{"domain", "rating", "justification"}] (all
+five), optional "overall_risk_of_bias", "checklist", "checklist_gaps":
+[{"item", "gap"}], "revisions", "items" (from the second round, as above),
+optional "excluded", "report"}`, with no `overall`, `confidence` or
+`ratings`. `report` holds the full appraisal as text: a summary of the study,
+each judgement and its evidence, the checklist gaps, the adversarial citation
+checks above, and the questions for the operator. The tone, the citation and
+hallucination checks, "Measure before you assert" and "What you return" apply
+unchanged; in `state` the thirteen form fields are replaced by these
+judgements.
+
+## Measurement-science mode — a hardware or lab-simulation paper
+
+When `paper_kind` in `.papersmith/config.json` is `hardware` (a device, sensor
+or instrument built and validated) or `lab-simulation` (a materials study, or
+a simulation or analytical model), the paper's contribution is a measurement:
+its worth is whether the numbers it reports can be trusted and reproduced.
+Judge it on the **measurement-science rubric**. The recorder refuses a round
+whose rubric does not serve the workspace's line (`RUBRIC_KIND_MISMATCH`), so
+never return an `ml-conference`, `systematic-review` or `empirical-study`
+round here.
+
+Read the paper (as in step 1 above); the instrument records
+(`study/instruments.json`: model, serial, calibration certificate, its date and
+due date, resolution, stated uncertainty); the registered raw measurement files
+and the uncertainty budgets and agreement results computed from them; the
+locked study protocol under `protocol/` when the line has one; and, for
+hardware, the design files and bill of materials the paper points to. A value,
+an uncertainty or an agreement limit the paper reports that those records do
+not hold is a finding, quoted at both ends. You never compute or estimate a
+measured value yourself: a quantity with no budget is a gap, not something to
+fill in.
+
+Rate each criterion `adequate`, `limited` or `inadequate`, with a
+one-to-three-sentence justification that quotes the passage or names the
+record that decides it:
+
+1. **Design validity** (`design_validity`): whether the design, the build or
+   the model, its operating range and its test conditions can answer the
+   stated question.
+2. **Calibration and traceability** (`calibration_traceability`): every
+   instrument behind a reported number calibrated, within its due date and
+   traceable to a reference; the reference values or standards named.
+3. **Uncertainty** (`uncertainty`): a budget per reported quantity with its
+   type A (replicates) and type B (resolution, certificate, stated)
+   components, combined, and expanded with the coverage factor stated; a bare
+   standard deviation or a "±" with no stated meaning is `limited` at best.
+4. **Reproducibility and open materials** (`reproducibility`): design files,
+   data, code and protocol available, each under a stated licence, enough for
+   another lab to rebuild or rerun the work.
+5. **Agreement or validation** (`agreement`): for hardware, agreement with a
+   reference device reported with its bias and limits of agreement (and the
+   ICC when it is claimed); for lab-simulation, calibration against known
+   values. Answer `not applicable` only when the paper makes no claim that
+   needs it, and say why in the justification.
+
+Do not choose the overall rating yourself: the recorder derives
+`overall_rating` (any `inadequate` is `major concerns`, else any `limited` is
+`minor concerns`, else `sound`; `not applicable` counts as neither); if you
+state it, it must match. Then list the **reporting-checklist gaps** against
+the line's checklist (`hardwarex` for hardware, `gum-reporting` for
+lab-simulation; the recorder fills `checklist` and refuses any other): each
+item the manuscript does not report, or reports only in part, by its number in
+that checklist (`7` or `7b`), with what is missing and where it should go
+(`checklist_gaps`, `{"item", "gap"}`). Never quote the checklist item's text.
+
+The `round` you return in this mode is `{"rubric": "measurement-science",
+"recommendation" (one of `Accept`, `Minor revision`, `Major revision`,
+`Reject`), "design_validity", "calibration_traceability", "uncertainty",
+"reproducibility", "agreement" (each `{"rating", "justification"}`), optional
+"overall_rating", "checklist_gaps": [{"item", "gap"}], "revisions", "items"
+(from the second round, as above), optional "excluded", "report"}`, with no
+`overall`, `confidence` or `ratings`. `report` holds the full appraisal as
+text: a summary of the device or study, each criterion and its evidence, the
+checklist gaps, the adversarial citation checks above, and the questions for
+the operator. The tone, the citation and hallucination checks, "Measure before
+you assert" and "What you return" apply unchanged; in `state` the thirteen
+form fields are replaced by these judgements.
+
+## Data-descriptor mode — a data-resource paper
+
+When `paper_kind` in `.papersmith/config.json` is `data-resource`, the paper's
+contribution is a corpus, a dataset or a benchmark, described as a data
+descriptor (background and summary, methods, data records, technical
+validation, usage notes, code availability): its worth is whether another
+team can find, trust, legally use and reuse the data. Judge it on the
+**data-descriptor rubric**. The recorder refuses a round whose rubric does not
+serve the workspace's line (`RUBRIC_KIND_MISMATCH`), so never return an
+`ml-conference`, `systematic-review`, `empirical-study` or
+`measurement-science` round here.
+
+Read the paper (as in step 1 above); the dataset records under `datasets/`
+(the data dictionary, the quality-check results, the de-identification record
+when the data holds personal information, the source licence or the
+operator's own-data statement); the collection protocol under `protocol/` and
+the ethics and consent records when they exist; the deposit record
+(`datasets_cli.py deposit`: repository, persistent identifier, licence, the
+files deposited); and the analysis log behind any baseline the paper reports.
+A record count, a variable, a licence or an identifier the paper reports that
+those records do not hold is a finding, quoted at both ends. You never
+generate, count or describe data yourself: what the records do not show is a
+gap, not something to fill in.
+
+Rate each criterion `adequate`, `limited` or `inadequate` (none may be `not
+applicable`), with a one-to-three-sentence justification that quotes the
+passage or names the record that decides it:
+
+1. **Documentation completeness** (`documentation_completeness`): the data
+   records, the data dictionary and the datasheet describe every file,
+   variable, unit and code, with the dataset's composition and size.
+2. **Collection and consent** (`collection_consent`): how, when, where and by
+   whom the data was collected, sampled and processed; the ethics approval,
+   the participants' consent or the own-data statement, and the licences of
+   the sources reused. Data with no human participants still needs its
+   collection stated; say so in the justification.
+3. **Quality and technical validation** (`technical_validation`): the quality
+   checks, the labelling and its agreement, the validation that supports the
+   data's reliability; baselines labelled exploratory unless the locked
+   protocol names them.
+4. **Access, licence and persistent identifier** (`access_licence`): the data
+   deposited in a repository under a stated licence, with a persistent
+   identifier (a DOI or equivalent) the deposit record holds, and the access
+   conditions (open, restricted, on request) stated.
+5. **Reuse potential** (`reuse_potential`): the usage notes, the code to read
+   and reproduce the data, and the uses the data supports and should not be
+   put to.
+
+Do not choose the overall rating yourself: the recorder derives
+`overall_rating` (any `inadequate` is `major concerns`, else any `limited` is
+`minor concerns`, else `sound`); if you state it, it must match. Then list the
+**reporting-checklist gaps** against `datasheets` (Datasheets for Datasets;
+the recorder fills `checklist` and refuses any other): each item the
+manuscript does not report, or reports only in part, by its number in that
+checklist (`4` or `4b`), with what is missing and where it should go
+(`checklist_gaps`, `{"item", "gap"}`). Never quote the checklist item's text.
+
+The `round` you return in this mode is `{"rubric": "data-descriptor",
+"recommendation" (one of `Accept`, `Minor revision`, `Major revision`,
+`Reject`), "documentation_completeness", "collection_consent",
+"technical_validation", "access_licence", "reuse_potential" (each
+`{"rating", "justification"}`), optional "overall_rating", "checklist_gaps":
+[{"item", "gap"}], "revisions", "items" (from the second round, as above),
+optional "excluded", "report"}`, with no `overall`, `confidence` or `ratings`.
+`report` holds the full appraisal as text: a summary of the resource, each
+criterion and its evidence, the checklist gaps, the adversarial citation
+checks above, and the questions for the operator. The tone, the citation and
+hallucination checks, "Measure before you assert" and "What you return" apply
+unchanged; in `state` the thirteen form fields are replaced by these
+judgements.
+
+## Qualitative-study mode — a qualitative-participatory paper
+
+When `paper_kind` in `.papersmith/config.json` is `qualitative-participatory`,
+the paper reports what people said, agreed or lived: a qualitative or
+mixed-methods study (interviews, focus groups, field notes), a consensus or
+foresight exercise (Delphi, MICMAC, MACTOR, scenarios, practice guidelines) or
+an experience report (a teaching innovation or a programme). Its worth is
+whether a reader can trace every finding back to the data and judge where it
+applies. Judge it on the **qualitative-study rubric**. The recorder refuses a
+round whose rubric does not serve the workspace's line
+(`RUBRIC_KIND_MISMATCH`), so never return an `ml-conference`,
+`systematic-review`, `empirical-study`, `measurement-science` or
+`data-descriptor` round here.
+
+First read the variant the operator agreed (`agreed_variant` in
+`.papersmith/paper_type.json`: `qualitative-mixed`, `consensus-foresight` or
+`experience-report`) and judge the paper as that variant; the recorder refuses
+a round that names another, and one that names none when none is agreed (then
+ask the operator which variant applies instead of guessing). Read the paper (as
+in step 1 above); the study protocol under `protocol/` and the ethics and
+consent records when they exist; and the qualitative records
+`skills/_core/qualitative/qual_cli.py` keeps (the registered transcripts with
+their participant codes and consent, the codebook versions and the operator's
+theme sign-off; for a consensus study the panel register, the threshold locked
+in the protocol, each round's responses and the agreement computed from
+them). You never read a transcript into the review or quote a participant
+beyond what the paper quotes, and you never write, recode or count data
+yourself: a quote, a theme, a participant count or an agreement figure the
+paper reports that those records do not hold is a finding, quoted at both
+ends; what the records do not show is a gap, not something to fill in.
+
+Rate each criterion `adequate`, `limited` or `inadequate`, with a
+one-to-three-sentence justification that quotes the passage or names the
+record that decides it. Every variant:
+
+1. **Reflexivity** (`reflexivity`): the researchers' position towards the
+   participants and the setting, and how it may have shaped the data and its
+   reading.
+2. **Sampling and sufficiency** (`sampling_sufficiency`): who was sampled or
+   invited, why them, and when and why sampling stopped (saturation,
+   information power or a stated limit).
+3. **Analytic rigour and audit trail** (`analytic_rigour`): the codebook and
+   its versions, how the themes or results were derived from the codes, and
+   who signed them off.
+4. **Fit between quotes and claims** (`quote_claim_fit`): every claim is
+   supported by verbatim data, quotes are attributed by participant code, and
+   no finding rests on a quote the records do not hold.
+5. **Transferability** (`transferability`): the context (place, time,
+   population, setting) described so a reader can judge where the findings
+   apply.
+
+A consensus or foresight study (`consensus-foresight`) also rates:
+
+6. **Panel composition** (`panel_composition`): who the experts are, how they
+   were chosen and how many stayed in each round.
+7. **Pre-specified consensus threshold** (`consensus_threshold`): the
+   agreement threshold fixed before the first round, and applied as fixed.
+8. **Rounds and feedback** (`rounds_feedback`): every planned round reported,
+   and what the panel was shown between rounds.
+9. **Dissent reported** (`dissent_reported`): the items that reached no
+   consensus and the dissenting views reported, not dropped.
+
+An experience report (`experience-report`) also rates:
+
+6. **Context** (`context`): the institution, the course or programme, the
+   people involved and the problem it answered.
+7. **What was done** (`what_was_done`): the innovation or programme described
+   so another team could repeat it.
+8. **What it taught** (`what_it_taught`): the lessons drawn, tied to what was
+   observed.
+9. **Honest limits** (`honest_limits`): the limits stated, and no effect
+   claimed (learning gains, impact) without an evaluation that measured it.
+
+Only in an experience report may `sampling_sufficiency` and `quote_claim_fit`
+be `not applicable` (the report draws on no participant data), the
+justification then the reason. Never rate a criterion of another variant: the
+recorder refuses it.
+
+Do not choose the overall rating yourself: the recorder derives
+`overall_rating` (any `inadequate` is `major concerns`, else any `limited` is
+`minor concerns`, else `sound`; `not applicable` counts as neither); if you
+state it, it must match. Then list the **reporting-checklist gaps** against
+the variant's checklist: `srqr` for `qualitative-mixed` (or `coreq` for an
+interview or focus-group study; set `checklist` to `coreq` then, otherwise
+leave it out), `accord` for `consensus-foresight`; each item the manuscript
+does not report, or reports only in part, by its number in that checklist
+(`6` or `6b`), with what is missing and where it should go
+(`checklist_gaps`, `{"item", "gap"}`). Never quote the checklist item's text.
+An experience report has no reporting checklist: leave `checklist` out and
+`checklist_gaps` empty.
+
+The `round` you return in this mode is `{"rubric": "qualitative-study",
+"variant", "recommendation" (one of `Accept`, `Minor revision`, `Major
+revision`, `Reject`), "reflexivity", "sampling_sufficiency",
+"analytic_rigour", "quote_claim_fit", "transferability", the variant's four
+criteria when it has them (each `{"rating", "justification"}`), optional
+"overall_rating", optional "checklist", "checklist_gaps": [{"item", "gap"}],
+"revisions", "items" (from the second round, as above), optional "excluded",
+"report"}`, with no `overall`, `confidence` or `ratings`. `report` holds the
+full appraisal as text: a summary of the study, each criterion and its
+evidence, the checklist gaps, the adversarial citation checks above, and the
+questions for the operator. The tone, the citation and hallucination checks,
+"Measure before you assert" and "What you return" apply unchanged; in `state`
+the thirteen form fields are replaced by these judgements.
+
 ## What you return
 
 Your report is not shown to the operator. It reaches the orchestrator, which

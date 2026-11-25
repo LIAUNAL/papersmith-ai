@@ -18,6 +18,9 @@ instead of these phases.
 2. **Plausibility**: `/plausibility <the idea in at least two sentences>`. It
    scouts about 25 SOTA references, draws `sota-pool/atlas.html` and grades the
    claims. Nothing is ingested until the operator accepts the report.
+   On acceptance, `/paper-type` scores the idea against smith's paper types,
+   discusses the suggestion and records the type the operator agrees in
+   `.papersmith/paper_type.json`; the phases below do not change.
 3. **Ingestion**: `/paper-ingestion <PDF or URL>` (or `smith ingest`)
    turns the accepted top 5 into Markdown under `guidance/`, with equations
    as LaTeX.

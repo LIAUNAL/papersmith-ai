@@ -1,0 +1,41 @@
+{
+ "default_kind": "experimental",
+ "identity_mapping": true,
+ "sections": [
+  "sections/01-materials-and-methods.md",
+  "sections/02-experimental-setup.md",
+  "sections/03-results-and-discussion.md",
+  "sections/04-limitations.md",
+  "sections/05-related-work.md",
+  "sections/06-introduction.md",
+  "sections/07-conclusions.md",
+  "sections/08-abstract.md",
+  "sections/09-title-and-keywords.md",
+  "sections/10-back-matter.md"
+ ],
+ "skills": [
+  "_core",
+  "datasets",
+  "experiment-diagrams",
+  "experimental-deliberation",
+  "experimental-implementation",
+  "experiments-tutor",
+  "figure-review",
+  "hyperparameter-search",
+  "journal-finder",
+  "kaggle-accounts",
+  "math-tutor",
+  "paper-ingestion",
+  "paper-writing",
+  "pixelrag",
+  "plausibility",
+  "prompt-gate",
+  "proposal-deliberation",
+  "proposal-implementation",
+  "remote-execution",
+  "remote-parallelism",
+  "skill-audit",
+  "ui-github",
+  "upgrade-project"
+ ]
+}

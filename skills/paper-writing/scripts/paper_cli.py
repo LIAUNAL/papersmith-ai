@@ -682,6 +682,10 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "REVIEW_ITEM_UNKNOWN": INVOCATION_DEFECT,
     "REVIEW_ITEMS_MISSING": INVOCATION_DEFECT,
     "REVIEW_FILE_INVALID": WORK_STATE,
+    # A round whose rubric does not serve the workspace's paper line is the
+    # caller's error; a line no rubric serves is the workspace's state.
+    "RUBRIC_KIND_MISMATCH": INVOCATION_DEFECT,
+    "RUBRIC_LINE_UNKNOWN": WORK_STATE,
     # --- reorder (paper_reorder.py): no single place to move a block to ---
     "REORDER_LAYOUT_AMBIGUOUS": WORK_STATE,
 }
@@ -1607,7 +1611,8 @@ def cmd_separate(args: argparse.Namespace) -> dict:
 def compute_observation(
     report_path: Path, *,
     proposals_dir: Path | None = None, experiments_dir: Path | None = None,
-    implementation_dir: Path | None = None,
+    implementation_dir: Path | None = None, protocol_dir: Path | None = None,
+    flow_path: Path | None = None,
 ) -> dict:
     """`observe`'s own logic, taking already-resolved paths directly — the
     same separation `compute_plan`/`compute_readiness_report`/`build_
@@ -1645,12 +1650,17 @@ def compute_observation(
     paper_declarations.validate_observation_report(report)
 
     measured = {}
+    structured_roots = {r.name for r in paper_declarations.FACT_SOURCE_ROOT.values()
+                        if r.kind is paper_declarations.SourceRootKind.STRUCTURED}
     for name, root in (
         ("proposals", proposals_dir), ("experiments", experiments_dir),
         ("implementation", implementation_dir),
+        (paper_declarations.FACT_SOURCE_ROOT["protocol"].name, protocol_dir),
+        (paper_declarations.FACT_SOURCE_ROOT["participant-flow"].name, flow_path),
     ):
         if root is not None:
-            measured[name] = paper_declarations.source_available(root)
+            measured[name] = paper_declarations.source_available(
+                root, structured=name in structured_roots)
 
     disagreements = paper_declarations.reconcile_observation_report(report, measured)
     if disagreements:
@@ -1671,7 +1681,7 @@ def compute_observation(
 def cmd_observe(args: argparse.Namespace) -> dict:
     """`observe`: the CLI front door for `compute_observation` — resolves
     `--report` (required) and `--proposals`/`--experiments`/
-    `--implementation` (each optional, none defaulted) against the real
+    `--implementation`/`--protocol`/`--flow` (each optional, none defaulted) against the real
     repository root before delegating.
 
     None of the three roots defaults to this repository's own top-level
@@ -1688,9 +1698,11 @@ def cmd_observe(args: argparse.Namespace) -> dict:
     proposals_dir = _resolve_repo_path(args.proposals) if args.proposals else None
     experiments_dir = _resolve_repo_path(args.experiments) if args.experiments else None
     implementation_dir = _resolve_repo_path(args.implementation) if args.implementation else None
+    protocol_dir = _resolve_repo_path(args.protocol) if getattr(args, "protocol", None) else None
+    flow_path = _resolve_repo_path(args.flow) if getattr(args, "flow", None) else None
     return compute_observation(
         report_path, proposals_dir=proposals_dir, experiments_dir=experiments_dir,
-        implementation_dir=implementation_dir,
+        implementation_dir=implementation_dir, protocol_dir=protocol_dir, flow_path=flow_path,
     )
 
 
@@ -3238,6 +3250,85 @@ def _scan_manuscript_language(main_tex_bytes: bytes) -> dict:
     return paper_language.scan(main_tex_bytes.decode("utf-8", errors="replace"))
 
 
+#: The empirical module's verify-side disk read (S7, decision D9). It imports
+#: its sibling `records` as a package, so it is loaded as `skills._core.empirical`
+#: from the kit root that holds this script, like the manuscript graph.
+ANALYSIS_LOG = Path(__file__).resolve().parents[2] / "_core" / "empirical" / "analysis_log.py"
+
+
+def _looks_like_study(root: Path) -> bool:
+    """A study workspace by its files alone (no empirical module needed): a
+    study-protocol revision, the protocol lock or the analysis log."""
+    try:
+        return (any((root / "protocol").glob("study-protocol-*.md"))
+                or (root / "study" / "protocol.lock.json").is_file()
+                or (root / "analysis" / "log.jsonl").is_file())
+    except OSError:
+        return False
+
+
+def _study_inputs(paper_dir: Path) -> dict | None:
+    """`analysis_log.manuscript_inputs` of the workspace holding `paper_dir`:
+    None when the workspace has no study protocol, so an applied-AI or review
+    paper gets no study check. In a study workspace whose kit does not ship the
+    module, or whose module fails to load or raises, `{"unavailable": <why>}`,
+    which `run_study` reports as unmeasured checks: the hard
+    primary-outcome-switch check never vanishes silently."""
+    root = Path(paper_dir).resolve().parent
+    if not ANALYSIS_LOG.is_file():
+        return ({"unavailable": "skills/_core/empirical/analysis_log.py is not shipped in this kit"}
+                if _looks_like_study(root) else None)
+    try:
+        import importlib  # noqa: PLC0415
+
+        kit_root = str(ANALYSIS_LOG.parents[3])
+        if kit_root not in sys.path:
+            sys.path.insert(0, kit_root)
+        module = importlib.import_module("skills._core.empirical.analysis_log")
+        return module.manuscript_inputs(root)
+    except Exception as exc:  # noqa: BLE001 - an advisory read never fails the verb
+        return ({"unavailable": f"the study module failed ({type(exc).__name__}: {exc})"[:300]}
+                if _looks_like_study(root) else None)
+
+
+#: The qualitative module's verify-side disk read (S8, decision K3), loaded like the
+#: empirical one from the kit root that holds this script.
+QUALITATIVE_RECORDS = Path(__file__).resolve().parents[2] / "_core" / "qualitative" / "records.py"
+
+
+def _quote_check(paper_dir: Path) -> dict | None:
+    """`records.check_quotes` of the workspace holding `paper_dir`: None when the
+    workspace has no `study/transcripts.json`, so no other line gets the check;
+    `{"unavailable": <why>}` when the module is not shipped or raises, which
+    `paper_verify.qualitative_entries` reports unmeasured, never dropped."""
+    root = Path(paper_dir).resolve().parent
+    try:
+        if not (root / "study" / "transcripts.json").is_file():
+            return None
+    except OSError:
+        return None
+    if not QUALITATIVE_RECORDS.is_file():
+        return {"unavailable": "skills/_core/qualitative/records.py is not shipped in this kit"}
+    try:
+        import importlib  # noqa: PLC0415
+
+        kit_root = str(QUALITATIVE_RECORDS.parents[3])
+        if kit_root not in sys.path:
+            sys.path.insert(0, kit_root)
+        module = importlib.import_module("skills._core.qualitative.records")
+        return module.check_quotes(root, Path(paper_dir).resolve())
+    except Exception as exc:  # noqa: BLE001 - reported unmeasured, never fails the verb
+        return {"unavailable": f"the qualitative module failed ({type(exc).__name__}: {exc})"[:300]}
+
+
+def _outcomes_fact(paper_dir: Path) -> str | None:
+    """The paper's fixed `outcomes` fact, or None (never declared, reopened, or unreadable)."""
+    try:
+        return paper_declarations.read_fact(paper_dir, "outcomes")
+    except Exception:  # noqa: BLE001 - `verify` reports the fact as undeclared
+        return None
+
+
 def cmd_verify(args: argparse.Namespace) -> dict:
     """`verify`: a pure, read-only report over the five cross-section
     couplings, citation integrity, and contract currency
@@ -3270,6 +3361,12 @@ def cmd_verify(args: argparse.Namespace) -> dict:
     # #180, #183: advisory caption and coherence warnings, never counted.
     report = paper_verify.attach_coherence(
         report, paper_coherence.run_guarded(evidence.main_tex_bytes, evidence.record))
+    # S7, D9: a study workspace's manuscript diffed against its locked protocol and analysis log.
+    study = _study_inputs(paper_dir)
+    report = paper_verify.attach_study(report, paper_coherence.run_study_guarded(
+        evidence.main_tex_bytes, None if study is None else _outcomes_fact(paper_dir), study))
+    # S8, K3: every participant quote found verbatim in a registered, current transcript.
+    report = paper_verify.attach_qualitative(report, paper_verify.qualitative_entries(_quote_check(paper_dir)))
     # #182 item 1: a cited source with no title or abstract on disk is a visible warning, never a failure.
     report = paper_verify.attach_reference_warnings(report)
     # #182 items 2-3: the cite-once policy, quotes that share no term with their claim,
@@ -4139,6 +4236,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="the target implementation repository's own path, for the disk-truth "
              "reconciliation; no default -- omit to skip reconciling implementation/results "
              "against disk; must resolve inside the repository root",
+    )
+    p_observe.add_argument(
+        "--protocol", default=None,
+        help="protocol/ location (the study protocol revisions), for the disk-truth "
+             "reconciliation; no default -- omit to skip reconciling protocol/sample/outcomes/"
+             "analysis-plan against disk; must resolve inside the repository root",
+    )
+    p_observe.add_argument(
+        "--flow", default=None,
+        help="study/flow.json location (the participant flow counts), for the disk-truth "
+             "reconciliation; no default -- omit to skip reconciling participant-flow against "
+             "disk; must resolve inside the repository root",
     )
 
     p_resolve = sub.add_parser(

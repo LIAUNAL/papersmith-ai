@@ -22,6 +22,7 @@ from .core import executor as executor_command
 from .core import gpu as gpu_command
 from .core import init as init_command
 from .core import ingest as ingest_command
+from .core import kind as kind_command
 from .core import keys as keys_command
 from .core import novelty as novelty_command
 from .core import paper_qa as paper_qa_command
@@ -51,6 +52,7 @@ _REGISTRY: list = [
     init_command.register,
     env_command.register,
     upgrade_command.register,
+    kind_command.register,
     status_command.register,
     ingest_command.register,
     deliberation_command.register,

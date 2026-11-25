@@ -161,3 +161,67 @@ what drops the viewer's own chrome); it is 1400x4764 for the current drawing. A 
 parameters; the ratio is the one that is easy to get wrong, because the default
 capture comes out at 2× and a 2800px file is four times the bytes for a drawing
 nobody reads at that size.
+
+# The review flow diagram
+
+`papersmith-review-flow.html` is the flow of a review workspace (`smith init
+--kind review`, `paper_kind: review` in `.papersmith/config.json`), drawn from
+the repository's own files the same way as the Pi flow. Its ten numbered lanes
+are the ten review steps the dashboard shows under *Pipeline y Avance* for a
+review workspace (`REVIEW_STAGES` and `REVIEW_LABELS` in
+`skills/_core/command_center/review_board.py`, the steps of
+`src/papersmith/templates/paper-flow-review.md.tpl`), from `1 · Harness` to
+`10 · Reporting check and audit (transversal)`. Each lane draws the step's
+`/systematic-review` command (or `/paper-writing`, `/figure-review`,
+`/skill-audit`), the `review_cli.py` verbs it runs, the agents it hands work to
+(`diagram-author` for the protocol flow figure, the writing and figure agents,
+and `paper-reviewer` as the final judge with the systematic-review rubric), and
+the records it writes under `review/` (`scope.json`, `protocol.json`,
+`protocol.lock.json`, `searches.jsonl`, `records.jsonl`, `screening.jsonl`,
+`prioritization.json`, `signoffs.json`, `appraisal.jsonl`, `extraction.jsonl`,
+`prisma.json`, `biblio.json`) and `paper/Figures/prisma-flow.svg`.
+
+The three operator gates are drawn as gate nodes, and the edge that leaves each
+one enters the step it unlocks (`REVIEW_PHASE_GATES`): **G-PROTOCOL**
+(`protocol approve`, `review/protocol.lock.json`) before identification,
+**G-SCREENING** (`signoff --gate screening`) before appraisal and extraction,
+and **G-SYNTHESIS** (`signoff --gate synthesis`) before the writing. The
+operator's settling of screening conflicts (`screen --final`) is drawn as a
+gate node too. An agent never passes any of them.
+
+The labels are English only: the Pi flow embeds no translation table any more,
+so there is no Spanish variant of either drawing.
+
+| File | What it is |
+| --- | --- |
+| `papersmith-review-flow.html` | The artifact: self-contained, offline, no network at view time |
+| `papersmith-review-flow.build.mjs` | The source |
+
+The dashboard serves a copy, `skills/_core/command_center/static/papersmith-review-flow.html`,
+in the *Flujo Archify* tab of a review workspace (`/api/flow` reads the line on
+every request); an experimental workspace keeps the Pi flow, and a workspace's
+own `docs/papersmith-flow.html` wins for both lines.
+`tests/test_review_flow_diagram.py` holds the two copies byte-identical, the
+lanes against the board's ten steps, and every `review_cli.py` verb and
+`review/` record the source names against `review_cli.py`.
+
+## Regenerating the review flow
+
+The recipe is the Pi flow's, with Archify **3.0.1**; the candidate pins the
+repository revision it describes in `meta.repository.revision`, so move it to
+the commit whose files you transcribe and keep every node's `sources` line
+ranges true at that commit, or the strict provenance check refuses it.
+
+```bash
+SCRATCH=$(mktemp -d)
+node docs/diagrams/papersmith-review-flow.build.mjs "$SCRATCH/candidate.json"
+node ~/.claude/skills/archify/bin/archify.mjs finalize architecture \
+  "$SCRATCH/candidate.json" "$SCRATCH/papersmith-review-flow.html" \
+  --repo-root . --quality showcase --out-dir "$SCRATCH/evidence" --json
+cp "$SCRATCH/papersmith-review-flow.html" docs/diagrams/papersmith-review-flow.html
+cp "$SCRATCH/papersmith-review-flow.html" skills/_core/command_center/static/papersmith-review-flow.html
+```
+
+The drawing has 69 components, under the 80-obstacle limit of Archify's grid
+search, and keeps the Pi flow's five columns of 182px for the same readability
+cap. There is no PNG of it yet.

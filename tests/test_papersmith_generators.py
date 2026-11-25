@@ -37,7 +37,7 @@ from papersmith.kit import resolve_and_validate
 
 ROOT = Path(__file__).resolve().parents[1]
 
-#: The twenty-one command-bearing skills, in the deterministic order
+#: The twenty-four command-bearing skills, in the deterministic order
 #: ``collect_commands`` sorts them into. Pinned literally so a new or renamed
 #: top-level skill has to be acknowledged here.
 COMMAND_NAMES = (
@@ -52,6 +52,7 @@ COMMAND_NAMES = (
     "kaggle-accounts",
     "math-tutor",
     "paper-ingestion",
+    "paper-type",
     "paper-writing",
     "pixelrag",
     "plausibility",
@@ -61,6 +62,7 @@ COMMAND_NAMES = (
     "remote-execution",
     "remote-parallelism",
     "skill-audit",
+    "study-protocol-deliberation",
     "ui-github",
     "upgrade-project",
 )
@@ -93,6 +95,7 @@ AGENT_NAMES = (
     "paper-ingestion",
     "paper-replicator",
     "paper-reviewer",
+    "paper-type-advisor",
     "prompt-reviewer",
     "redactor",
     "section-grounding-auditor",

@@ -541,6 +541,13 @@ smith init ~/papers/gnn-drug-review --kind review \
   --title "Graph neural networks in drug discovery: a systematic review"
 ```
 
+An existing workspace whose idea turns out to be a review after plausibility
+moves to this line with `smith kind set review --by "<operator>"` once
+`/paper-type` has scored the idea: it records the agreed type, applies the
+review contracts and flow text, removes the experimental contracts the
+workspace did not edit and keeps (and reports) the ones it did. It refuses once
+a proposal revision or `paper/main.tex` exists, unless `--force`.
+
 A review workspace has `review/` instead of `proposals/`, `experiments/`,
 `implementations/` and `kaggle-inbox/`; its `sections/` hold the review
 contracts (title, PRISMA 2020 for Abstracts, introduction, background, methods,
@@ -572,6 +579,232 @@ conclusions, and the shared back matter); and its
 The dashboard's phase board still shows the experimental phases; a review
 workspace follows the list in its `CLAUDE.md`. Details in
 [skills/systematic-review/SKILL.md](skills/systematic-review/SKILL.md).
+
+### The observational and measurement line
+
+A study of data the operator collects or holds, without assigning an
+intervention, is the first empirical line: observational studies (STROBE),
+diagnostic or clinical validations (STARD 2015) and measurement instruments
+such as indices, scales or questionnaires (COSMIN). The variant the operator
+agrees with `/paper-type` chooses the reporting checklist.
+
+```bash
+smith init ~/papers/rural-youth --kind observational-measurement \
+  --title "Migration intentions of rural youth: a cross-sectional survey"
+```
+
+An existing workspace moves to it with `smith kind set
+observational-measurement --by "<operator>"` once `/paper-type` has scored the
+idea, as for the review line. The workspace has `protocol/`, `study/`,
+`analysis/` and `datasets/` instead of the experimental folders, the study's
+section contracts in `sections/`, the `/observational-measurement` skill, and
+its `CLAUDE.md` states the line's flow:
+
+1. **Study protocol** with `/study-protocol-deliberation` (exactly one primary
+   outcome, design, eligibility, sample size and analysis plan), approved and
+   locked by the operator (G-STUDY-PROTOCOL); later changes are amendments.
+2. **Ethics and registration**, recorded by the operator (or recorded as not
+   applicable, with the reason).
+3. **Data** the operator collects: registered as own data with its data-use
+   statement, a data dictionary, quality checks and a de-identification record.
+4. **Analysis** through an append-only log that labels each run confirmatory
+   or exploratory against the locked protocol.
+5. **Participant flow** (STROBE or STARD 2015): counts entered by the
+   operator, checked, drawn and signed off.
+6. **Writing** with `/paper-writing` from those records, the reporting
+   checklist of the variant (`checklist_cli.py check`) and the final judge on
+   the empirical-study rubric.
+
+The assistant never generates measurements or data, and never records ethics,
+consent, data collection, sign-offs or the primary outcome on the operator's
+behalf. `/observational-measurement status` reports where the study stands.
+Details in
+[skills/observational-measurement/SKILL.md](skills/observational-measurement/SKILL.md).
+
+### The hardware line
+
+A device, sensor or instrument the operator designs, builds and validates
+against a reference device is the hardware line, written in the HardwareX
+article template and checked against the `hardwarex` and `gum-reporting`
+checklists.
+
+```bash
+smith init ~/papers/soil-sensor --kind hardware \
+  --title "A low-cost open soil moisture sensor for field monitoring"
+```
+
+An existing workspace moves to it with `smith kind set hardware --by
+"<operator>"` once `/paper-type` has scored the idea. The workspace has the
+empirical folders (`protocol/`, `study/`, `analysis/`, `datasets/`), the
+HardwareX section contracts in `sections/`, the `/hardware` skill, and its
+`CLAUDE.md` states the line's flow:
+
+1. **Requirements and specifications** with `/study-protocol-deliberation`,
+   signed by the operator when the protocol is approved and locked (G-SPEC).
+2. **Design files and bill of materials** in an open repository with a DOI,
+   and the **build**, both by the operator.
+3. **Calibration and uncertainty** (G-CALIBRATION): the operator records the
+   instruments and registers the raw files; `measure_cli.py` computes a GUM
+   uncertainty budget per quantity.
+4. **Agreement with a reference device** (G-AGREEMENT): Bland-Altman limits
+   of agreement and ICC(2,1) from the registered paired files.
+5. **Field or user validation**, with the ethics and registration records
+   only when people take part.
+6. **Writing** with `/paper-writing`, the two checklists and the final judge
+   on the measurement-science rubric.
+
+The assistant never generates measurements or data, and never records a
+calibration, ethics, consent, data collection, sign-offs or the primary
+outcome on the operator's behalf. `/hardware status` reports where the work
+stands. Details in [skills/hardware/SKILL.md](skills/hardware/SKILL.md).
+
+### The data-resource line
+
+A corpus, dataset or benchmark the operator collects and releases is the
+data-resource line, written as a data descriptor (background and summary,
+methods, data records, technical validation, usage notes, code availability)
+and checked against the `datasheets` checklist (Datasheets for Datasets).
+
+```bash
+smith init ~/papers/speech-corpus --kind data-resource \
+  --title "A corpus of annotated Spanish speech recordings"
+```
+
+An existing workspace moves to it with `smith kind set data-resource --by
+"<operator>"` once `/paper-type` has scored the idea. The workspace has the
+empirical folders (`protocol/`, `study/`, `analysis/`, `datasets/`), the data
+descriptor section contracts in `sections/`, the `/data-resource` skill, and
+its `CLAUDE.md` states the line's flow:
+
+1. **Collection protocol** with `/study-protocol-deliberation`, approved and
+   locked by the operator (G-STUDY-PROTOCOL).
+2. **Ethics, consent and licence** (G-ETHICS): the ethics record, and the
+   operator's own-data statement or the source's licence decision.
+3. **Curation and documentation**: the data dictionary, scaffolded from the
+   files and completed by the operator.
+4. **Quality checks** (G-DATA-QC) on the operator's files, with the
+   de-identification statement when the data hold personal information.
+5. **Baselines** in the labelled analysis log, exploratory unless the locked
+   protocol names them.
+6. **Deposit** (G-DEPOSIT): the operator deposits the files and records the
+   repository, persistent identifier and licence with `datasets_cli.py
+   deposit --by`.
+7. **Writing** with `/paper-writing`, the `datasheets` checklist and the final
+   judge on the data-descriptor rubric.
+
+The assistant never generates, labels or alters data; collection, consent,
+licence and deposit stay human. `/data-resource status` reports where the
+resource stands. Details in
+[skills/data-resource/SKILL.md](skills/data-resource/SKILL.md).
+
+### The experiment-intervention line
+
+A study that assigns a treatment and measures its effect against a control is
+the experiment-intervention line: a trial with people, reported against
+CONSORT 2025 (`consort-2025`), or a field, crop or animal experiment, reported
+against ARRIVE 2.0 (`arrive-2`).
+
+```bash
+smith init ~/papers/reading-trial --kind experiment-intervention \
+  --title "A reading programme versus usual teaching: a cluster randomised trial"
+```
+
+An existing workspace moves to it with `smith kind set experiment-intervention
+--by "<operator>"` once `/paper-type` has scored the idea. The workspace has
+the empirical folders (`protocol/`, `study/`, `analysis/`, `datasets/`), the
+CONSORT 2025-shaped section contracts in `sections/` (with optional
+field-experiment blocks for plots, blocks and experimental units, mixed models
+and animal husbandry), the `/experiment-intervention` skill, and its
+`CLAUDE.md` states the line's flow:
+
+1. **Protocol and registration** with `/study-protocol-deliberation`,
+   approved and locked by the operator (G-STUDY-PROTOCOL); a trial with
+   people is registered prospectively, before its first enrolment
+   (G-REGISTRATION).
+2. **Ethics and consent** (G-ETHICS), recorded by the operator.
+3. **Allocation, blocks and sample size** (G-ALLOCATION): the operator
+   generates and conceals the sequence with their own tool and records it
+   with `study_cli.py allocation record --by`, bound to the list's hash and
+   the protocol lock.
+4. **Intervention and follow-up** (G-DATA-QC): the operator's data, its
+   dictionary, quality checks and de-identification.
+5. **Pre-specified analysis** in the labelled analysis log.
+6. **Flow of units** (G-FLOW, required for a trial with people): the CONSORT
+   flow diagram from the operator's signed counts.
+7. **Writing** with `/paper-writing`, the variant's checklist and the final
+   judge on the empirical-study rubric.
+
+The assistant never generates data and never generates, reads out or alters
+the allocation sequence; ethics, consent, data collection and the choice of
+primary outcome stay human. `/experiment-intervention status` reports where
+the study stands. In `smith ui` the line's board shows these eleven steps and
+its gates. A trial with people (or a workspace with no variant agreed yet)
+fails G-REGISTRATION when the registration is retrospective (ICMJE requires it
+on or before the first enrolment) and waits for the signed-off CONSORT flow
+before writing; a field experiment passes with any current registration and
+its flow never blocks writing. The board shows the allocation record's method,
+row count and concealment, never the list. Details in
+[skills/experiment-intervention/SKILL.md](skills/experiment-intervention/SKILL.md).
+
+### The qualitative-participatory line
+
+A study built on people's accounts and judgement is the
+qualitative-participatory line: a qualitative or mixed-methods study (case
+studies, interviews, focus groups, participatory research), reported against
+SRQR (`srqr`, or COREQ, `coreq`, for interviews and focus groups); an expert
+consensus or foresight study (Delphi, MICMAC, MACTOR, scenarios), reported
+against ACCORD (`accord`); or an experience report (a teaching innovation or a
+programme), which has no reporting checklist.
+
+```bash
+smith init ~/papers/panela-chain --kind qualitative-participatory \
+  --title "Selling together: a qualitative case study of a panela cooperative"
+```
+
+An existing workspace moves to it with `smith kind set qualitative-participatory
+--by "<operator>"` once `/paper-type` has scored the idea. The workspace has
+the empirical folders (`protocol/`, `study/`, `analysis/`, `datasets/`), the
+SRQR-shaped section contracts in `sections/` (with optional consensus blocks
+for the panel, the pre-specified threshold, the rounds and the MICMAC map, and
+optional experience-report blocks), the `/qualitative-participatory` skill,
+and its `CLAUDE.md` states the line's flow:
+
+1. **Case, panel or experience and its framework** with
+   `/study-protocol-deliberation`, approved and locked by the operator
+   (G-STUDY-PROTOCOL, optional for an experience report); a consensus study
+   records its threshold and rounds against the locked protocol.
+2. **Ethics and consent** (G-ETHICS), recorded by the operator; an experience
+   report without participant data records it as not applicable.
+3. **Fieldwork, rounds or implementation**: the operator registers each
+   de-identified transcript or field note (`qual_cli.py transcripts add
+   --by`, G-TRANSCRIPTS), or the panel and each round's responses
+   (`consensus_cli.py panel add|round record --by`, G-ROUNDS).
+4. **Coding, consensus or reflection** (G-ANALYSIS): the operator records each
+   codebook version and signs the themes off (`qual_cli.py themes signoff
+   --by`); a consensus study reads its agreement per round and may compute a
+   MICMAC map from the operator's influence matrix.
+5. **Integration with prior work**, then **writing** with `/paper-writing`:
+   every participant quote is written `\pquote{<code>}{<text>}` and must be
+   found verbatim in a registered transcript (`qual_cli.py quotes check`,
+   and `paper_cli.py verify`), the variant's checklist and the final judge on
+   the qualitative-study rubric.
+
+In `smith ui` the line's board has ten steps with G-STUDY-PROTOCOL, G-ETHICS,
+G-TRANSCRIPTS, G-ROUNDS (consensus-foresight only) and G-ANALYSIS, decided by the
+agreed variant. A qualitative or mixed study (and any workspace with no variant
+agreed) needs the protocol, the ethics record, current transcript registrations and
+a current theme sign-off. A consensus study needs the protocol, the ethics record,
+the consensus plan and every planned round, with any recorded MICMAC analysis
+current; its transcripts are optional. An experience report keeps the protocol and
+the transcripts optional, and G-ANALYSIS does not apply. Writing waits for every
+gate. The board never shows a transcript's text, a response or a comment.
+
+The assistant never generates data, never writes or edits a transcript, never
+invents or polishes a quote and never enters a rating; ethics, consent, data
+collection and the analytic sign-off stay human.
+`/qualitative-participatory status` reports where the study stands. Details
+in
+[skills/qualitative-participatory/SKILL.md](skills/qualitative-participatory/SKILL.md).
 
 ### Open the dashboard from another device
 

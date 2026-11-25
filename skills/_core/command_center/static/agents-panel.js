@@ -3,8 +3,10 @@
  * GET /api/agents answers agents_view.get_agents_view(root): every agent of
  * the workspace's .claude/agents/ with its role, bound skill, stretch, tools,
  * the dashboard phase(s) it acts in and the harness projections that carry it.
- * The table sorts by any column and filters by free text. Every value is
- * escaped before insertion.
+ * The table sorts by any column and filters by free text. Under the board of
+ * another line than the experimental one (view.paper_kind set, e.g. 'review')
+ * the phases are that board's steps and the table lists only the agents some
+ * step uses. Every value is escaped before insertion.
  *
  * Public surface (window): refreshAgentsPanel(), AgentsPanel.render(view).
  */
@@ -17,6 +19,9 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[c]);
   const list = (v) => (Array.isArray(v) ? v : []);
+  // Another line's table (the review's): only the agents one of its steps uses.
+  const tableAgents = (view) => (view.paper_kind && view.paper_kind !== 'experimental'
+    ? list(view.agents).filter((a) => list(a.phases).length) : list(view.agents));
   const phaseNumber = (a) => {
     const m = /(?:Phase|Fase) (\d+)/.exec(list(a.phases)[0] || '');
     return m ? Number(m[1]) : 99;
@@ -41,7 +46,7 @@
     const needle = filter.trim().toLowerCase();
     const col = COLUMNS.find((c) => c.key === sortKey) || COLUMNS[0];
     const keyOf = col.sort || ((a) => String(col.value(a) ?? '').toLowerCase());
-    return list(view.agents)
+    return tableAgents(view)
       .filter((a) => !needle || COLUMNS.some((c) => String(c.value(a) ?? '').toLowerCase().includes(needle))
         || String(a.description ?? '').toLowerCase().includes(needle))
       .sort((x, y) => {
@@ -84,7 +89,7 @@
       ? `<ul class="agents-warnings">${list(lastView.warnings).map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : '';
     host.innerHTML = `<div class="agents-toolbar">`
       + `<input type="search" id="agentsFilter" placeholder="${esc(t('agents.filter'))}" value="${esc(filter)}">`
-      + `<span class="panel__meta">${esc(t('agents.count', { n: shown.length, total: list(lastView.agents).length }))}</span></div>`
+      + `<span class="panel__meta">${esc(t('agents.count', { n: shown.length, total: tableAgents(lastView).length }))}</span></div>`
       + `<div class="agents-table-wrap"><table class="agents-table"><thead><tr>${head}</tr></thead>`
       + `<tbody>${body}</tbody></table></div>${warnings}`;
     bind(host);
