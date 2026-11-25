@@ -108,6 +108,35 @@ def _retired(root: Path, previous_managed: set[str], active: Sequence[str]) -> l
     return sorted(set(eligible))
 
 
+#: Section contracts are the one kit surface an operator is expected to edit
+#: (house rules, a journal's structure); ``upgrade`` keeps an edited one.
+SECTION_CONTRACTS = "sections/"
+
+
+def _edited_contract(root: Path, kit_root: Path, relpath: str, kit_relpath: str,
+                     baseline: dict) -> bool:
+    """True when a section contract holds bytes the framework did not write.
+
+    The stored manifest records the hash of the copy ``init`` or the last
+    ``upgrade`` wrote, so a contract whose current hash differs from it was
+    edited in the workspace. A contract the manifest does not record (a file
+    the operator put at a kit path, or one ``smith kind set`` left stranded) is
+    edited when it differs from the kit, and so is one recorded as
+    unsynchronized (unreadable when the baseline was written): that record
+    proves nothing about who wrote the bytes, and the kit is the only copy
+    the framework could have put there.
+    """
+    if not relpath.startswith(SECTION_CONTRACTS):
+        return False
+    current = manifest.sha256_if_readable(root / relpath)
+    if current is None:
+        return False
+    recorded = baseline.get(relpath)
+    if isinstance(recorded, str) and recorded != UNSYNCHRONIZED:
+        return current != recorded
+    return current != manifest.sha256_if_readable(kit_root / kit_relpath)
+
+
 def _copy_if_needed(workspace: Path, kit_root: Path, relpath: str, *, force: bool,
                     unsynchronized: list[str], kit_relpath: str | None = None) -> bool:
     """Synchronize one kit file; return whether it was written.
@@ -254,10 +283,14 @@ def upgrade(workspace: str | Path = ".", *, tools: Sequence[str] | None = None,
     changed: list[str] = []
     preserved: list[str] = []
     unsynchronized: list[str] = []
+    kept_edited: list[str] = []
 
     for relpath in sorted(kit_files):
         if manifest.is_preserved(relpath):
             preserved.append(relpath)
+            continue
+        if not force and _edited_contract(root, kit_root, relpath, kit_files[relpath], stored["files"]):
+            kept_edited.append(relpath)
             continue
         if _copy_if_needed(root, kit_root, relpath, force=force,
                            unsynchronized=unsynchronized, kit_relpath=kit_files[relpath]):
@@ -396,6 +429,12 @@ def upgrade(workspace: str | Path = ".", *, tools: Sequence[str] | None = None,
         # strand the file untracked forever.
         target = root / relpath
         framework_files[relpath] = manifest.sha256_if_readable(target) or UNSYNCHRONIZED
+    for relpath in kept_edited:
+        # The baseline keeps naming the kit's bytes, not the edit: recording the
+        # edited hash would make the next run see an unedited copy and
+        # overwrite it. ``status`` reports the contract as drift, which it is.
+        framework_files[relpath] = (manifest.sha256_if_readable(kit_root / kit_files[relpath])
+                                    or UNSYNCHRONIZED)
     for relpath in deliverable:
         # Every managed path this run was responsible for must be accounted for
         # in the baseline. ``workspace_framework_files`` omits any path it cannot
@@ -423,6 +462,7 @@ def upgrade(workspace: str | Path = ".", *, tools: Sequence[str] | None = None,
         "active_tools": active_tools,
         "changed_files": changed,
         "preserved_files": preserved,
+        "kept_edited": kept_edited,
         "removed": removed,
         "stranded": stranded,
         "unsynchronized": unsynchronized,
@@ -440,7 +480,9 @@ def register(subparsers) -> None:
         default=None,
         help="replace active runtime generators (claude, opencode, pi, antigravity/agy)",
     )
-    parser.add_argument("--force", action="store_true", help="force framework-file writes")
+    parser.add_argument("--force", action="store_true",
+                        help="force framework-file writes, replacing edited section contracts "
+                             "with the kit's")
     parser.add_argument("--allow-downgrade", action="store_true",
                         help="permit installing an older framework version")
     parser.add_argument("--allow-dirty-kit", action="store_true",
@@ -507,6 +549,8 @@ def run_cli(args) -> int:
               "source as unknown")
     for relpath in result["unsynchronized"]:
         print(f"Warning: could not write '{relpath}'; it stays reported as drift")
+    for relpath in result["kept_edited"]:
+        print(f"Kept edited contract: {relpath} (`smith upgrade --force` replaces it with the kit's)")
     print("Harness wiring:")
     for line in wiring.format_summary(result["wiring"]):
         print(f"  {line}")

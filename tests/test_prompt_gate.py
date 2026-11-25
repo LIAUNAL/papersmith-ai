@@ -60,6 +60,23 @@ class GenericRubric(unittest.TestCase):
         self.assertEqual(prompt_gate.check("journal-finder", "Q1 Q2 journals for EEG decoding")["verdict"], "pass")
         self.assertEqual(prompt_gate.check("journal-finder", "fix it")["verdict"], "fail")
 
+    def test_study_protocol_deliberation_is_gated_by_the_generic_rubric(self) -> None:
+        # The third deliberation profile has no input contract of its own yet: a request that
+        # names what to draft passes, a vague one does not.
+        self.assertEqual(prompt_gate.check(
+            "study-protocol-deliberation",
+            "draft the study protocol: research question, one primary outcome, design, "
+            "eligibility, sample size with its justification and the analysis plan.")["verdict"], "pass")
+        self.assertEqual(prompt_gate.check("study-protocol-deliberation", "fix it")["verdict"], "fail")
+
+    def test_the_observational_line_skill_is_gated_by_the_generic_rubric(self) -> None:
+        # The line skill has no input contract of its own: empty input and `status` ask for the
+        # overview, a stage name routes to that stage, a vague request does not pass.
+        for text in ("", "status", "analysis", "draft the participant flow for the STROBE template"):
+            with self.subTest(text=text):
+                self.assertEqual(prompt_gate.check("observational-measurement", text)["verdict"], "pass")
+        self.assertEqual(prompt_gate.check("observational-measurement", "fix it")["verdict"], "fail")
+
     def test_a_skill_without_a_contract_handles_its_own_empty_input(self) -> None:
         for skill in ("math-tutor", "experiments-tutor", "journal-finder", "pixelrag", "ui-github",
                       "proposal-deliberation"):

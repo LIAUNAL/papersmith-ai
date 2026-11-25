@@ -991,7 +991,8 @@ class DeclarationsTests(unittest.TestCase):
         self.assertIn("repository-url", ctx.exception.detail)
 
     def test_the_partition_is_pairwise_disjoint_and_covers_every_fact(self) -> None:
-        self.assertEqual(len(paper_declarations.OBSERVABLE_FACTS), 5)
+        # Ten since T7-U8 added the five study facts, all observable.
+        self.assertEqual(len(paper_declarations.OBSERVABLE_FACTS), 10)
         self.assertEqual(len(paper_declarations.DERIVED_FACTS), 4)
         self.assertEqual(len(paper_declarations.STRUCTURAL_FACTS), 1)
         union = (
@@ -1011,11 +1012,14 @@ class DeclarationsTests(unittest.TestCase):
         )
 
     def test_facts_and_declarations_vocabularies_are_pinned_and_disjoint(self) -> None:
-        self.assertEqual(len(paper_vocabulary.FACTS), 10)
+        # Fifteen since T7-U8 added the five study facts.
+        self.assertEqual(len(paper_vocabulary.FACTS), 15)
         # Seven since closing-sections T1 added `ethics-approval` (the
         # back-matter ethics and informed-consent blocks); eight since the
-        # review line added `review-registration` (PRISMA 2020 item 24a).
-        self.assertEqual(len(paper_vocabulary.DECLARATIONS), 8)
+        # review line added `review-registration` (PRISMA 2020 item 24a);
+        # nine since T7-U8 added `study-registration` (a primary study's
+        # registration, D6).
+        self.assertEqual(len(paper_vocabulary.DECLARATIONS), 9)
         self.assertTrue(set(paper_vocabulary.FACTS).isdisjoint(paper_vocabulary.DECLARATIONS))
 
     def test_a_fixed_entry_refuses_a_plain_overwrite(self) -> None:
@@ -3565,9 +3569,11 @@ class SourceRootDeclaresItsKindTests(unittest.TestCase):
             self.assertIsInstance(
                 root, paper_declarations.SourceRoot, f"{fact_id!r} is not a SourceRoot record"
             )
+            # STRUCTURED since T7-U8 (D10): the participant flow record.
             self.assertIn(root.kind, (paper_declarations.SourceRootKind.PROSE,
                                        paper_declarations.SourceRootKind.REPOSITORY,
-                                       paper_declarations.SourceRootKind.INGESTED))
+                                       paper_declarations.SourceRootKind.INGESTED,
+                                       paper_declarations.SourceRootKind.STRUCTURED))
 
     def test_implementation_and_results_are_repository_kind_not_prose(self) -> None:
         """The exact defect: `implementation`/`results` are read by

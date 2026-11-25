@@ -98,6 +98,19 @@ skills that serve the flow from beside it — `datasets`, `experiment-diagrams`,
 `experiments-tutor` and `journal-finder` — and each names its own seams.
 Section 20, `ui-github`, publishes the dashboard itself, read-only.
 Section 23, `prompt-gate`, measures the prompt every skill receives before it runs.
+Section 24, `observational-measurement`, is the observational and measurement
+line's own skill; it routes to the shared empirical modules described after it.
+Section 25, `hardware`, is the hardware line's own skill; it routes to the same
+modules and to the measurement core. The `lab-simulation` line is registered
+beside it (`smith init --kind lab-simulation`) and its skill is documented with
+it, in section 26. Section 27, `data-resource`, is the data-resource line's own
+skill; it routes to the shared empirical modules and to the `datasets` skill.
+Section 28, `experiment-intervention`, is the experiment-intervention line's
+own skill; it routes to the shared empirical modules, the allocation record
+included. Section 29, `qualitative-participatory`, is the
+qualitative-participatory line's own skill; it routes to the shared empirical
+modules and to the qualitative core (transcripts, codebook, theme sign-off,
+verbatim quotes, consensus rounds and MICMAC).
 
 ---
 
@@ -127,7 +140,7 @@ slots, and the 20-planet limit per system is absolute.
 | `sun` | exactly 1 | the paper: title at the center |
 | `branch` | 0 to 2 | research branches the paper claims |
 | `topic_app` | exactly 1 | the topic as the application domain states it |
-| `topic_ai` | exactly 1 | the same topic framed as an AI problem |
+| `topic_ai` | exactly 1 | the same topic framed as an AI problem; for a paper whose method is not AI, framed by its method |
 | `problem` | exactly 1 | the problem the paper faces, in one claim |
 | `application` | exactly 1 | where it lands in the world |
 | `family` | exactly 1 | the group this system belongs to: one per paper, 3 to 7 families per pool |
@@ -2254,11 +2267,13 @@ is the order in which those groups enable one another.
 | The supporting evidence | `resolve`, `bib build`, `validate` | Citation resolution, a sourced bibliography, and the verdict/placement gate: **no claim without a source that holds it**. `resolve --references` stores every cited paper's metadata and abstract in `paper/.paper-writing/references.json` after the citations change, because `refs.bib` comes from `bib build` and carries no abstract |
 | Writing and drawing | `write`, `render`, `place`, `figure optimize`, `figure audit` | Drafting bound to evidence, contract audit and the style-leak proof. TikZ optimization and semantic figure audit. `render`/`place`: a diagram that compiles or says why, with its repair budget |
 | Style audit & style revision | `ai_audit`, `humanize` | Measures writing quality — cadence (sentence-length $CV \ge 0.38$), overused academic phrasing, lexical diversity — as a `style_score`, plus a located `flow` report (connector density and repetition, repeated sentence openings, *because*/*where*/*, which* density with the equation *where* exempt, cross-paragraph repeated phrases and near-duplicate sentences, template phrasing) whose `needs_revision` verdict also blocks `--apply`, and applies a revised block only when it meets `--style-target` (or `--force`) under the untouchable F5 invariant gate (citations, statistics, and formulas). A readability check, never an AI detector: it does not change the obligation to declare AI use |
-| Final judge's rounds | `review` | Records one round of the `paper-reviewer`'s review of the whole paper (`--input <file>`, or `-` for stdin) in `.papersmith/paper_review.json`, which the dashboard's final-judge panel reads: numbers and dates it, requires overall 1-6, confidence 1-5 and the four 1-4 ratings, and from the second round on a verdict (`resolved`, `partly`, `not resolved`) on every revision the previous round raised. A refused round leaves the file unchanged |
+| Final judge's rounds | `review` | Records one round of the `paper-reviewer`'s review of the whole paper (`--input <file>`, or `-` for stdin) in `.papersmith/paper_review.json`, which the dashboard's final-judge panel reads: numbers and dates it, requires overall 1-6, confidence 1-5 and the four 1-4 ratings, and from the second round on a verdict (`resolved`, `partly`, `not resolved`) on every revision the previous round raised. In a review workspace the round is judged on the systematic-review rubric (`"rubric": "systematic-review"`: the 16 AMSTAR 2 answers, the overall confidence derived by the AMSTAR 2 rule, and PRISMA 2020 reporting gaps; items 9 and 13 may be `not applicable` only when `review/protocol.json` declares a scoping or bibliometric `review_type`, recorded in the round's `amstar2_basis`), and on an empirical line on the empirical-study rubric (protocol adherence, design validity, risk of bias per domain with the overall derived, reporting-checklist gaps; see `skills/paper-writing/SKILL.md`), and on the hardware and lab-simulation lines on the measurement-science rubric (design validity, calibration and traceability, uncertainty, reproducibility and open materials, agreement or validation, each adequate / limited / inadequate, agreement also not applicable; the overall rating derived: any inadequate is major concerns, else any limited minor concerns, else sound; gaps against the line's checklist, hardwarex or gum-reporting), and on the data-resource line on the data-descriptor rubric (documentation completeness, collection and consent, quality and technical validation, access, licence and persistent identifier, reuse potential, each adequate / limited / inadequate; the overall rating derived by the same rule; gaps against the datasheets checklist); the qualitative-study rubric for qualitative-participatory (reflexivity, sampling and sufficiency, analytic rigour and audit trail, fit between quotes and claims, transferability for every variant; panel composition, pre-specified threshold, rounds and feedback, dissent reported for `consensus-foresight`; context, what was done, what it taught, honest limits for `experience-report`, which may rate sampling and quote fit not applicable with a reason; the round's variant must match the agreed one; gaps against `srqr` or `coreq`, or `accord`, none for an experience report); a round whose rubric does not serve the workspace's line (`paper_kind`) is refused (`RUBRIC_KIND_MISMATCH`). A refused round leaves the file unchanged |
 | Checking | `verify`, `couplings` | Read-only coupling verification, citation integrity, semantic figure consistency and contract currency; `couplings` validates and writes `paper/couplings.json` whole, the producer declaration `verify` reads `verify` also warns, without failing, on a sentence that narrates the iteration behind the final experiments (rounds, pilot runs, a proof of concept: `iteration-history`) and on a future-work sentence with no citation (`future-work-uncited`); the paper reports only the final, approved experiments |
 | Structure, sources and reuse | `phases`, `skeleton`, `bind`, `separate`, `mark`, `packet`, `full_text`, `reuse`, `exhaustion` | The derived "what can I write now" report and the one-time opening of the empty section/block structure; the source-section binding loop and the revision/class declarations of a source root or `guidance/` folder; the redactor's own context; one already-resolved identifier's PDF placed under `guidance/<section>/`; and the read-only reports of which ingested papers carry no verdict yet and of the exhaustion state of the evidence papers |
 | Venue adaptation | `venue select`, `requirements`, `acquire`, `diff`, `plan`, `approve`, `build`, `status`, `list` | Measures the manuscript against a chosen journal's guidelines and template and builds the journal's own `main.tex` under `paper/venues/<slug>/`, never touching the canonical one (below) |
 | Spanish translation | `translate plan`, `store`, `build`, `audit`, `status` | For a journal that only receives Spanish: the finished, verified English paper translated block by block to neutral academic Spanish under `paper/translations/es/`. The `translator` agent writes each block from the English text, the glossary of protected terms and its last style findings; `store` refuses a block that loses a citation key, label or reference target, formula, number or paragraph; `audit` scores style, flow and redundancy and the `translation-style-reviewer` agent proposes fixes with each location quoted. The English paper stays the source, and the PDF tab compiles and previews the Spanish version |
+
+An empirical paper adds five study facts: `protocol`, `sample`, `outcomes` and `analysis-plan`, read from the study protocol revisions under `protocol/` (mark them with `mark revisions --root protocol --revision-prefix v --ordinal-digits 2`), and `participant-flow`, read from the counts in `study/flow.json`. That file is a structured record, hashed the way the participant flow module hashes it (timestamps ignored), so changing a count marks the fact stale in `phases` and `readiness`. The `study-registration` declaration records a primary study's registry, id, registration date and first-enrolment date; `review-registration` stays the review line's.
 
 **Venue adaptation: the `venue` verbs and the `venue-adapter` agent.** A journal
 asks for its own document class, section list, limits, declarations and
@@ -2360,10 +2375,10 @@ nothing was asserted without a run having checked it.
 | `scripts/paper_verify.py` | Eight pure checks over that evidence (including `figure-semantics`) — zero I/O of its own, read-only report. |
 | `scripts/paper_objective.py` | The declared north: `OBJECTIVE_FLOW`, read by `tests/test_agents.py` via `ast.literal_eval` — pure literals, no calls and no imports. |
 | `sections/*.md` | The ten real contracts, versioned: JSON front matter + prose. Real input, not a fixture. |
-| `.claude/agents/insumos-observer.md` | Reads the paper's **four declared sources** — `proposals/`, `experiments/`, the target repo's code and what its runs returned — and reports, for each observable fact, whether it is satisfied and **with what evidence**. `Read`, `Glob`, `Grep`. **It never decides a value and never runs `declare`**: its report is what a person reads before running `declare`. The report is passed by file and `observe` validates it against the schema — an agent's own account is never trusted. |
+| `.claude/agents/insumos-observer.md` | Reads the paper's **declared sources** — `proposals/`, `experiments/`, the target repo's code and what its runs returned, and for an empirical study `protocol/` and `study/flow.json` — and reports, for each observable fact, whether it is satisfied and **with what evidence**. `Read`, `Glob`, `Grep`. **It never decides a value and never runs `declare`**: its report is what a person reads before running `declare`. The report is passed by file and `observe` validates it against the schema — an agent's own account is never trusted. |
 | `.claude/agents/style-sampler.md` | Resolves the equivalent block, **whole**, from every `guidance/` folder the record classifies as `style-reference`, and returns it **verbatim, never trimmed**. `Read`, `Glob`, `Grep`. What it returns is the only material against which a later overlap test can compare a styled draft: if it trimmed, the test would compare against something no one wrote. |
 | `.claude/agents/figure-auditor.md` | Audits TikZ diagrams against their section's prose and the declared manifest; runs `figure audit` and reports the structured verdict. |
-| `.claude/agents/paper-reviewer.md` | Reviews the compiled paper with the main-track review form and reports each rating with quoted evidence. |
+| `.claude/agents/paper-reviewer.md` | Reviews the compiled paper with the main-track review form and reports each rating with quoted evidence; a review paper (`paper_kind: review`) is judged with AMSTAR 2 and PRISMA 2020 instead; an empirical line is judged on the empirical-study rubric (protocol adherence, design validity, risk of bias per domain, reporting-checklist gaps); a hardware or lab-simulation paper is judged on the measurement-science rubric (design validity, calibration and traceability, uncertainty, reproducibility and open materials, agreement or validation, line-checklist gaps); a data-resource paper is judged on the data-descriptor rubric (documentation completeness, collection and consent, quality and technical validation, access/licence/persistent identifier, reuse potential, datasheets gaps); a qualitative-participatory paper is judged on the qualitative-study rubric (reflexivity, sampling and sufficiency, analytic rigour and audit trail, fit between quotes and claims, transferability, plus panel, threshold, rounds and dissent for consensus and foresight, or context, what was done, what it taught and honest limits for an experience report). |
 | `.claude/agents/redactor.md` | Drafts one contract block's LaTeX from exactly five inputs (the contract's prose, the evidence set, the mode, the style set, the bound source sections) and hands back a binding map naming every sentence's source. `Read`, `Glob`, `Grep`; `write` judges what it returns, it never calls it. |
 | `.claude/agents/contract-auditor.md` | Reads a contract's `## Disqualifiers` verbatim and judges a drafted block against each one: fires, clear or undecidable, with a quoted span for every `fires`. `Read`, `Glob`, `Grep`. |
 | `.claude/agents/section-grounding-auditor.md` | Reads a transposition block's bound source section verbatim and judges each subject sentence's support: supported, unsupported or undecidable, with a quoted span for every supported. `Read`, `Glob`, `Grep`. |
@@ -2820,12 +2835,19 @@ of them on its own initiative.
 **The verbs.** `python3 skills/datasets/scripts/datasets_cli.py <verb>`:
 `synth` (a seeded toy CSV, or the `capacity` family of EEG replicates that tests
 what a classifier can represent), `search` (Kaggle, Hugging Face Hub, OpenNeuro
-and Zenodo, every hit recorded), `license`, `qc`, `prepare` (stratified group
+and Zenodo, every hit recorded), `license`, `own` (the operator's own data,
+registered with their data-use statement, `--by` naming them, instead of a
+license classification), `dictionary init|check` (`datasets/<slug>/dictionary.json`:
+per column its type, unit, range or levels, missing codes, description and PII
+flag), `qc` (checked against the dictionary when one exists: out-of-range values,
+unknown levels, type mismatches, undeclared or absent columns and PII columns,
+with counts and row numbers but never a PII value), `deidentify --slug --by <operator> --statement "<how>"` (records how the PII columns the dictionary flags were removed or transformed, bound to those columns and to the sha256 of every registered file; `publish` refuses, `pii-not-deidentified`, a dataset whose dictionary flags PII, or ever flagged it (`pii_columns_seen`), until that record is current; the agent never records it on the operator's behalf), `deposit --slug --repository <name> --identifier <DOI or PID> --license <licence> --by <operator> [--scheme doi|handle|ark|accession] [--url] [--version] [--date]` (records the deposit the operator made, bound to the sha256 of every registered file (G-DEPOSIT); refused unless the licence decision is `allowed`, PII has a current `deidentify` record and every file exists; `status` reports it stale on `file-changed`, `file-added` or `file-missing`; it never uploads and the agent never records a deposit on the operator's behalf), `prepare` (stratified group
 k-fold by subject; `--seeds` for repeated cross-validation), `publish` (a dry run
 without consent) and `status`. The `dataset-scout` agent runs the search and
 license stretch, and `dataset-curator` the rest.
 
-**What it never does.** It never publishes without the operator's consent token,
+**What it never does.** It never records an own-data statement on the operator's
+behalf, never publishes without the operator's consent token,
 never makes a dataset public on one token, never splits a subject across folds,
 and never decides on the operator's behalf whether a recording holds personal
 data: that check is the operator's responsibility.
@@ -3415,11 +3437,18 @@ leaving its record under `review/`:
 | `appraise`, `extract` | `review/appraisal.jsonl`, `review/extraction.jsonl` | 9, 11, 17, 18 |
 | `prisma`, `flow`, `biblio` | `review/prisma.json`, `paper/Figures/prisma-flow.svg`, `review/biblio.json` | 16 |
 | `prioritize [--floor 100 --cap 200 --other-references N] [--apply --criterion E<n> --reviewer <name>]` | `review/prioritization.json`; with `--apply`, final full-text exclusions in `review/screening.jsonl` | 5, 16 |
-| `checklist`, `status` | nothing; reports the 27 items and the records | all |
+| `signoff --gate screening\|synthesis --by <operator> [--note]` | `review/signoffs.json`: the operator's screening sign-off (G-SCREENING) or synthesis acceptance (G-SYNTHESIS), with the hash of what was signed | 8, 16 |
+| `checklist`, `status` | nothing; reports the 27 items and the records (`status` also the sign-offs) | all |
 
 **Human gates.** The operator approves the protocol before any search and
 records every amendment with its reason; the operator is always one of the two
-screeners and settles conflicts (`screen --final`). The agent may be the other
+screeners and settles conflicts (`screen --final`), signs the screening off
+once every record is decided without conflict and accepts the synthesis once
+its PRISMA counts and flow diagram exist (`signoff`, refused before then:
+`SCREENING_PENDING`, `SCREENING_CONFLICTS`, `SCREENING_EMPTY` while nothing has
+been screened yet, `SYNTHESIS_INCOMPLETE`; a sign-off is current only while
+what it signed is unchanged, `SIGNOFF_UNCHANGED` otherwise). The dashboard
+(`smith ui`) shows these gates on the review line's ten steps. The agent may be the other
 screener and extracts data with the quote that holds each value.
 
 **Writing.** The review section contracts (`sections-review/` in the kit,
@@ -3502,3 +3531,125 @@ the agent does not gate it again. If the check cannot be reached, the box
 launches as before and the agent's own gate still applies. The full contract is
 [`skills/prompt-gate/SKILL.md`](../skills/prompt-gate/SKILL.md).
 
+
+### 24. `observational-measurement` — a study of the operator's own data, routed to the records that hold it
+
+**When.** Only in an observational-measurement workspace (`smith init --kind
+observational-measurement`, or `smith kind set observational-measurement`
+after `/paper-type`): an observational study, a diagnostic or clinical
+validation, or a measurement instrument (index, scale, questionnaire), with
+no intervention assigned. An experimental or review workspace never receives
+this skill.
+
+**How it runs.** `/observational-measurement` owns no script and no record. It
+reads the agreed variant (`agreed_variant` in `.papersmith/paper_type.json`)
+and its reporting checklist in the catalogue (`observational` → `strobe`,
+`diagnostic-validation` → `stard-2015`, `measurement-instrument` → `cosmin`),
+then either reports the study's status or runs one stage. The status overview
+is assembled from the shared modules' own JSON: `study_cli.py status`
+(protocol lock, ethics, registration), `analysis_cli.py status` (runs and
+their computed labels), `flow_cli.py status` (participant flow and sign-off),
+`datasets_cli.py status` (own data, dictionary, QC, de-identification) and
+`checklist_cli.py check --guideline <the variant's checklist>`; it names the
+first stage not done and the command that does it. The stages (protocol,
+ethics, registration, data, analysis, participant flow, writing, checklist and
+final judge) are the line's flow, stated in the workspace's `CLAUDE.md`.
+
+**What it never does.** It never generates, simulates, imputes or edits a
+measurement, a datum or a flow count; it never records an ethics approval, a
+consent route, a registration, a data-use statement, a de-identification, a
+protocol approval or amendment, or a sign-off on the operator's behalf; it
+never chooses or changes the primary outcome; and it never relabels an
+exploratory analysis or marks a `needs-judgment` checklist item satisfied.
+
+### 25. `hardware` — a device or instrument, its signed specifications and its measured performance
+
+**When.** Only in a hardware workspace (`smith init --kind hardware`, or `smith
+kind set hardware` after `/paper-type`): a device, sensor or instrument the
+operator designs, builds and validates against a reference device, written in
+the HardwareX article template. Any other workspace never receives this skill.
+
+**How it runs.** `/hardware` owns no script and no record. The catalogue type
+has no variants, so its checklist is the family's (`hardwarex`, read with
+`registry.checklist_for`), and every uncertainty is also checked against
+`gum-reporting`. The status overview is assembled from the shared modules' own
+JSON: `study_cli.py status` (the protocol lock, ethics, registration),
+`measure_cli.py status` (instruments, registered raw files, uncertainty
+budgets, agreement), `flow_cli.py status` and the two checklists. The gates
+follow the catalogue's stages: G-SPEC is the study protocol's lock (the
+protocol, deliberated with `/study-protocol-deliberation`, holds the
+requirements and specifications, the primary performance outcome with its
+acceptance criterion and the validation design; the operator's `protocol
+approve --by` signs them), G-CALIBRATION the instruments calibrated and not
+past due with every uncertainty budget current, G-AGREEMENT the agreement with
+the reference device computed from registered files; ethics, registration and
+the participant flow apply only when people take part in the validation. The
+section contracts (`sections-hardware/`) follow the HardwareX sections:
+specifications table, hardware in context, hardware description, design
+files, bill of materials, build and operation instructions, and validation and
+characterization, whose blocks transcribe `study/instruments.json`,
+`study/uncertainty/` and `study/agreement.json`. The final judge uses the
+`measurement-science` rubric.
+
+**What it never does.** It never generates, simulates or edits a measurement,
+a reading, a price or a participant count; it never records an instrument, a
+calibration, a registered file, a protocol approval or amendment, an ethics
+approval, a consent route, a registration or a sign-off on the operator's
+behalf; it never chooses or changes the primary performance outcome; and it
+never reports a stale budget or marks a `needs-judgment` checklist item
+satisfied.
+
+### 26. `lab-simulation` — a laboratory or simulation study, every value with its uncertainty
+
+**When.** Only in a lab-simulation workspace (`smith init --kind lab-simulation`, or `smith kind set lab-simulation` after `/paper-type`): a materials study (synthesis, deposition or processing and characterization) or a modelling-simulation study (a model, its solver, parameters and convergence). Other workspaces never receive this skill.
+
+**How it runs.** `/lab-simulation` owns no script and no record. It reads `agreed_variant` (`materials` or `modelling-simulation`; both report on `gum-reporting`), then reports status or runs one stage. The overview comes from `study_cli.py status`, `measure_cli.py status` (instruments and calibration state, registered files, budgets current or stale), `analysis_cli.py status` and `checklist_cli.py check --guideline gum-reporting`. The stages are the sample matrix or model; the protocol (G-STUDY-PROTOCOL; the primary observable, and replicates or a parameter grid as the sample size); calibration against known values (G-CALIBRATION); data registration; GUM uncertainty budgets; the labelled analysis log; open data and code; writing; the checklist and the `measurement-science` final judge.
+
+**What it never does.** It never generates, imputes or edits a measured value, simulated output or raw file. It never records an instrument, calibration, data registration, ethics record, protocol approval or past-due override on the operator's behalf. It never chooses the primary observable, sample matrix, model or parameter grid. It never relabels an exploratory analysis or marks a `needs-judgment` item satisfied.
+
+### 27. `data-resource` — a corpus, dataset or benchmark, documented and deposited by the operator
+
+**When.** Only in a data-resource workspace (`smith init --kind data-resource`, or `smith kind set data-resource` after `/paper-type`): a corpus, dataset or benchmark the operator collected and releases as the contribution, written as a data descriptor (background and summary, methods, data records, technical validation, usage notes, code availability). Other workspaces never receive this skill.
+
+**How it runs.** `/data-resource` owns no script and no record; the type has no variants and reports on `datasheets` (Datasheets for Datasets). The overview comes from `study_cli.py status`, `datasets_cli.py --root . status` (own-data statement or licence decision, dictionary, quality report, de-identification and the deposit record, current or stale), `analysis_cli.py status` and `checklist_cli.py check --guideline datasheets`. The stages are the collection protocol (G-STUDY-PROTOCOL; the primary outcome is the variable or label the resource is built to measure); ethics, consent and licence (G-ETHICS: `study_cli.py ethics record`, and `datasets_cli.py own` or `license`); curation and documentation (`datasets_cli.py dictionary init|check`); quality checks (G-DATA-QC: `datasets_cli.py qc`, and `deidentify --by` when the dictionary flags personal data); baselines in the labelled analysis log (exploratory unless the locked protocol names them); the deposit the operator made, recorded with `datasets_cli.py deposit --by` (G-DEPOSIT: repository, persistent identifier, licence, bound to the sha256 of the files); writing; the checklist and the `data-descriptor` final judge.
+
+**What it never does.** It never generates, labels or alters data, never annotates on the annotators' behalf and never lets a toy set stand in for the resource. It never collects data, contacts participants, deposits or uploads: collection, consent, licence and deposit stay human. It never records an ethics approval, own-data statement, licence decision, de-identification, protocol approval or deposit on the operator's behalf, never chooses the primary outcome, sources, annotation scheme or licence, never relabels an exploratory baseline and never marks a `needs-judgment` item satisfied.
+
+### 28. `experiment-intervention` — a trial with people or a field, crop or animal experiment
+
+**When.** Only in an experiment-intervention workspace (`smith init --kind experiment-intervention`, or `smith kind set experiment-intervention` after `/paper-type`): a study that assigns a treatment and measures its effect against a control. Other workspaces never receive this skill.
+
+**How it runs.** `/experiment-intervention` owns no script and no record; the agreed variant chooses the checklist: `human-trial` reports on `consort-2025` (CONSORT 2025), `field-experiment` on `arrive-2` (ARRIVE 2.0; a plot or crop experiment uses its design and analysis items where they apply). The overview comes from `study_cli.py status`, `study_cli.py allocation status`, `datasets_cli.py --root . status`, `analysis_cli.py status`, `flow_cli.py status` and `checklist_cli.py check --guideline <id>`. The stages are the protocol (G-STUDY-PROTOCOL) and its registration (`study_cli.py registration record --first-enrolment`; G-REGISTRATION requires a prospective registration for a trial with people, and a retrospective one is stated with its reason); ethics and consent (G-ETHICS); the allocation the operator generated and concealed with their own tool, recorded with `study_cli.py allocation record --by` and bound to the list's sha256 and the protocol lock (G-ALLOCATION); intervention and follow-up with the operator's data (`datasets_cli.py own`, `dictionary`, `qc`, `deidentify`; G-DATA-QC); the pre-specified analysis in the labelled analysis log; the flow of units (`flow_cli.py template consort-2025 --arm`, `check`, `render`, `signoff --by`; G-FLOW, required for a trial with people, while a field experiment may report a table of its experimental units); writing from the CONSORT 2025-shaped contracts, whose randomisation block reads the allocation record and never the list; the checklist and the `empirical-study` final judge.
+
+**What it never does.** It never generates measurements or data and never generates, reads out or alters the allocation sequence: it never opens the allocation list or prints an assignment. It never enrols participants, delivers the intervention or collects data: ethics, consent, data collection and the choice of primary outcome stay human. It never records a protocol approval, registration, ethics record, allocation, own-data statement, de-identification or flow sign-off on the operator's behalf, never presents a retrospective registration as prospective, never relabels an exploratory analysis and never marks a `needs-judgment` item satisfied.
+
+### 29. `qualitative-participatory` — a qualitative, participatory or consensus study, quoted verbatim
+
+**When.** Only in a qualitative-participatory workspace (`smith init --kind qualitative-participatory`, or `smith kind set qualitative-participatory` after `/paper-type`): a study built on people's accounts and judgement. Other workspaces never receive this skill.
+
+**How it runs.** `/qualitative-participatory` owns no script and no record; the agreed variant chooses the checklist: `qualitative-mixed` reports on `srqr` (SRQR), or on `coreq` (COREQ) for a study of interviews or focus groups, `consensus-foresight` on `accord` (ACCORD), and `experience-report` has none. The overview comes from `study_cli.py status`, `qual_cli.py status`, `consensus_cli.py status`, `consensus_cli.py round status`, `consensus_cli.py micmac status` and `checklist_cli.py check --guideline <id>`. The stages are the case, panel or experience and its framework (G-STUDY-PROTOCOL, optional for an experience report; a consensus study records its plan, threshold and rounds against the lock with `consensus_cli.py plan record --by`); ethics and consent (G-ETHICS, not applicable allowed for an experience report without participant data); fieldwork, rounds or implementation (`qual_cli.py transcripts add --by`, G-TRANSCRIPTS; `consensus_cli.py panel add` and `round record --by`, G-ROUNDS); coding, consensus or reflection (`qual_cli.py codebook record` and `themes signoff --by`, G-ANALYSIS; `consensus_cli.py round status` and `micmac compute --by`); integration with prior work; writing from the SRQR-shaped contracts, every participant quote written `\pquote{<code>}{<text>}`; `qual_cli.py quotes check`, `paper_cli.py verify` (`quote-not-verbatim`), the checklist and the `qualitative-study` final judge.
+
+**What it never does.** It never generates data, never writes or edits a transcript, never invents or polishes a quote and never enters a rating: it never transcribes, prints a transcript or a member's comment, or writes a quote that is not the transcript's own words. It never recruits participants or panel members or collects material: ethics, consent, data collection and the analytic sign-off stay human. It never records a protocol approval, consensus plan, ethics record, transcript registration, panel member, round, codebook version, theme sign-off or MICMAC computation on the operator's behalf, never presents an item below the pre-specified threshold as consensus, never claims an effect for an experience report and never marks a `needs-judgment` item satisfied.
+
+### Shared empirical modules (for the empirical paper lines)
+
+These modules live under `skills/_core/` and serve the empirical lines of the
+paper-type catalogue: the observational and measurement, hardware,
+lab-simulation, data-resource, experiment-intervention and
+qualitative-participatory lines. No applied-AI or review flow calls them.
+
+**Participant flow** (`skills/_core/participant_flow/`, `flow_cli.py template|check|render|signoff|status`): the operator enters the counts of a CONSORT 2025, STROBE or STARD 2015 flow in `study/flow.json`; `check` validates the arithmetic (each stage equals the previous one minus its exclusions, arms sum to the randomised total, analysed never exceeds followed); `render` draws `paper/Figures/participant-flow.svg` only from valid counts; `signoff --by <operator>` records in `study/flow-signoffs.json` a sign-off bound to the hash of the counts and the figure, stale after any edit. An agent never enters a count or signs.
+
+**Qualitative core** (`skills/_core/qualitative/qual_cli.py`): the operator registers each de-identified transcript or field note (`transcripts add --by --participant <code> --consent --deidentified [--kind]`), bound by sha256 and character count in `study/transcripts.json` (G-TRANSCRIPTS: at least one, every one current); records codebook versions (`codebook record --by`); and signs off the themes (`themes signoff --by`, G-ANALYSIS), bound to the codebook version and every transcript's hash, stale when any changes or a transcript is added. `quotes check` finds every `\pquote{<code>}{<text>}` in the paper and requires it verbatim (whitespace, quote marks and LaTeX-escaped characters normalised) within one turn of that participant (lines labelled `<code>:`; a focus-group file must label its turns) in a current transcript; `paper_cli.py verify` reports a failure as `quote-not-verbatim` in workspaces with a transcripts register. The assistant never writes or edits a transcript, and no output shows one.
+
+**Consensus rounds and MICMAC** (`skills/_core/qualitative/consensus_cli.py`, gate G-ROUNDS): panel members by anonymised codes, a consensus plan (rounds, threshold, scale, agree-from) bound to the study protocol lock, each round's response file bound by sha256, per-item agreement, median, IQR (Hyndman-Fan type 7) and consensus computed from the files with the change from the previous round, and MICMAC direct and indirect influence and dependence from the operator's influence matrix (raised until the rankings are stable, at most M^10) with each variable's quadrant; every result goes stale when its file, the plan or the protocol changes. The assistant never enters or edits a rating, and no output carries a comment. MACTOR and scenarios stay narrative.
+
+**Reporting checklists** (`skills/_core/checklists/`, `checklist_cli.py list|show|check`): each reporting guideline is a data file (`guidelines/<id>.json`: item number, a short paraphrased topic, the blocks or sections that report it per paper line, deterministic evidence rules and a judgment question; never the guideline's item text). `check --guideline <id> --root . [--json]` answers per item `satisfied`, `missing` or `needs-judgment`, with the evidence used: blocks written, records on file, declarations recorded, a count in the text equal to its record, a term in a block. An item that needs a reader stays `needs-judgment`; the engine never marks it satisfied. It ships PRISMA 2020 (27 items; their presence verdicts equal `review_cli.py checklist`), STROBE (22), STARD 2015 (30) and the COSMIN Reporting Guideline 2.0 for measurement-property studies of PROMs (68 items, every one a judgment question), used by the measurement-instrument variant. The engine also ships `hardwarex` (31 items following the HardwareX article template, Version 2, June 2021, on the hardware line's sections) and `gum-reporting` (18 items paraphrasing JCGM 100:2008 clause 7 on reporting a measurement uncertainty, for the lab-simulation and hardware lines); every item is a reader's judgment question, never satisfied automatically. The data-resource line reports against `datasheets`, 50 paraphrased judgment questions from Datasheets for Datasets (Gebru et al., Commun ACM 2021) in its seven sections, targeting the data-descriptor contracts; no item is ever satisfied automatically. The experiment-intervention line reports a human trial against `consort-2025` (30 items in the CONSORT 2025 statement's numbering, its open-science items on methods and back matter) and a field experiment against `arrive-2` (ARRIVE 2.0's Essential 10 and Recommended Set, 21 items, also used for plot or crop trials where its design and analysis items apply); every item is a judgment question, never satisfied automatically. The qualitative-participatory line reports a qualitative or mixed-methods study against `srqr` (SRQR, 21 items) or, for interview and focus-group studies, `coreq` (COREQ, 32 items), and a consensus or foresight study against `accord` (ACCORD, 35 items); an experience report has no checklist. Every item is a judgment question, never satisfied automatically. A target the workspace's `sections/` does not have is reported missing with the reason. See its README for the predicates, the schema and how to add a guideline.
+
+**Study protocol** (`skills/study-protocol-deliberation/`, `/study-protocol-deliberation`): the deliberation engine's third profile keeps an empirical study's protocol as managed revisions `protocol/study-protocol-<slug>-vNN.md` of labelled fields (research question, exactly one primary outcome `O<n> -- measure; time point`, secondary outcomes or `none`, design, eligibility, sample size and its justification, primary model, covariates, missing data, multiplicity). It refuses a revision with zero or several primary outcomes, a sample size without justification, an analysis plan without a primary model, or a research question or outcome field that states a result (planning fields may cite thresholds and pilot estimates); changing the primary outcome is a lost atom the operator acknowledges. The choice of the primary outcome, every datum and every sample-size input stay human. The operator approves a published revision with the operator records below (G-STUDY-PROTOCOL).
+
+**Operator records** (`skills/_core/empirical/`, `study_cli.py protocol approve|amend|status`, `ethics record`, `registration record`, `status`): `protocol approve --by <operator>` passes gate G-STUDY-PROTOCOL by pinning the latest managed revision `protocol/study-protocol-<slug>-vNN.md` (or `--revision`) by its sha256 in `study/protocol.lock.json`; a newer revision leaves the lock `changed` until `protocol amend --by <operator> --reason <why>` moves it and records the amendment. `ethics record` (committee, approval code, date, consent route, or `--not-applicable --reason`) and `registration record` (registry, id, date, optional first-enrolment date; a registration after the first enrolment is flagged `retrospective`, ICMJE) refuse until the protocol is approved and current, and are bound to the lock's hash: an amendment marks them stale, a warning in `status`, until the operator records them again. Every record names the operator with `--by`; an agent never approves, amends or records. An experience report with no protocol at all may record its `ethics record --not-applicable --reason` without a lock; it stays current until a protocol exists. `study_cli.py allocation record --by <operator> --file <list> --method <simple|block|stratified|minimisation|cluster> [--block-size <n>] [--strata <factors>] --concealment <how>` records gate G-ALLOCATION for an intervention study: the operator generates the allocation list with their own tool or service, and the record binds its sha256, its row count and the protocol lock's sha256; it goes stale when the list changes or is removed, or when the protocol is amended (`allocation status`). The assistant never generates, reads out or alters the sequence.
+
+**Analysis log** (`skills/_core/empirical/analysis_cli.py run|record|status`): every analysis of a study is an entry of the append-only, hash-chained `analysis/log.jsonl`. `run --outcome <id> [--plan <entry>] --input <data> --output <result> -- <command>` hashes the script, the inputs (with the `datasets` QC hash of a registered file) and the protocol lock before running, then the exit code, duration, stdout, stderr and outputs (the captured streams under `analysis/streams/`, which the workspace's `.gitignore` keeps out of git); `record --by <operator> --tool <name>` is the operator's attested entry for a GUI tool. A wrapped run writes a `run-started` entry before the command and the `run` entry after it, so an interrupted run leaves a trace (`status` lists it); a torn final line refuses (`ANALYSIS_LOG_TORN`) until `repair --by <operator>` moves the torn bytes aside and records the repair; `run` writes `analysis/.gitignore` (`streams/`) when absent. The label is computed, never passed: `confirmatory` only when the lock is current and the outcome (and plan entry) is in the locked protocol, read by the study protocol's parser; anything else, including every run before the lock, is `exploratory`, and only an amendment makes a later run confirmatory. In a study workspace `paper_cli.py verify` reports a `study` key: `primary-outcome-switch` fails when the `outcomes` fact's primary differs from the locked one and no amendment declared the switch; `exploratory-as-confirmatory`, `outcome-not-in-protocol` and `protocol-outcome-not-analysed` are warnings.
+
+**Measurement core** (`skills/_core/measurement/measure_cli.py`, shared by the hardware and lab-simulation lines): the operator records instruments (`instrument add --by`: model, serial, resolution, stated uncertainty with its distribution and coverage factor, calibration certificate, calibration and due dates; history kept) and registers the raw CSV files they produced (`data register --by`: quantity, unit, instrument, replicate column, conditions; bound by sha256, never written to). `uncertainty compute --quantity <q>` evaluates a JCGM 100:2008 budget (type A from the replicates, type B from the instrument's stated uncertainty and resolution, sensitivity coefficients, Welch-Satterthwaite effective degrees of freedom, expanded uncertainty with k from the t distribution at `--level` or a declared `--coverage-k`) into `study/uncertainty/<q>.json`, and refuses a past-due calibration unless the operator overrides it with `--allow-past-due --by --reason`. `agreement compute` gives Bland-Altman bias and 95 % limits of agreement and ICC(2,1) absolute agreement against a reference device (`study/agreement.json`). Each computation is bound to its input hashes; `status` reports it as stale once a file or an instrument record changes. The assistant never enters, edits or generates a measured value.

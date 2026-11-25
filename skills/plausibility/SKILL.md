@@ -117,7 +117,7 @@ and the 20-planet limit per system is absolute.
 | `sun` | exactly 1 | 0 | The paper: title at the center |
 | `branch` | 0 to 2 | 1 | Research branches the paper claims |
 | `topic_app` | exactly 1 | 1 | The topic as the application domain states it |
-| `topic_ai` | exactly 1 | 1 | The same topic framed as an AI problem |
+| `topic_ai` | exactly 1 | 1 | The same topic framed as an AI problem; for a paper whose method is not AI, framed by its method (a cohort, a field trial, a simulation) |
 | `problem` | exactly 1 | 1 | The problem the paper faces, in one claim |
 | `application` | exactly 1 | 1 | Where it lands in the world |
 | `family` | exactly 1 | 2 | The group this system belongs to: one family per paper, 3 to 7 families per pool |
@@ -292,6 +292,12 @@ carry over to it.
 section exists to prevent.** A gate that cannot be refused is a summary. The
 operator has to be able to say no and have that change what happens next.
 
+**After acceptance: the paper type.** Once the operator accepts, hand over to
+`/paper-type` (`skills/paper-type/SKILL.md`): it records the accepted idea in
+`.papersmith/plausibility.json`, scores it against smith's paper types and
+discusses with the operator which kind of paper to build. The phases that
+follow do not change: a workspace with no agreed type stays on its line.
+
 ## Decision gates
 
 | Situation | Action |
@@ -304,6 +310,7 @@ operator has to be able to say no and have that change what happens next.
 | A quote is not verbatim in its abstract | Copy the passage from the pool's abstract again, or drop the planet; never edit the abstract to fit the quote |
 | A claim has no abstract passage | The planet does not exist; a quoteless planet is a drawing |
 | The report is not accepted | Hand nothing to ingestion. Ask what to change and re-screen; the top 5 does not travel on an unaccepted report |
+| The report is accepted | Hand over to `/paper-type` to record the idea and discuss the paper type; then ingestion takes the top 5 |
 
 ## Measure before you assert
 

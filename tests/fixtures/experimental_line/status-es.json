@@ -1,0 +1,3828 @@
+{
+ "active_proposal": "No active proposal",
+ "active_run": "r00",
+ "active_tools": [
+  "antigravity"
+ ],
+ "all_runs": [
+  "r00"
+ ],
+ "artifacts": [],
+ "authors": "Sin autor asignado",
+ "fases": [
+  {
+   "actions": [
+    {
+     "command": "smith status .",
+     "desc": "Resumen del workspace: kit, harnesses, etapas y artefactos.",
+     "kind": "command",
+     "label": "Ver estado del workspace"
+    },
+    {
+     "command": "smith audit . --check-drift",
+     "desc": "Comprueba que .claude, .opencode, .pi y .agents coinciden con el kit.",
+     "kind": "command",
+     "label": "Verificar proyecciones"
+    },
+    {
+     "guide": [
+      "Úsalo cuando el workspace corre una versión anterior de papersmith.",
+      "El agente trae skills, agentes, comandos y formas de artefacto a la versión instalada.",
+      "Opcional: indica qué quieres conservar o revisar antes de actualizar."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Actualizar el workspace (agente)",
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: actualiza el workspace y dime qué cambió en los comandos.",
+     "prefix": "",
+     "slash": "/upgrade-project"
+    }
+   ],
+   "agent": "smith CLI",
+   "blocked_by": null,
+   "cli_command": "smith status .",
+   "desc": "Estructura de workspace, proyecciones de harness (.claude, .opencode, .pi, .agents), entorno micromamba y validación de runtimes.",
+   "detail": "Entorno pendiente de inicialización",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Manifiesto del workspace",
+     "mtime": 0,
+     "path": "papersmith.yaml"
+    },
+    {
+     "count": 0,
+     "label": "Estado del framework",
+     "mtime": 0,
+     "path": ".papersmith/version"
+    }
+   ],
+   "gate": "G-HARNESS",
+   "id": "Fase 1",
+   "name": "Fase 1: Configuración de Entorno & Harness",
+   "outputs": [
+    ".papersmith/",
+    "papersmith.yaml",
+    "pyproject.toml"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "upgrade-project"
+   ],
+   "stage_id": "harness",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "papersmith.yaml y estructura base versionada",
+     "detail": "papersmith.yaml y estructura base versionada",
+     "id": "1.1",
+     "name": "Workspace & Manifiesto",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Enlaces simbólicos a arneses operacionales",
+     "detail": "Enlaces simbólicos a arneses operacionales",
+     "id": "1.2",
+     "name": "Proyección de Agentes",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Python 3.12 y dependencias del entorno",
+     "detail": "Python 3.12 y dependencias del entorno",
+     "id": "1.3",
+     "name": "Aislamiento Micromamba",
+     "status": "PENDING"
+    },
+    {
+     "desc": "CLI smith verificado",
+     "detail": "CLI smith verificado",
+     "id": "1.4",
+     "name": "Integridad de CLI",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "bash"
+   ],
+   "unlocked": true
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Escribe la idea en al menos dos oraciones: el problema y lo que propones (si no, el agente se niega a buscar).",
+      "El agente reúne ~25 referencias SOTA por sus abstracts, en 3 a 7 familias, y dibuja la constelación (atlas.html).",
+      "Luego divide la hipótesis en afirmaciones y califica cada una (novel / known / tension / contradicted) con citas literales.",
+      "Nada se ingiere ni se archiva: el informe espera tu aceptación antes de pasar el top 5 a ingestión.",
+      "Puedes ajustar la idea y pedir un nuevo screening; cada pasada es un informe nuevo.",
+      "¿Aún no tienes una idea clara? Abre la Ayuda temática, escribe de 3 a 5 palabras clave y el Banco LIA te propone una que puedes editar y aprobar."
+     ],
+     "keyword_help": true,
+     "kind": "prompt",
+     "label": "Explorar la plausibilidad de la idea",
+     "min_sentences": 2,
+     "optional": false,
+     "placeholder": "Ej.: Los modelos actuales pierden precisión fuera de su dominio de entrenamiento. Propongo …",
+     "prefix": "",
+     "slash": "/plausibility"
+    },
+    {
+     "desc": "Atlas 3D del pool de candidatos.",
+     "kind": "redirect",
+     "label": "Ver la constelación SOTA",
+     "section": "",
+     "tab": "atlas"
+    },
+    {
+     "desc": "Cada artículo explorado con su familia, año, revista y resumen.",
+     "kind": "redirect",
+     "label": "Ver la matriz de candidatos",
+     "section": "papers",
+     "tab": "atlas"
+    }
+   ],
+   "agent": "sota-scout → sota-grapher → novelty-screener",
+   "blocked_by": "Fase 1",
+   "cli_command": "/plausibility <text>",
+   "desc": "Exploración SOTA, validación de plausibilidad y compilación del Atlas 3D de candidatos y constelación conceptual. Si aún no hay una idea clara, la ayuda temática opcional convierte de 3 a 5 palabras clave en una idea propuesta a partir del Banco LIA, que el operador edita, aprueba y lanza.",
+   "detail": "Sin artefactos en sota-pool/",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Pool de candidatos",
+     "mtime": 0,
+     "path": "sota-pool/candidates.json"
+    },
+    {
+     "count": 0,
+     "label": "Atlas SOTA",
+     "mtime": 0,
+     "path": "sota-pool/atlas.json"
+    },
+    {
+     "count": 0,
+     "label": "Constelación HTML",
+     "mtime": 0,
+     "path": "sota-pool/atlas.html"
+    }
+   ],
+   "gate": "G-SOTA",
+   "id": "Fase 2",
+   "name": "Fase 2: Plausibilidad & SOTA Atlas 3D",
+   "outputs": [
+    "sota-pool/atlas.json",
+    "sota-pool/atlas.html",
+    "sota-pool/candidates.json"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "plausibility"
+   ],
+   "stage_id": "plausibility",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Búsqueda y filtrado de literatura Q1/Q2",
+     "detail": "Búsqueda y filtrado de literatura Q1/Q2",
+     "id": "2.1",
+     "name": "Discovery de Artículos SOTA",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Clasificación taxonómica de candidatos",
+     "detail": "Clasificación taxonómica de candidatos",
+     "id": "2.2",
+     "name": "Extracción de Metadatos & Familias",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Generación de atlas.json para visualización WebGL",
+     "detail": "Generación de atlas.json para visualización WebGL",
+     "id": "2.3",
+     "name": "Embedding Espacial & Constelación 3D",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Identificación de vacíos conceptuales y oportunidad",
+     "detail": "Identificación de vacíos conceptuales y oportunidad",
+     "id": "2.4",
+     "name": "Detección de Brecha de Novedad",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "write",
+    "mcp"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Indica la ruta o URL de los PDF a ingerir (normalmente el top 5 aceptado en plausibilidad).",
+      "Cada PDF se archiva en su carpeta de tema y se convierte a Markdown: ecuaciones en LaTeX, tablas en Markdown, figuras como archivos.",
+      "Local y sin llaves (Marker); nada se publica."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Ingerir referencias",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: ingiere guidance/reference-papers/inbox/*.pdf",
+     "prefix": "",
+     "slash": "/paper-ingestion"
+    },
+    {
+     "command": "smith ingest <path-or-url> .",
+     "desc": "Reemplaza <ruta-o-url> por el PDF o la URL.",
+     "kind": "command",
+     "label": "Ingerir desde el CLI"
+    },
+    {
+     "desc": "Markdown y figuras de las referencias.",
+     "kind": "redirect",
+     "label": "Ver artefactos ingeridos",
+     "section": "",
+     "tab": "artifacts"
+    }
+   ],
+   "agent": "paper-ingestion",
+   "blocked_by": "Fase 2",
+   "cli_command": "/paper-ingestion <text>",
+   "desc": "Ingestión a Markdown de artículos de referencia, normalización BibTeX de bibliografía y extracción de insumos base.",
+   "detail": "Sin artículos de referencia en guidance/",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Referencias ingeridas",
+     "mtime": 0,
+     "path": "guidance/reference-papers/*/*.md"
+    }
+   ],
+   "gate": "G-INGEST",
+   "id": "Fase 3",
+   "name": "Fase 3: Ingestión de Referencias & Literatura",
+   "outputs": [
+    "guidance/reference-papers/",
+    "paper/refs.bib",
+    "paper/Figures/"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "paper-ingestion"
+   ],
+   "stage_id": "ingestion",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Conversión estructural de PDFs a Markdown limpio",
+     "detail": "Conversión estructural de PDFs a Markdown limpio",
+     "id": "3.1",
+     "name": "Ingestión de Artículos Base",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Citas verificadas y consolidadas",
+     "detail": "Citas verificadas y consolidadas",
+     "id": "3.2",
+     "name": "Normalización BibTeX (refs.bib)",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Figuras y diagramas de referencia",
+     "detail": "Figuras y diagramas de referencia",
+     "id": "3.3",
+     "name": "Extracción Vectorial de Figuras",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Extracción de parámetros para el manuscrito",
+     "detail": "Extracción de parámetros para el manuscrito",
+     "id": "3.4",
+     "name": "Extracción de Hechos e Insumos",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "write",
+    "marker"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Pide la primera versión, un cambio a la propuesta vigente o una operación de revisión (rNN).",
+      "El agente es tutor: discute antes de decidir y no aplica un cambio sin tu aprobación.",
+      "La matemática se escribe en bloques $$ … \\tag{N} $$; la novedad se ubica dentro del cielo SOTA.",
+      "The central problem, every direct cause, pillar, hypothesis, layer and numbered equation is justified by 2 to 5 references of the SOTA pool in .papersmith/citations.json; the problem, causes, pillars and hypotheses take Q1 or Q2 journal articles en most 4 years old.",
+      "Las guías de dominio en guidance/paper-guide/ se cargan solas."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Deliberar la propuesta",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: discutamos si la hipótesis H2 sigue en pie con la referencia de Smith 2024.",
+     "prefix": "",
+     "slash": "/proposal-deliberation"
+    },
+    {
+     "desc": "Pilares, hipótesis y capas del concepto.",
+     "kind": "redirect",
+     "label": "Discutir el mapa conceptual",
+     "section": "mapa",
+     "tab": "modelo"
+    },
+    {
+     "desc": "Ecuaciones en LaTeX, tarjeta de novedad y tutor con imágenes a mano.",
+     "kind": "redirect",
+     "label": "Matemática y tutor socrático",
+     "section": "matematico",
+     "tab": "modelo"
+    }
+   ],
+   "agent": "proposal-deliberation & math-tutor",
+   "blocked_by": "Fase 3",
+   "cli_command": "/proposal-deliberation <text>",
+   "desc": "Deliberación científica formal de la propuesta (rNN), definición de novedad, discusión del mapa conceptual y de la matemática con el tutor socrático.",
+   "detail": "Sin propuesta en proposals/",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Revisiones de propuesta",
+     "mtime": 0,
+     "path": "proposals/research-concept-*-r*.md"
+    },
+    {
+     "count": 0,
+     "label": "Cielo de la propuesta",
+     "mtime": 0,
+     "path": "proposals/*.sky.json"
+    }
+   ],
+   "gate": "G-PROP",
+   "id": "Fase 4",
+   "name": "Fase 4: Deliberación de Propuesta & Modelo Conceptual",
+   "outputs": [
+    "proposals/"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "proposal-deliberation",
+    "math-tutor"
+   ],
+   "stage_id": "proposal",
+   "status": "PENDING",
+   "steps": [
+    {
+     "done": false,
+     "evidence": {
+      "pillars": 0,
+      "problem": false,
+      "source": ""
+     },
+     "id": "problem_pillars",
+     "requires": null,
+     "started": false,
+     "status": "ACTIVE"
+    },
+    {
+     "done": false,
+     "evidence": {
+      "hypotheses": 0,
+      "source": ""
+     },
+     "id": "hypotheses",
+     "requires": "problem_pillars",
+     "started": false,
+     "status": "LOCKED"
+    },
+    {
+     "done": false,
+     "evidence": {
+      "equations": 0,
+      "revision": ""
+     },
+     "id": "mathematics",
+     "requires": "hypotheses",
+     "started": false,
+     "status": "LOCKED"
+    },
+    {
+     "done": false,
+     "evidence": {
+      "cited": 0,
+      "ideas": 0,
+      "owed": []
+     },
+     "id": "sota_citations",
+     "requires": "mathematics",
+     "started": false,
+     "status": "LOCKED"
+    },
+    {
+     "done": false,
+     "evidence": {
+      "type": ""
+     },
+     "id": "judge_review",
+     "requires": "sota_citations",
+     "started": false,
+     "status": "LOCKED"
+    }
+   ],
+   "subfases": [
+    {
+     "desc": "El problema central y al menos un pilar, en .papersmith/model_spec.json o en la capa .sky.json de la revisión",
+     "detail": "El problema central y al menos un pilar, en .papersmith/model_spec.json o en la capa .sky.json de la revisión",
+     "id": "4.1",
+     "name": "Paso 1: Problema y pilares",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Las hipótesis que predice cada pilar; bloqueado hasta que pase el paso 1",
+     "detail": "Las hipótesis que predice cada pilar; bloqueado hasta que pase el paso 1",
+     "id": "4.2",
+     "name": "Paso 2: Hipótesis",
+     "status": "LOCKED"
+    },
+    {
+     "desc": "Al menos un bloque $$ … \\tag{N} $$ en la última revisión; bloqueado hasta que pase el paso 2",
+     "detail": "Al menos un bloque $$ … \\tag{N} $$ en la última revisión; bloqueado hasta que pase el paso 2",
+     "id": "4.3",
+     "name": "Paso 3: Matemática",
+     "status": "LOCKED"
+    },
+    {
+     "desc": "Revisión sellada con hash SHA-256",
+     "detail": "Revisión sellada con hash SHA-256",
+     "id": "4.4",
+     "name": "Stage published: Publicación & Recibo Criptográfico",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Pilares, hipótesis y capas del concepto (pestaña Mapa Conceptual)",
+     "detail": "Pilares, hipótesis y capas del concepto (pestaña Mapa Conceptual)",
+     "id": "4.5",
+     "name": "Discusión del mapa conceptual",
+     "status": "LOCKED"
+    },
+    {
+     "desc": "Ecuaciones en LaTeX, tarjeta de novedad y tutor con imágenes a mano (math-tutor)",
+     "detail": "Ecuaciones en LaTeX, tarjeta de novedad y tutor con imágenes a mano (math-tutor)",
+     "id": "4.6",
+     "name": "Matemática y tutor socrático",
+     "status": "LOCKED"
+    },
+    {
+     "desc": "Cada pilar, hipótesis, capa del mapa conceptual y ecuación numerada se justifica con 2 a 5 referencias del pool del SOTA en .papersmith/citations.json; bloqueado hasta que pase el paso 3",
+     "detail": "Cada pilar, hipótesis, capa del mapa conceptual y ecuación numerada se justifica con 2 a 5 referencias del pool del SOTA en .papersmith/citations.json; bloqueado hasta que pase el paso 3",
+     "id": "4.7",
+     "name": "Paso 4: Citas del SOTA",
+     "status": "LOCKED"
+    },
+    {
+     "desc": "El paper-reviewer clasifica el tipo de contribución de la propuesta (contribution_type en .papersmith/model_spec.json); la Fase 5 sigue bloqueada hasta entonces.",
+     "detail": "El paper-reviewer clasifica el tipo de contribución de la propuesta (contribution_type en .papersmith/model_spec.json); la Fase 5 sigue bloqueada hasta entonces.",
+     "id": "4.8",
+     "name": "Paso 5: Juez-revisor",
+     "status": "LOCKED"
+    }
+   ],
+   "tools": [
+    "read",
+    "write",
+    "deliberate"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Pregunta que gobierna cada turno: ¿qué experimento pondría a prueba esta afirmación de la propuesta?",
+      "Cada experimento declara la afirmación que prueba, su métrica y su baseline SOTA.",
+      "Cada experimento se justifica con 2 a 5 referencias del pool del SOTA en .papersmith/citations.json; la implementación sigue bloqueada hasta entonces.",
+      "Pide la primera versión, un cambio o una operación de revisión; nada se aplica sin tu aprobación."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Deliberar el diseño experimental",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: diseña el experimento que prueba la afirmación C1 contra el baseline más fuerte del SOTA.",
+     "prefix": "",
+     "slash": "/experimental-deliberation"
+    },
+    {
+     "guide": [
+      "Verbos: synth (toy set sembrado, siempre), search, license, qc, prepare y publish.",
+      "dataset-scout busca en repositorios oficiales del paper, Kaggle, Hugging Face, OpenNeuro y Zenodo, y decide la licencia.",
+      "dataset-curator mide la calidad (qc) y escribe una sola preparación oficial por sujeto que leen la PoC y los experimentos.",
+      "publish sube un dataset privado solo con tu consentimiento explícito; hacerlo público pide un consentimiento aparte."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Datos: toy set siempre y dataset oficial",
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: synth un toy set de 8 sujetos y busca un dataset oficial para la tarea.",
+     "prefix": "",
+     "slash": "/datasets"
+    },
+    {
+     "guide": [
+      "El agente paper-replicator replica cada baseline o paper de comparación ingerido en guidance/.",
+      "Sigue bloqueada hasta que cada experimento del último protocolo tenga sus 2 a 5 citas del SOTA (G-SOTA-CITATIONS).",
+      "Primero busca el código publicado del paper: si existe, lo adopta fijado a un commit con su licencia y audita que corresponda con el paper y esté bien implementado.",
+      "Si no hay código publicado, reimplementa el método desde el Markdown ingerido; cada hiperparámetro cita su sección o ecuación.",
+      "Termina con REPLICATION.md, pruebas de invariantes y una corrida corta sobre el toy set; nunca lanza una corrida remota."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Réplica de métodos de comparación",
+     "locked": false,
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: replica el baseline de guidance/smith-2024 en ../mi-poc",
+     "prefix": "",
+     "requires": "G-SOTA-CITATIONS",
+     "slash": "/proposal-implementation"
+    },
+    {
+     "guide": [
+      "Convierte la última propuesta en Python contra un repositorio objetivo, o verifica una implementación existente.",
+      "Sigue bloqueada hasta que cada experimento del último protocolo tenga sus 2 a 5 citas del SOTA (G-SOTA-CITATIONS).",
+      "Indica el repositorio objetivo y si es primera pasada o una pasada posterior.",
+      "Está lista cuando Results/discussion.json está completo: veredictos de hipótesis respaldados por pruebas, novedad y análisis cualitativo (python skills/_core/results/discussion_cli.py scaffold|check --product <path>)."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Implementar la prueba de concepto",
+     "locked": false,
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: implementa la PoC de la propuesta r03 en ../mi-poc",
+     "prefix": "",
+     "requires": "G-SOTA-CITATIONS",
+     "slash": "/proposal-implementation"
+    },
+    {
+     "desc": "Antes del piloto y otra vez antes de la corrida completa: sonda de tiempo corta (una época de un fold por brazo) en Results/timing.json; la pestaña Experimentos estima la PoC y la corrida completa (±20%), muestra el entorno local y las opciones de corrida local, Kaggle y Colab.",
+     "kind": "redirect",
+     "label": "Estimar tiempo y elegir dónde correr",
+     "section": "",
+     "tab": "experiments"
+    },
+    {
+     "guide": [
+      "Solo si la deliberación lo estimó conveniente: el protocolo declara la búsqueda y su espacio.",
+      "Anidada dentro de los sujetos de entrenamiento de cada fold externo, sin ver los sujetos de prueba.",
+      "Mismo presupuesto de trials para cada brazo y baseline; nunca ajusta una variable independiente que el experimento prueba.",
+      "Sampler con semilla y evaluador de importancia declarado (Optuna 5 usa PED-ANOVA por defecto).",
+      "report escribe contornos e importancia que la pestaña Experimentos muestra.",
+      "Corre en remoto como la corrida completa y solo el operador la lanza."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Búsqueda de hiperparámetros (Optuna)",
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: plan para los brazos hybrid y linear con 40 trials y fANOVA como evaluador.",
+     "prefix": "",
+     "slash": "/hyperparameter-search"
+    },
+    {
+     "guide": [
+      "Convierte el protocolo experimental vigente en Python y corre sus mediciones declaradas.",
+      "Indica el repositorio objetivo; la verificación compara contra el protocolo y la propuesta.",
+      "Está listo cuando Results/discussion.json está completo (python skills/_core/results/discussion_cli.py scaffold|check --product <path>); la corrida completa exige una prueba de hipótesis detrás de cada veredicto.",
+      "Antes de cualquier ensayo remoto, experiments-reviewer revisa el código (calidad, optimización, uso de GPU y pruebas estadísticas) y entrega su informe.",
+      "Empieza solo después de verificar la prueba de concepto (G-EXP-POC): una discusión de la PoC completa y la aprobación del operador en la pestaña Novedad o con smith novelty approve --gate poc.",
+      "También espera las 2 a 5 citas del SOTA de cada experimento del último protocolo (G-SOTA-CITATIONS)."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Implementar y medir los experimentos",
+     "locked": true,
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: implementa E1 y E2 y reporta las métricas.",
+     "prefix": "",
+     "requires": "G-EXP-POC",
+     "slash": "/experimental-implementation"
+    },
+    {
+     "guide": [
+      "Al aprobar la PoC (AGREED.md) dibuja el diagrama poc; al aprobar los experimentos completos (Experimental_AGREED.md), el diagrama experiments.",
+      "Cada uno es una figura TikZ (PDF y PNG) en <producto>/diagrams/; también se genera con el botón \"Generar diagrama\" de la pestaña Experimentos.",
+      "Valídalo tú en la pestaña Experimentos (\"Validar diagrama\") o apruébalo explícitamente en el chat con el agente, que corre validate con tus palabras: submit se niega con DIAGRAM_NOT_VALIDATED hasta entonces, y redibujarlo pide validarlo de nuevo."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Diagramas de la PoC y de los experimentos",
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: poc para el producto implementations/mi-poc/Modelo.",
+     "prefix": "",
+     "slash": "/experiment-diagrams"
+    },
+    {
+     "guide": [
+      "Primero estimate --timing <objetivo>/<Nombre>/Results/timing.json: el rango por etapa y host (±20%).",
+      "Luego assess con las entradas medidas; --owners es el número de propietarios distintos del equipo (smith team list), nunca el de cuentas.",
+      "Regla del equipo: una cuenta por persona y servicio; cada persona se registra con `smith team add --owner <slug> --name \"<nombre>\" --kaggle-username <usuario> --attest`.",
+      "No coloca, no genera ni lanza nada: el veredicto lo lee el operador."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Decidir si repartir entre cuentas",
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: estima la PoC con su timing.json y evalúa repartir la corrida completa entre 3 propietarios.",
+     "prefix": "",
+     "slash": "/remote-parallelism"
+    },
+    {
+     "guide": [
+      "validate re-comprueba cada cuenta guardada contra el servicio y toma lo que haya en kaggle-inbox/ (kaggle.json o una línea `usuario token`).",
+      "Solo las cuentas que el registro del equipo asigna a un propietario son workers: una por persona."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Validar las cuentas Kaggle",
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: valida las cuentas y toma las credenciales nuevas del inbox.",
+     "prefix": "validate ",
+     "slash": "/kaggle-accounts"
+    },
+    {
+     "guide": [
+      "Orden: generate-job → submit --smoke → fetch --smoke y smoke record → readiness → gate (solo el operador) → submit → status / poll → fetch.",
+      "El ledger es de solo anexar; si las cuentas no autentican, usa primero /kaggle-accounts.",
+      "Solo el operador autoriza un lanzamiento: ningún agente ejecuta submit por su cuenta.",
+      "submit (también --smoke) exige que hayas validado los diagramas de la PoC y de los experimentos aprobados."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Ensayo remoto y lanzamiento (Kaggle / Colab)",
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: genera el job de experiments/e1.py y prepara su ensayo smoke.",
+     "prefix": "",
+     "slash": "/remote-execution"
+    },
+    {
+     "desc": "Productos, veredictos y diagramas de la prueba de concepto y de los experimentos.",
+     "kind": "redirect",
+     "label": "Ver la PoC y los experimentos",
+     "section": "",
+     "tab": "experiments"
+    }
+   ],
+   "agent": "experimental-validation → experimental-publish → dataset-scout / dataset-curator → paper-replicator → implementation-build → experiments-build → experiments-reviewer → experiments-walk",
+   "blocked_by": "Fase 4",
+   "cli_command": "/experimental-deliberation <text>",
+   "desc": "Deliberación del protocolo experimental, toy set, réplica de los métodos de comparación, prueba de concepto, verificación de la prueba de concepto por el operador (G-EXP-POC), estimación de tiempo, búsqueda de hiperparámetros opcional, experimentos completos, revisión del código, ensayo remoto y lanzamiento autorizado por el operador, en local o en un servicio remoto (CLI o MCP).",
+   "detail": "Protocolo publicado: no · PoC con discusión completa: 0 de 0 · PoC verificada (G-EXP-POC): no · experimentos completos con discusión completa: 0 de 0",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Protocolos experimentales",
+     "mtime": 0,
+     "path": "experiments/*"
+    },
+    {
+     "count": 0,
+     "label": "Implementaciones",
+     "mtime": 0,
+     "path": "implementations/*"
+    }
+   ],
+   "gate": "G-EXP-POC",
+   "id": "Fase 5",
+   "name": "Fase 5: Prueba de concepto y experimentos",
+   "outputs": [
+    "experiments/",
+    "datasets/registry.json",
+    "implementations/"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "experimental-deliberation",
+    "datasets",
+    "proposal-implementation",
+    "remote-parallelism",
+    "hyperparameter-search",
+    "experimental-implementation",
+    "experiment-diagrams",
+    "kaggle-accounts",
+    "remote-execution"
+   ],
+   "stage_id": "poc_experiments",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Criterios de éxito y métricas cuantificables (pasa con la revisión publicada)",
+     "detail": "Criterios de éxito y métricas cuantificables (pasa con la revisión publicada)",
+     "id": "5.1",
+     "name": "Stage bound: Anclaje de Claims & Métricas",
+     "status": "PENDING"
+    },
+    {
+     "desc": "experimental-validation contrasta protocolo, métricas y baselines con búsquedas fechadas",
+     "detail": "experimental-validation contrasta protocolo, métricas y baselines con búsquedas fechadas",
+     "id": "5.2",
+     "name": "Stage validated: Baselines & SOTA",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Protocolos de ensayo y validación",
+     "detail": "Protocolos de ensayo y validación",
+     "id": "5.3",
+     "name": "Stage deliberated: Diseño Metrológico & Protocolos",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Formalización de experimentos con instrumentación",
+     "detail": "Formalización de experimentos con instrumentación",
+     "id": "5.4",
+     "name": "Stage composed: Especificación de Experimentos",
+     "status": "PENDING"
+    },
+    {
+     "desc": "experimental-publish deja experiments/experiments-<slug>-vNN.md con el marcador de artefacto (0 revisión(es) publicada(s))",
+     "detail": "experimental-publish deja experiments/experiments-<slug>-vNN.md con el marcador de artefacto (0 revisión(es) publicada(s))",
+     "id": "5.5",
+     "name": "Stage published: Aprobación de Gate",
+     "status": "PENDING"
+    },
+    {
+     "desc": "/datasets synth|search|license|qc|prepare|publish con dataset-scout y dataset-curator; pasa con un toy set en datasets/registry.json; publicación privada solo con consentimiento del operador",
+     "detail": "/datasets synth|search|license|qc|prepare|publish con dataset-scout y dataset-curator; pasa con un toy set en datasets/registry.json; publicación privada solo con consentimiento del operador",
+     "id": "5.6",
+     "name": "Datos: toy set siempre y dataset oficial",
+     "status": "PENDING"
+    },
+    {
+     "desc": "/proposal-implementation → paper-replicator: primero el código publicado, adoptado y auditado; si no existe, reimplementación (0 REPLICATION.md)",
+     "detail": "/proposal-implementation → paper-replicator: primero el código publicado, adoptado y auditado; si no existe, reimplementación (0 REPLICATION.md)",
+     "id": "5.7",
+     "name": "Réplica de métodos de comparación",
+     "status": "PENDING"
+    },
+    {
+     "desc": "/proposal-implementation (implementation-build): carpeta con AGREED.md, Results/ y un Results/discussion.json completo (veredictos de hipótesis, pruebas, novedad, análisis cualitativo): 0 de 0; verifique con `python skills/_core/results/discussion_cli.py check --product <path>`",
+     "detail": "/proposal-implementation (implementation-build): carpeta con AGREED.md, Results/ y un Results/discussion.json completo (veredictos de hipótesis, pruebas, novedad, análisis cualitativo): 0 de 0; verifique con `python skills/_core/results/discussion_cli.py check --product <path>`",
+     "id": "5.8",
+     "name": "Prueba de concepto",
+     "status": "PENDING"
+    },
+    {
+     "desc": "El operador verifica los resultados y las hipótesis contrastadas de la prueba de concepto cuando su discusión está completa: la tarjeta de verificación de la pestaña Novedad, o smith novelty approve --gate poc (iterate --gate poc la devuelve); los experimentos completos quedan bloqueados hasta entonces",
+     "detail": "El operador verifica los resultados y las hipótesis contrastadas de la prueba de concepto cuando su discusión está completa: la tarjeta de verificación de la pestaña Novedad, o smith novelty approve --gate poc (iterate --gate poc la devuelve); los experimentos completos quedan bloqueados hasta entonces",
+     "id": "5.9",
+     "name": "Verificación de la prueba de concepto (G-EXP-POC, operador)",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Antes del piloto y otra vez antes de la corrida completa: sonda de tiempo corta (una época de un fold por brazo) en Results/timing.json; la pestaña Experimentos estima la PoC y la corrida completa (±20%) y lista las opciones local y remotas",
+     "detail": "Antes del piloto y otra vez antes de la corrida completa: sonda de tiempo corta (una época de un fold por brazo) en Results/timing.json; la pestaña Experimentos estima la PoC y la corrida completa (±20%) y lista las opciones local y remotas",
+     "id": "5.10",
+     "name": "Estimar tiempo y elegir dónde correr",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Solo si la deliberación la estimó conveniente: /hyperparameter-search plan|report|status, anidada dentro de cada fold externo, mismo presupuesto por brazo, evaluador de importancia declarado; contornos e importancia en Results/hpo/ (0 producto(s) con estudios)",
+     "detail": "Solo si la deliberación la estimó conveniente: /hyperparameter-search plan|report|status, anidada dentro de cada fold externo, mismo presupuesto por brazo, evaluador de importancia declarado; contornos e importancia en Results/hpo/ (0 producto(s) con estudios)",
+     "id": "5.11",
+     "name": "Búsqueda de hiperparámetros (Optuna, opcional)",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Bloqueado hasta verificar la prueba de concepto (G-EXP-POC). /experimental-implementation (experiments-build): carpeta con Experimental_AGREED.md, Results/ y un Results/discussion.json completo (veredictos de hipótesis respaldados por pruebas, novedad, análisis cualitativo): 0 de 0; verifique con `python skills/_core/results/discussion_cli.py check --product <path>`",
+     "detail": "Bloqueado hasta verificar la prueba de concepto (G-EXP-POC). /experimental-implementation (experiments-build): carpeta con Experimental_AGREED.md, Results/ y un Results/discussion.json completo (veredictos de hipótesis respaldados por pruebas, novedad, análisis cualitativo): 0 de 0; verifique con `python skills/_core/results/discussion_cli.py check --product <path>`",
+     "id": "5.12",
+     "name": "Experimentos completos",
+     "status": "LOCKED"
+    },
+    {
+     "desc": "Calidad del código, optimización, uso de GPU y pruebas estadísticas declaradas; lee Results/reviewer_report.json (estado resolved, o todos los bloqueos resueltos): 0 resueltos de 0 informe(s)",
+     "detail": "Calidad del código, optimización, uso de GPU y pruebas estadísticas declaradas; lee Results/reviewer_report.json (estado resolved, o todos los bloqueos resueltos): 0 resueltos de 0 informe(s)",
+     "id": "5.13",
+     "name": "Revisión del código (experiments-reviewer) antes del ensayo",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Solo para corridas remotas (local corre directo). /kaggle-accounts validate y smith team add --attest (una cuenta por persona y servicio); luego generate-job → submit --smoke → fetch --smoke y smoke record → readiness → gate (operador) → submit → status / poll → fetch. Ensayos aprobados: 0; ledgers con envíos: 0",
+     "detail": "Solo para corridas remotas (local corre directo). /kaggle-accounts validate y smith team add --attest (una cuenta por persona y servicio); luego generate-job → submit --smoke → fetch --smoke y smoke record → readiness → gate (operador) → submit → status / poll → fetch. Ensayos aprobados: 0; ledgers con envíos: 0",
+     "id": "5.14",
+     "name": "Ensayo remoto y autorización del lanzamiento (operador)",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Cada experimento del último protocolo se justifica con 2 a 5 referencias del pool del SOTA en .papersmith/citations.json; las acciones de implementación y G-EXP-POC las esperan (0 de 0 citados)",
+     "detail": "Cada experimento del último protocolo se justifica con 2 a 5 referencias del pool del SOTA en .papersmith/citations.json; las acciones de implementación y G-EXP-POC las esperan (0 de 0 citados)",
+     "id": "5.15",
+     "name": "Citas del SOTA de los experimentos",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "write",
+    "validate"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Nombra un bloque o una acción: abrir el árbol paper/, ver qué fase de escritura está desbloqueada, o escribir un bloque.",
+      "Un bloque se escribe solo: el agente nunca toca otro byte de paper/main.tex.",
+      "Cada afirmación necesita una fuente que la sostenga (resolve); sin fuente, no se escribe.",
+      "refs.bib proviene de bib build; cuando cambien las citas, ejecute resolve --references para guardar el resumen de cada artículo.",
+      "Escribe en el idioma del paper; el registro y el estilo vienen de las declaraciones."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Abrir el árbol del paper",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: abre el esqueleto de secciones y bloques del paper.",
+     "prefix": "skeleton ",
+     "slash": "/paper-writing"
+    },
+    {
+     "desc": "Contratos de sección y bloques canónicos.",
+     "kind": "redirect",
+     "label": "Ver secciones del paper",
+     "section": "",
+     "tab": "sections"
+    }
+   ],
+   "agent": "paper-writing",
+   "blocked_by": "Fase 5",
+   "cli_command": "/paper-writing <text>",
+   "desc": "Andamiaje de paper/main.tex con bloques canónicos y contratos de sección bajo la clase tipográfica del journal.",
+   "detail": "paper/main.tex pendiente de andamiaje",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Manuscrito",
+     "mtime": 0,
+     "path": "paper/main.tex"
+    },
+    {
+     "count": 0,
+     "label": "Contratos de sección",
+     "mtime": 0,
+     "path": "sections/*.md"
+    }
+   ],
+   "gate": "G-SCAFFOLD",
+   "id": "Fase 6",
+   "name": "Fase 6: Andamiaje de Manuscrito & Contratos",
+   "outputs": [
+    "paper/main.tex",
+    "paper/refs.bib",
+    "sections/*.md"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "paper-writing"
+   ],
+   "stage_id": "scaffolding",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Contratos canónicos en sections/*.md",
+     "detail": "Contratos canónicos en sections/*.md",
+     "id": "6.1",
+     "name": "Estructura de Secciones",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Marcadores y hashes SHA-256 integrados",
+     "detail": "Marcadores y hashes SHA-256 integrados",
+     "id": "6.2",
+     "name": "Apertura de Bloques Canónicos",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Preguntas editoriales y acoplamiento de hechos",
+     "detail": "Preguntas editoriales y acoplamiento de hechos",
+     "id": "6.3",
+     "name": "Asignación de Roles Retóricos",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Plantilla LaTeX del journal objetivo",
+     "detail": "Plantilla LaTeX del journal objetivo",
+     "id": "6.4",
+     "name": "Configuración Tipográfica",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "write"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Una declaración fija una decisión del paper: autoría CRediT, financiación, datos y código, ética, idioma o estilo.",
+      "Escribe la declaración y su valor; queda registrada con su procedencia (mark)."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Registrar una declaración",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: idioma del manuscrito: inglés; disponibilidad de código: GitHub público.",
+     "prefix": "mark ",
+     "slash": "/paper-writing"
+    },
+    {
+     "desc": "Declaraciones y bloques del manuscrito.",
+     "kind": "redirect",
+     "label": "Ver secciones del paper",
+     "section": "",
+     "tab": "sections"
+    }
+   ],
+   "agent": "paper-writing (mark)",
+   "blocked_by": "Fase 6",
+   "cli_command": "/paper-writing <text>",
+   "desc": "Fijación de declaraciones operativas: autoría CRediT, financiación, repositorio abierto y consideraciones éticas.",
+   "detail": "Declaraciones pendientes de fijación",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Manuscrito (región de declaraciones)",
+     "mtime": 0,
+     "path": "paper/main.tex"
+    }
+   ],
+   "gate": "G-DECLARATIONS",
+   "id": "Fase 7",
+   "name": "Fase 7: Declaraciones Operativas & Coautoría",
+   "outputs": [
+    "paper/main.tex (declarations)"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "paper-writing"
+   ],
+   "stage_id": "declarations",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Roles autorales formalizados",
+     "detail": "Roles autorales formalizados",
+     "id": "7.1",
+     "name": "Taxonomía CRediT de Coautoría",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Protocolos éticos e institucionales",
+     "detail": "Protocolos éticos e institucionales",
+     "id": "7.2",
+     "name": "Declaración Ética",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Repositorio y accesibilidad",
+     "detail": "Repositorio y accesibilidad",
+     "id": "7.3",
+     "name": "Disponibilidad de Datos y Código",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Región declarations bloqueada con hash",
+     "detail": "Región declarations bloqueada con hash",
+     "id": "7.4",
+     "name": "Sellado en main.tex",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "write"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Nombra un bloque o una acción: abrir el árbol paper/, ver qué fase de escritura está desbloqueada, o escribir un bloque.",
+      "Un bloque se escribe solo: el agente nunca toca otro byte de paper/main.tex.",
+      "Cada afirmación necesita una fuente que la sostenga (resolve); sin fuente, no se escribe.",
+      "refs.bib proviene de bib build; cuando cambien las citas, ejecute resolve --references para guardar el resumen de cada artículo.",
+      "Escribe en el idioma del paper; el registro y el estilo vienen de las declaraciones."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Escribir un bloque",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: escribe el bloque intro.motivation",
+     "prefix": "",
+     "slash": "/paper-writing"
+    },
+    {
+     "desc": "Estado de cada bloque.",
+     "kind": "redirect",
+     "label": "Ver secciones del paper",
+     "section": "",
+     "tab": "sections"
+    },
+    {
+     "desc": "Previsualización de paper/main.pdf.",
+     "kind": "redirect",
+     "label": "Ver el PDF",
+     "section": "",
+     "tab": "preview"
+    }
+   ],
+   "agent": "paper-writing (redactor)",
+   "blocked_by": "Fase 7",
+   "cli_command": "/paper-writing <text>",
+   "desc": "Redacción técnica por oleadas de los bloques canónicos del manuscrito a partir de los datos experimentales.",
+   "detail": "0/0 bloques canónicos redactados (0 palabras)",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Manuscrito",
+     "mtime": 0,
+     "path": "paper/main.tex"
+    }
+   ],
+   "gate": "G-WRITING",
+   "id": "Fase 8",
+   "manuscript_ref": {
+    "pages": "1–10",
+    "words": 0
+   },
+   "name": "Fase 8: Redacción Técnica & Transposición",
+   "outputs": [
+    "paper/main.tex",
+    "sections/*.md"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "paper-writing"
+   ],
+   "stage_id": "writing",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Slots iniciales en pág. 1",
+     "detail": "Slots iniciales en pág. 1",
+     "id": "8.1",
+     "name": "Wave 1: Título, Keywords & Abstract",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Bloques de introducción y motivación",
+     "detail": "Bloques de introducción y motivación",
+     "id": "8.2",
+     "name": "Wave 2: Introducción & Hipótesis",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Estado del arte y tabla comparativa",
+     "detail": "Estado del arte y tabla comparativa",
+     "id": "8.3",
+     "name": "Wave 3: Related Work & SOTA",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Bloques técnicos y experimentales",
+     "detail": "Bloques técnicos y experimentales",
+     "id": "8.4",
+     "name": "Wave 4–9: Métodos, Resultados & Conclusiones",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "write",
+    "substitute"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Indica el id de la figura ya compilada en paper/Figures/<id>.pdf.",
+      "La revisión juzga si la imagen se lee por sí misma, no el texto que la describe."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Revisar una figura",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: revisa la figura fig-architecture",
+     "prefix": "",
+     "slash": "/figure-review"
+    },
+    {
+     "desc": "Figuras en el manuscrito compilado.",
+     "kind": "redirect",
+     "label": "Ver el PDF",
+     "section": "",
+     "tab": "preview"
+    }
+   ],
+   "agent": "figure-review",
+   "blocked_by": "Fase 8",
+   "cli_command": "/figure-review <text>",
+   "desc": "Elaboración de diagramas de arquitectura, figuras vectoriales, esquemas y grounding con el texto.",
+   "detail": "0 figuras en paper/Figures/",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Figuras compiladas",
+     "mtime": 0,
+     "path": "paper/Figures/*.pdf"
+    }
+   ],
+   "gate": "G-FIGURES",
+   "id": "Fase 9",
+   "name": "Fase 9: Diagramas Técnicos & Grounding",
+   "outputs": [
+    "paper/Figures/"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "figure-review"
+   ],
+   "stage_id": "figures",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Figuras estructurales y topológicas",
+     "detail": "Figuras estructurales y topológicas",
+     "id": "9.1",
+     "name": "Diagramas de Arquitectura & Sistema",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Rendimiento y contrastes empíricos",
+     "detail": "Rendimiento y contrastes empíricos",
+     "id": "9.2",
+     "name": "Curvas y Gráficas Experimentales",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Flujos de procesamiento y transducción",
+     "detail": "Flujos de procesamiento y transducción",
+     "id": "9.3",
+     "name": "Esquemas Metodológicos",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Anclaje de referencias cruzadas",
+     "detail": "Anclaje de referencias cruzadas",
+     "id": "9.4",
+     "name": "Grounding de Figuras en Texto",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "write",
+    "latexmk"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "desc": "Visor PDF con recarga en vivo.",
+     "kind": "redirect",
+     "label": "Ver el PDF",
+     "section": "",
+     "tab": "preview"
+    }
+   ],
+   "agent": "pdflatex",
+   "blocked_by": "Fase 9",
+   "desc": "Compilación del manuscrito LaTeX a PDF con maquetación editorial, verificación de referencias BibTeX y visor interactivo.",
+   "detail": "paper/main.pdf pendiente de compilación",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "PDF compilado",
+     "mtime": 0,
+     "path": "paper/main.pdf"
+    }
+   ],
+   "gate": "G-PDF",
+   "id": "Fase 10",
+   "manuscript_ref": {
+    "file": "paper/main.pdf",
+    "pages": 0,
+    "size_mb": 0.0
+   },
+   "name": "Fase 10: Compilación & Manuscrito PDF",
+   "outputs": [
+    "paper/main.pdf"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "paper-writing"
+   ],
+   "stage_id": "paper",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "0 errores fatales en compilación",
+     "detail": "0 errores fatales en compilación",
+     "id": "10.1",
+     "name": "Compilación pdfTeX",
+     "status": "PENDING"
+    },
+    {
+     "desc": "0 citas vinculadas sin huérfanas",
+     "detail": "0 citas vinculadas sin huérfanas",
+     "id": "10.2",
+     "name": "Vinculación BibTeX",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Generación de PDF optimizado",
+     "detail": "Generación de PDF optimizado",
+     "id": "10.3",
+     "name": "Optimización Vectorial",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Visor PDF.js con control de cambios",
+     "detail": "Visor PDF.js con control de cambios",
+     "id": "10.4",
+     "name": "Visor PDF Interactivo",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "bash"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "command": "smith audit . --verbose",
+     "desc": "Estructura y consistencia del workspace.",
+     "kind": "command",
+     "label": "Auditar el workspace"
+    },
+    {
+     "guide": [
+      "Nombra el sujeto: un skill, un CLI o cualquier conjunto cerrado (operaciones, subcomandos, códigos de error).",
+      "La auditoría busca la brecha entre lo que el código acepta y lo que su documentación afirma."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Auditar un skill o un CLI",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: audita skills/paper-writing",
+     "prefix": "",
+     "slash": "/skill-audit"
+    },
+    {
+     "desc": "Estado de las compuertas del framework, al final de Pipeline y Avance.",
+     "kind": "redirect",
+     "label": "Ver compuertas",
+     "section": "gates",
+     "tab": "pipeline"
+    }
+   ],
+   "agent": "skill-audit & smith audit",
+   "blocked_by": null,
+   "cli_command": "smith audit . --verbose",
+   "desc": "Verificación estricta de las 4 compuertas del framework: readiness, acoplamiento de hechos, blindaje de estilo y figuras.",
+   "detail": "Auditoría transversal pendiente",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Veredicto de auditoría",
+     "mtime": 0,
+     "path": ".papersmith/audit.json"
+    }
+   ],
+   "gate": "G-AUDIT",
+   "id": "Fase 11",
+   "name": "Fase 11: Auditoría Transversal & Gates",
+   "outputs": [
+    ".papersmith/audit.json"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "skill-audit"
+   ],
+   "stage_id": "audit",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Contratos canónicos validados",
+     "detail": "Contratos canónicos validados",
+     "id": "11.1",
+     "name": "Gate G1: Writing Readiness",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Hechos acoplados con fuentes de insumo",
+     "detail": "Hechos acoplados con fuentes de insumo",
+     "id": "11.2",
+     "name": "Gate G2: Coupling Verification",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Blindaje retórico y de citas",
+     "detail": "Blindaje retórico y de citas",
+     "id": "11.3",
+     "name": "Gate G3: Style Shield",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Figuras ancladas con referencias en texto",
+     "detail": "Figuras ancladas con referencias en texto",
+     "id": "11.4",
+     "name": "Gate G4: Figure Grounding",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "bash"
+   ],
+   "unlocked": true
+  }
+ ],
+ "framework_version": "",
+ "gates": [
+  {
+   "criteria": "Validación empírica y diseño experimental: reproducibilidad de pruebas, especificación de baseline y criterios de éxito cuantitativos; veredictos de hipótesis respaldados por pruebas de hipótesis, justificación de la novedad, análisis cualitativo o de interpretabilidad cuando aplique y una discusión resumida por etapa. Pasa cuando una prueba de concepto cierra con una discusión completa y el operador verificó sus resultados y las hipótesis contrastadas (smith novelty approve --gate poc, o la pestaña Novedad); los experimentos completos empiezan solo después.",
+   "id": "G-EXP-POC",
+   "name": "Proof-of-Concept Verification Gate",
+   "phase": "Fase 5",
+   "reviewer": "experiments-reviewer",
+   "status": "PENDING"
+  },
+  {
+   "criteria": "Evaluación de novedad científica y soporte de evidencia empírica: contraste de hipótesis vs SOTA, auditoría de defensa ante revisores y autorización explícita del operador antes del andamiaje y redacción del manuscrito.",
+   "id": "G-NOVELTY",
+   "name": "Novelty & Findings Gate",
+   "phase": "Fase 5",
+   "reviewer": "novelty-screener & operator",
+   "status": "PENDING"
+  },
+  {
+   "criteria": "Contratos de sección validados con gramática cerrada y dependencias resueltas.",
+   "id": "G1",
+   "name": "Writing Readiness Gate",
+   "phase": "Fase 6",
+   "reviewer": "contract-auditor",
+   "status": "PENDING"
+  },
+  {
+   "criteria": "Hechos demandados (formulación, diseño, resultados) acoplados con declaraciones de autoría y financiación.",
+   "id": "G2",
+   "name": "Coupling Verification Gate",
+   "phase": "Fase 7",
+   "reviewer": "paper-graph-auditor",
+   "status": "PENDING"
+  },
+  {
+   "criteria": "Ausencia de citas vacías o placeholders, aislamiento estricto de fuentes bibliográficas.",
+   "id": "G3",
+   "name": "Grounding & Style Leak Gate",
+   "phase": "Fase 8",
+   "reviewer": "grounding-auditor",
+   "status": "PENDING"
+  },
+  {
+   "criteria": "Validación de compilación de diagramas TikZ, esquemas metodológicos y figuras vectoriales.",
+   "id": "G4",
+   "name": "Diagram & Raster Gate",
+   "phase": "Fase 9",
+   "reviewer": "figure-auditor",
+   "status": "PENDING"
+  }
+ ],
+ "gates_map": {
+  "G-EXP-POC": "PENDING",
+  "G-NOVELTY": "PENDING",
+  "G1": "PENDING",
+  "G2": "PENDING",
+  "G3": "PENDING",
+  "G4": "PENDING"
+ },
+ "pdf_available": false,
+ "pipeline_stages": [
+  {
+   "actions": [
+    {
+     "command": "smith status .",
+     "desc": "Resumen del workspace: kit, harnesses, etapas y artefactos.",
+     "kind": "command",
+     "label": "Ver estado del workspace"
+    },
+    {
+     "command": "smith audit . --check-drift",
+     "desc": "Comprueba que .claude, .opencode, .pi y .agents coinciden con el kit.",
+     "kind": "command",
+     "label": "Verificar proyecciones"
+    },
+    {
+     "guide": [
+      "Úsalo cuando el workspace corre una versión anterior de papersmith.",
+      "El agente trae skills, agentes, comandos y formas de artefacto a la versión instalada.",
+      "Opcional: indica qué quieres conservar o revisar antes de actualizar."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Actualizar el workspace (agente)",
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: actualiza el workspace y dime qué cambió en los comandos.",
+     "prefix": "",
+     "slash": "/upgrade-project"
+    }
+   ],
+   "agent": "smith CLI",
+   "blocked_by": null,
+   "cli_command": "smith status .",
+   "desc": "Estructura de workspace, proyecciones de harness (.claude, .opencode, .pi, .agents), entorno micromamba y validación de runtimes.",
+   "detail": "Entorno pendiente de inicialización",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Manifiesto del workspace",
+     "mtime": 0,
+     "path": "papersmith.yaml"
+    },
+    {
+     "count": 0,
+     "label": "Estado del framework",
+     "mtime": 0,
+     "path": ".papersmith/version"
+    }
+   ],
+   "gate": "G-HARNESS",
+   "id": "Fase 1",
+   "name": "Fase 1: Configuración de Entorno & Harness",
+   "outputs": [
+    ".papersmith/",
+    "papersmith.yaml",
+    "pyproject.toml"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "upgrade-project"
+   ],
+   "stage_id": "harness",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "papersmith.yaml y estructura base versionada",
+     "detail": "papersmith.yaml y estructura base versionada",
+     "id": "1.1",
+     "name": "Workspace & Manifiesto",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Enlaces simbólicos a arneses operacionales",
+     "detail": "Enlaces simbólicos a arneses operacionales",
+     "id": "1.2",
+     "name": "Proyección de Agentes",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Python 3.12 y dependencias del entorno",
+     "detail": "Python 3.12 y dependencias del entorno",
+     "id": "1.3",
+     "name": "Aislamiento Micromamba",
+     "status": "PENDING"
+    },
+    {
+     "desc": "CLI smith verificado",
+     "detail": "CLI smith verificado",
+     "id": "1.4",
+     "name": "Integridad de CLI",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "bash"
+   ],
+   "unlocked": true
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Escribe la idea en al menos dos oraciones: el problema y lo que propones (si no, el agente se niega a buscar).",
+      "El agente reúne ~25 referencias SOTA por sus abstracts, en 3 a 7 familias, y dibuja la constelación (atlas.html).",
+      "Luego divide la hipótesis en afirmaciones y califica cada una (novel / known / tension / contradicted) con citas literales.",
+      "Nada se ingiere ni se archiva: el informe espera tu aceptación antes de pasar el top 5 a ingestión.",
+      "Puedes ajustar la idea y pedir un nuevo screening; cada pasada es un informe nuevo.",
+      "¿Aún no tienes una idea clara? Abre la Ayuda temática, escribe de 3 a 5 palabras clave y el Banco LIA te propone una que puedes editar y aprobar."
+     ],
+     "keyword_help": true,
+     "kind": "prompt",
+     "label": "Explorar la plausibilidad de la idea",
+     "min_sentences": 2,
+     "optional": false,
+     "placeholder": "Ej.: Los modelos actuales pierden precisión fuera de su dominio de entrenamiento. Propongo …",
+     "prefix": "",
+     "slash": "/plausibility"
+    },
+    {
+     "desc": "Atlas 3D del pool de candidatos.",
+     "kind": "redirect",
+     "label": "Ver la constelación SOTA",
+     "section": "",
+     "tab": "atlas"
+    },
+    {
+     "desc": "Cada artículo explorado con su familia, año, revista y resumen.",
+     "kind": "redirect",
+     "label": "Ver la matriz de candidatos",
+     "section": "papers",
+     "tab": "atlas"
+    }
+   ],
+   "agent": "sota-scout → sota-grapher → novelty-screener",
+   "blocked_by": "Fase 1",
+   "cli_command": "/plausibility <text>",
+   "desc": "Exploración SOTA, validación de plausibilidad y compilación del Atlas 3D de candidatos y constelación conceptual. Si aún no hay una idea clara, la ayuda temática opcional convierte de 3 a 5 palabras clave en una idea propuesta a partir del Banco LIA, que el operador edita, aprueba y lanza.",
+   "detail": "Sin artefactos en sota-pool/",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Pool de candidatos",
+     "mtime": 0,
+     "path": "sota-pool/candidates.json"
+    },
+    {
+     "count": 0,
+     "label": "Atlas SOTA",
+     "mtime": 0,
+     "path": "sota-pool/atlas.json"
+    },
+    {
+     "count": 0,
+     "label": "Constelación HTML",
+     "mtime": 0,
+     "path": "sota-pool/atlas.html"
+    }
+   ],
+   "gate": "G-SOTA",
+   "id": "Fase 2",
+   "name": "Fase 2: Plausibilidad & SOTA Atlas 3D",
+   "outputs": [
+    "sota-pool/atlas.json",
+    "sota-pool/atlas.html",
+    "sota-pool/candidates.json"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "plausibility"
+   ],
+   "stage_id": "plausibility",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Búsqueda y filtrado de literatura Q1/Q2",
+     "detail": "Búsqueda y filtrado de literatura Q1/Q2",
+     "id": "2.1",
+     "name": "Discovery de Artículos SOTA",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Clasificación taxonómica de candidatos",
+     "detail": "Clasificación taxonómica de candidatos",
+     "id": "2.2",
+     "name": "Extracción de Metadatos & Familias",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Generación de atlas.json para visualización WebGL",
+     "detail": "Generación de atlas.json para visualización WebGL",
+     "id": "2.3",
+     "name": "Embedding Espacial & Constelación 3D",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Identificación de vacíos conceptuales y oportunidad",
+     "detail": "Identificación de vacíos conceptuales y oportunidad",
+     "id": "2.4",
+     "name": "Detección de Brecha de Novedad",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "write",
+    "mcp"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Indica la ruta o URL de los PDF a ingerir (normalmente el top 5 aceptado en plausibilidad).",
+      "Cada PDF se archiva en su carpeta de tema y se convierte a Markdown: ecuaciones en LaTeX, tablas en Markdown, figuras como archivos.",
+      "Local y sin llaves (Marker); nada se publica."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Ingerir referencias",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: ingiere guidance/reference-papers/inbox/*.pdf",
+     "prefix": "",
+     "slash": "/paper-ingestion"
+    },
+    {
+     "command": "smith ingest <path-or-url> .",
+     "desc": "Reemplaza <ruta-o-url> por el PDF o la URL.",
+     "kind": "command",
+     "label": "Ingerir desde el CLI"
+    },
+    {
+     "desc": "Markdown y figuras de las referencias.",
+     "kind": "redirect",
+     "label": "Ver artefactos ingeridos",
+     "section": "",
+     "tab": "artifacts"
+    }
+   ],
+   "agent": "paper-ingestion",
+   "blocked_by": "Fase 2",
+   "cli_command": "/paper-ingestion <text>",
+   "desc": "Ingestión a Markdown de artículos de referencia, normalización BibTeX de bibliografía y extracción de insumos base.",
+   "detail": "Sin artículos de referencia en guidance/",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Referencias ingeridas",
+     "mtime": 0,
+     "path": "guidance/reference-papers/*/*.md"
+    }
+   ],
+   "gate": "G-INGEST",
+   "id": "Fase 3",
+   "name": "Fase 3: Ingestión de Referencias & Literatura",
+   "outputs": [
+    "guidance/reference-papers/",
+    "paper/refs.bib",
+    "paper/Figures/"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "paper-ingestion"
+   ],
+   "stage_id": "ingestion",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Conversión estructural de PDFs a Markdown limpio",
+     "detail": "Conversión estructural de PDFs a Markdown limpio",
+     "id": "3.1",
+     "name": "Ingestión de Artículos Base",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Citas verificadas y consolidadas",
+     "detail": "Citas verificadas y consolidadas",
+     "id": "3.2",
+     "name": "Normalización BibTeX (refs.bib)",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Figuras y diagramas de referencia",
+     "detail": "Figuras y diagramas de referencia",
+     "id": "3.3",
+     "name": "Extracción Vectorial de Figuras",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Extracción de parámetros para el manuscrito",
+     "detail": "Extracción de parámetros para el manuscrito",
+     "id": "3.4",
+     "name": "Extracción de Hechos e Insumos",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "write",
+    "marker"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Pide la primera versión, un cambio a la propuesta vigente o una operación de revisión (rNN).",
+      "El agente es tutor: discute antes de decidir y no aplica un cambio sin tu aprobación.",
+      "La matemática se escribe en bloques $$ … \\tag{N} $$; la novedad se ubica dentro del cielo SOTA.",
+      "The central problem, every direct cause, pillar, hypothesis, layer and numbered equation is justified by 2 to 5 references of the SOTA pool in .papersmith/citations.json; the problem, causes, pillars and hypotheses take Q1 or Q2 journal articles en most 4 years old.",
+      "Las guías de dominio en guidance/paper-guide/ se cargan solas."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Deliberar la propuesta",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: discutamos si la hipótesis H2 sigue en pie con la referencia de Smith 2024.",
+     "prefix": "",
+     "slash": "/proposal-deliberation"
+    },
+    {
+     "desc": "Pilares, hipótesis y capas del concepto.",
+     "kind": "redirect",
+     "label": "Discutir el mapa conceptual",
+     "section": "mapa",
+     "tab": "modelo"
+    },
+    {
+     "desc": "Ecuaciones en LaTeX, tarjeta de novedad y tutor con imágenes a mano.",
+     "kind": "redirect",
+     "label": "Matemática y tutor socrático",
+     "section": "matematico",
+     "tab": "modelo"
+    }
+   ],
+   "agent": "proposal-deliberation & math-tutor",
+   "blocked_by": "Fase 3",
+   "cli_command": "/proposal-deliberation <text>",
+   "desc": "Deliberación científica formal de la propuesta (rNN), definición de novedad, discusión del mapa conceptual y de la matemática con el tutor socrático.",
+   "detail": "Sin propuesta en proposals/",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Revisiones de propuesta",
+     "mtime": 0,
+     "path": "proposals/research-concept-*-r*.md"
+    },
+    {
+     "count": 0,
+     "label": "Cielo de la propuesta",
+     "mtime": 0,
+     "path": "proposals/*.sky.json"
+    }
+   ],
+   "gate": "G-PROP",
+   "id": "Fase 4",
+   "name": "Fase 4: Deliberación de Propuesta & Modelo Conceptual",
+   "outputs": [
+    "proposals/"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "proposal-deliberation",
+    "math-tutor"
+   ],
+   "stage_id": "proposal",
+   "status": "PENDING",
+   "steps": [
+    {
+     "done": false,
+     "evidence": {
+      "pillars": 0,
+      "problem": false,
+      "source": ""
+     },
+     "id": "problem_pillars",
+     "requires": null,
+     "started": false,
+     "status": "ACTIVE"
+    },
+    {
+     "done": false,
+     "evidence": {
+      "hypotheses": 0,
+      "source": ""
+     },
+     "id": "hypotheses",
+     "requires": "problem_pillars",
+     "started": false,
+     "status": "LOCKED"
+    },
+    {
+     "done": false,
+     "evidence": {
+      "equations": 0,
+      "revision": ""
+     },
+     "id": "mathematics",
+     "requires": "hypotheses",
+     "started": false,
+     "status": "LOCKED"
+    },
+    {
+     "done": false,
+     "evidence": {
+      "cited": 0,
+      "ideas": 0,
+      "owed": []
+     },
+     "id": "sota_citations",
+     "requires": "mathematics",
+     "started": false,
+     "status": "LOCKED"
+    },
+    {
+     "done": false,
+     "evidence": {
+      "type": ""
+     },
+     "id": "judge_review",
+     "requires": "sota_citations",
+     "started": false,
+     "status": "LOCKED"
+    }
+   ],
+   "subfases": [
+    {
+     "desc": "El problema central y al menos un pilar, en .papersmith/model_spec.json o en la capa .sky.json de la revisión",
+     "detail": "El problema central y al menos un pilar, en .papersmith/model_spec.json o en la capa .sky.json de la revisión",
+     "id": "4.1",
+     "name": "Paso 1: Problema y pilares",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Las hipótesis que predice cada pilar; bloqueado hasta que pase el paso 1",
+     "detail": "Las hipótesis que predice cada pilar; bloqueado hasta que pase el paso 1",
+     "id": "4.2",
+     "name": "Paso 2: Hipótesis",
+     "status": "LOCKED"
+    },
+    {
+     "desc": "Al menos un bloque $$ … \\tag{N} $$ en la última revisión; bloqueado hasta que pase el paso 2",
+     "detail": "Al menos un bloque $$ … \\tag{N} $$ en la última revisión; bloqueado hasta que pase el paso 2",
+     "id": "4.3",
+     "name": "Paso 3: Matemática",
+     "status": "LOCKED"
+    },
+    {
+     "desc": "Revisión sellada con hash SHA-256",
+     "detail": "Revisión sellada con hash SHA-256",
+     "id": "4.4",
+     "name": "Stage published: Publicación & Recibo Criptográfico",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Pilares, hipótesis y capas del concepto (pestaña Mapa Conceptual)",
+     "detail": "Pilares, hipótesis y capas del concepto (pestaña Mapa Conceptual)",
+     "id": "4.5",
+     "name": "Discusión del mapa conceptual",
+     "status": "LOCKED"
+    },
+    {
+     "desc": "Ecuaciones en LaTeX, tarjeta de novedad y tutor con imágenes a mano (math-tutor)",
+     "detail": "Ecuaciones en LaTeX, tarjeta de novedad y tutor con imágenes a mano (math-tutor)",
+     "id": "4.6",
+     "name": "Matemática y tutor socrático",
+     "status": "LOCKED"
+    },
+    {
+     "desc": "Cada pilar, hipótesis, capa del mapa conceptual y ecuación numerada se justifica con 2 a 5 referencias del pool del SOTA en .papersmith/citations.json; bloqueado hasta que pase el paso 3",
+     "detail": "Cada pilar, hipótesis, capa del mapa conceptual y ecuación numerada se justifica con 2 a 5 referencias del pool del SOTA en .papersmith/citations.json; bloqueado hasta que pase el paso 3",
+     "id": "4.7",
+     "name": "Paso 4: Citas del SOTA",
+     "status": "LOCKED"
+    },
+    {
+     "desc": "El paper-reviewer clasifica el tipo de contribución de la propuesta (contribution_type en .papersmith/model_spec.json); la Fase 5 sigue bloqueada hasta entonces.",
+     "detail": "El paper-reviewer clasifica el tipo de contribución de la propuesta (contribution_type en .papersmith/model_spec.json); la Fase 5 sigue bloqueada hasta entonces.",
+     "id": "4.8",
+     "name": "Paso 5: Juez-revisor",
+     "status": "LOCKED"
+    }
+   ],
+   "tools": [
+    "read",
+    "write",
+    "deliberate"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Pregunta que gobierna cada turno: ¿qué experimento pondría a prueba esta afirmación de la propuesta?",
+      "Cada experimento declara la afirmación que prueba, su métrica y su baseline SOTA.",
+      "Cada experimento se justifica con 2 a 5 referencias del pool del SOTA en .papersmith/citations.json; la implementación sigue bloqueada hasta entonces.",
+      "Pide la primera versión, un cambio o una operación de revisión; nada se aplica sin tu aprobación."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Deliberar el diseño experimental",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: diseña el experimento que prueba la afirmación C1 contra el baseline más fuerte del SOTA.",
+     "prefix": "",
+     "slash": "/experimental-deliberation"
+    },
+    {
+     "guide": [
+      "Verbos: synth (toy set sembrado, siempre), search, license, qc, prepare y publish.",
+      "dataset-scout busca en repositorios oficiales del paper, Kaggle, Hugging Face, OpenNeuro y Zenodo, y decide la licencia.",
+      "dataset-curator mide la calidad (qc) y escribe una sola preparación oficial por sujeto que leen la PoC y los experimentos.",
+      "publish sube un dataset privado solo con tu consentimiento explícito; hacerlo público pide un consentimiento aparte."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Datos: toy set siempre y dataset oficial",
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: synth un toy set de 8 sujetos y busca un dataset oficial para la tarea.",
+     "prefix": "",
+     "slash": "/datasets"
+    },
+    {
+     "guide": [
+      "El agente paper-replicator replica cada baseline o paper de comparación ingerido en guidance/.",
+      "Sigue bloqueada hasta que cada experimento del último protocolo tenga sus 2 a 5 citas del SOTA (G-SOTA-CITATIONS).",
+      "Primero busca el código publicado del paper: si existe, lo adopta fijado a un commit con su licencia y audita que corresponda con el paper y esté bien implementado.",
+      "Si no hay código publicado, reimplementa el método desde el Markdown ingerido; cada hiperparámetro cita su sección o ecuación.",
+      "Termina con REPLICATION.md, pruebas de invariantes y una corrida corta sobre el toy set; nunca lanza una corrida remota."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Réplica de métodos de comparación",
+     "locked": false,
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: replica el baseline de guidance/smith-2024 en ../mi-poc",
+     "prefix": "",
+     "requires": "G-SOTA-CITATIONS",
+     "slash": "/proposal-implementation"
+    },
+    {
+     "guide": [
+      "Convierte la última propuesta en Python contra un repositorio objetivo, o verifica una implementación existente.",
+      "Sigue bloqueada hasta que cada experimento del último protocolo tenga sus 2 a 5 citas del SOTA (G-SOTA-CITATIONS).",
+      "Indica el repositorio objetivo y si es primera pasada o una pasada posterior.",
+      "Está lista cuando Results/discussion.json está completo: veredictos de hipótesis respaldados por pruebas, novedad y análisis cualitativo (python skills/_core/results/discussion_cli.py scaffold|check --product <path>)."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Implementar la prueba de concepto",
+     "locked": false,
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: implementa la PoC de la propuesta r03 en ../mi-poc",
+     "prefix": "",
+     "requires": "G-SOTA-CITATIONS",
+     "slash": "/proposal-implementation"
+    },
+    {
+     "desc": "Antes del piloto y otra vez antes de la corrida completa: sonda de tiempo corta (una época de un fold por brazo) en Results/timing.json; la pestaña Experimentos estima la PoC y la corrida completa (±20%), muestra el entorno local y las opciones de corrida local, Kaggle y Colab.",
+     "kind": "redirect",
+     "label": "Estimar tiempo y elegir dónde correr",
+     "section": "",
+     "tab": "experiments"
+    },
+    {
+     "guide": [
+      "Solo si la deliberación lo estimó conveniente: el protocolo declara la búsqueda y su espacio.",
+      "Anidada dentro de los sujetos de entrenamiento de cada fold externo, sin ver los sujetos de prueba.",
+      "Mismo presupuesto de trials para cada brazo y baseline; nunca ajusta una variable independiente que el experimento prueba.",
+      "Sampler con semilla y evaluador de importancia declarado (Optuna 5 usa PED-ANOVA por defecto).",
+      "report escribe contornos e importancia que la pestaña Experimentos muestra.",
+      "Corre en remoto como la corrida completa y solo el operador la lanza."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Búsqueda de hiperparámetros (Optuna)",
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: plan para los brazos hybrid y linear con 40 trials y fANOVA como evaluador.",
+     "prefix": "",
+     "slash": "/hyperparameter-search"
+    },
+    {
+     "guide": [
+      "Convierte el protocolo experimental vigente en Python y corre sus mediciones declaradas.",
+      "Indica el repositorio objetivo; la verificación compara contra el protocolo y la propuesta.",
+      "Está listo cuando Results/discussion.json está completo (python skills/_core/results/discussion_cli.py scaffold|check --product <path>); la corrida completa exige una prueba de hipótesis detrás de cada veredicto.",
+      "Antes de cualquier ensayo remoto, experiments-reviewer revisa el código (calidad, optimización, uso de GPU y pruebas estadísticas) y entrega su informe.",
+      "Empieza solo después de verificar la prueba de concepto (G-EXP-POC): una discusión de la PoC completa y la aprobación del operador en la pestaña Novedad o con smith novelty approve --gate poc.",
+      "También espera las 2 a 5 citas del SOTA de cada experimento del último protocolo (G-SOTA-CITATIONS)."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Implementar y medir los experimentos",
+     "locked": true,
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: implementa E1 y E2 y reporta las métricas.",
+     "prefix": "",
+     "requires": "G-EXP-POC",
+     "slash": "/experimental-implementation"
+    },
+    {
+     "guide": [
+      "Al aprobar la PoC (AGREED.md) dibuja el diagrama poc; al aprobar los experimentos completos (Experimental_AGREED.md), el diagrama experiments.",
+      "Cada uno es una figura TikZ (PDF y PNG) en <producto>/diagrams/; también se genera con el botón \"Generar diagrama\" de la pestaña Experimentos.",
+      "Valídalo tú en la pestaña Experimentos (\"Validar diagrama\") o apruébalo explícitamente en el chat con el agente, que corre validate con tus palabras: submit se niega con DIAGRAM_NOT_VALIDATED hasta entonces, y redibujarlo pide validarlo de nuevo."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Diagramas de la PoC y de los experimentos",
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: poc para el producto implementations/mi-poc/Modelo.",
+     "prefix": "",
+     "slash": "/experiment-diagrams"
+    },
+    {
+     "guide": [
+      "Primero estimate --timing <objetivo>/<Nombre>/Results/timing.json: el rango por etapa y host (±20%).",
+      "Luego assess con las entradas medidas; --owners es el número de propietarios distintos del equipo (smith team list), nunca el de cuentas.",
+      "Regla del equipo: una cuenta por persona y servicio; cada persona se registra con `smith team add --owner <slug> --name \"<nombre>\" --kaggle-username <usuario> --attest`.",
+      "No coloca, no genera ni lanza nada: el veredicto lo lee el operador."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Decidir si repartir entre cuentas",
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: estima la PoC con su timing.json y evalúa repartir la corrida completa entre 3 propietarios.",
+     "prefix": "",
+     "slash": "/remote-parallelism"
+    },
+    {
+     "guide": [
+      "validate re-comprueba cada cuenta guardada contra el servicio y toma lo que haya en kaggle-inbox/ (kaggle.json o una línea `usuario token`).",
+      "Solo las cuentas que el registro del equipo asigna a un propietario son workers: una por persona."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Validar las cuentas Kaggle",
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: valida las cuentas y toma las credenciales nuevas del inbox.",
+     "prefix": "validate ",
+     "slash": "/kaggle-accounts"
+    },
+    {
+     "guide": [
+      "Orden: generate-job → submit --smoke → fetch --smoke y smoke record → readiness → gate (solo el operador) → submit → status / poll → fetch.",
+      "El ledger es de solo anexar; si las cuentas no autentican, usa primero /kaggle-accounts.",
+      "Solo el operador autoriza un lanzamiento: ningún agente ejecuta submit por su cuenta.",
+      "submit (también --smoke) exige que hayas validado los diagramas de la PoC y de los experimentos aprobados."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Ensayo remoto y lanzamiento (Kaggle / Colab)",
+     "min_sentences": 0,
+     "optional": true,
+     "placeholder": "Ej.: genera el job de experiments/e1.py y prepara su ensayo smoke.",
+     "prefix": "",
+     "slash": "/remote-execution"
+    },
+    {
+     "desc": "Productos, veredictos y diagramas de la prueba de concepto y de los experimentos.",
+     "kind": "redirect",
+     "label": "Ver la PoC y los experimentos",
+     "section": "",
+     "tab": "experiments"
+    }
+   ],
+   "agent": "experimental-validation → experimental-publish → dataset-scout / dataset-curator → paper-replicator → implementation-build → experiments-build → experiments-reviewer → experiments-walk",
+   "blocked_by": "Fase 4",
+   "cli_command": "/experimental-deliberation <text>",
+   "desc": "Deliberación del protocolo experimental, toy set, réplica de los métodos de comparación, prueba de concepto, verificación de la prueba de concepto por el operador (G-EXP-POC), estimación de tiempo, búsqueda de hiperparámetros opcional, experimentos completos, revisión del código, ensayo remoto y lanzamiento autorizado por el operador, en local o en un servicio remoto (CLI o MCP).",
+   "detail": "Protocolo publicado: no · PoC con discusión completa: 0 de 0 · PoC verificada (G-EXP-POC): no · experimentos completos con discusión completa: 0 de 0",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Protocolos experimentales",
+     "mtime": 0,
+     "path": "experiments/*"
+    },
+    {
+     "count": 0,
+     "label": "Implementaciones",
+     "mtime": 0,
+     "path": "implementations/*"
+    }
+   ],
+   "gate": "G-EXP-POC",
+   "id": "Fase 5",
+   "name": "Fase 5: Prueba de concepto y experimentos",
+   "outputs": [
+    "experiments/",
+    "datasets/registry.json",
+    "implementations/"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "experimental-deliberation",
+    "datasets",
+    "proposal-implementation",
+    "remote-parallelism",
+    "hyperparameter-search",
+    "experimental-implementation",
+    "experiment-diagrams",
+    "kaggle-accounts",
+    "remote-execution"
+   ],
+   "stage_id": "poc_experiments",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Criterios de éxito y métricas cuantificables (pasa con la revisión publicada)",
+     "detail": "Criterios de éxito y métricas cuantificables (pasa con la revisión publicada)",
+     "id": "5.1",
+     "name": "Stage bound: Anclaje de Claims & Métricas",
+     "status": "PENDING"
+    },
+    {
+     "desc": "experimental-validation contrasta protocolo, métricas y baselines con búsquedas fechadas",
+     "detail": "experimental-validation contrasta protocolo, métricas y baselines con búsquedas fechadas",
+     "id": "5.2",
+     "name": "Stage validated: Baselines & SOTA",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Protocolos de ensayo y validación",
+     "detail": "Protocolos de ensayo y validación",
+     "id": "5.3",
+     "name": "Stage deliberated: Diseño Metrológico & Protocolos",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Formalización de experimentos con instrumentación",
+     "detail": "Formalización de experimentos con instrumentación",
+     "id": "5.4",
+     "name": "Stage composed: Especificación de Experimentos",
+     "status": "PENDING"
+    },
+    {
+     "desc": "experimental-publish deja experiments/experiments-<slug>-vNN.md con el marcador de artefacto (0 revisión(es) publicada(s))",
+     "detail": "experimental-publish deja experiments/experiments-<slug>-vNN.md con el marcador de artefacto (0 revisión(es) publicada(s))",
+     "id": "5.5",
+     "name": "Stage published: Aprobación de Gate",
+     "status": "PENDING"
+    },
+    {
+     "desc": "/datasets synth|search|license|qc|prepare|publish con dataset-scout y dataset-curator; pasa con un toy set en datasets/registry.json; publicación privada solo con consentimiento del operador",
+     "detail": "/datasets synth|search|license|qc|prepare|publish con dataset-scout y dataset-curator; pasa con un toy set en datasets/registry.json; publicación privada solo con consentimiento del operador",
+     "id": "5.6",
+     "name": "Datos: toy set siempre y dataset oficial",
+     "status": "PENDING"
+    },
+    {
+     "desc": "/proposal-implementation → paper-replicator: primero el código publicado, adoptado y auditado; si no existe, reimplementación (0 REPLICATION.md)",
+     "detail": "/proposal-implementation → paper-replicator: primero el código publicado, adoptado y auditado; si no existe, reimplementación (0 REPLICATION.md)",
+     "id": "5.7",
+     "name": "Réplica de métodos de comparación",
+     "status": "PENDING"
+    },
+    {
+     "desc": "/proposal-implementation (implementation-build): carpeta con AGREED.md, Results/ y un Results/discussion.json completo (veredictos de hipótesis, pruebas, novedad, análisis cualitativo): 0 de 0; verifique con `python skills/_core/results/discussion_cli.py check --product <path>`",
+     "detail": "/proposal-implementation (implementation-build): carpeta con AGREED.md, Results/ y un Results/discussion.json completo (veredictos de hipótesis, pruebas, novedad, análisis cualitativo): 0 de 0; verifique con `python skills/_core/results/discussion_cli.py check --product <path>`",
+     "id": "5.8",
+     "name": "Prueba de concepto",
+     "status": "PENDING"
+    },
+    {
+     "desc": "El operador verifica los resultados y las hipótesis contrastadas de la prueba de concepto cuando su discusión está completa: la tarjeta de verificación de la pestaña Novedad, o smith novelty approve --gate poc (iterate --gate poc la devuelve); los experimentos completos quedan bloqueados hasta entonces",
+     "detail": "El operador verifica los resultados y las hipótesis contrastadas de la prueba de concepto cuando su discusión está completa: la tarjeta de verificación de la pestaña Novedad, o smith novelty approve --gate poc (iterate --gate poc la devuelve); los experimentos completos quedan bloqueados hasta entonces",
+     "id": "5.9",
+     "name": "Verificación de la prueba de concepto (G-EXP-POC, operador)",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Antes del piloto y otra vez antes de la corrida completa: sonda de tiempo corta (una época de un fold por brazo) en Results/timing.json; la pestaña Experimentos estima la PoC y la corrida completa (±20%) y lista las opciones local y remotas",
+     "detail": "Antes del piloto y otra vez antes de la corrida completa: sonda de tiempo corta (una época de un fold por brazo) en Results/timing.json; la pestaña Experimentos estima la PoC y la corrida completa (±20%) y lista las opciones local y remotas",
+     "id": "5.10",
+     "name": "Estimar tiempo y elegir dónde correr",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Solo si la deliberación la estimó conveniente: /hyperparameter-search plan|report|status, anidada dentro de cada fold externo, mismo presupuesto por brazo, evaluador de importancia declarado; contornos e importancia en Results/hpo/ (0 producto(s) con estudios)",
+     "detail": "Solo si la deliberación la estimó conveniente: /hyperparameter-search plan|report|status, anidada dentro de cada fold externo, mismo presupuesto por brazo, evaluador de importancia declarado; contornos e importancia en Results/hpo/ (0 producto(s) con estudios)",
+     "id": "5.11",
+     "name": "Búsqueda de hiperparámetros (Optuna, opcional)",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Bloqueado hasta verificar la prueba de concepto (G-EXP-POC). /experimental-implementation (experiments-build): carpeta con Experimental_AGREED.md, Results/ y un Results/discussion.json completo (veredictos de hipótesis respaldados por pruebas, novedad, análisis cualitativo): 0 de 0; verifique con `python skills/_core/results/discussion_cli.py check --product <path>`",
+     "detail": "Bloqueado hasta verificar la prueba de concepto (G-EXP-POC). /experimental-implementation (experiments-build): carpeta con Experimental_AGREED.md, Results/ y un Results/discussion.json completo (veredictos de hipótesis respaldados por pruebas, novedad, análisis cualitativo): 0 de 0; verifique con `python skills/_core/results/discussion_cli.py check --product <path>`",
+     "id": "5.12",
+     "name": "Experimentos completos",
+     "status": "LOCKED"
+    },
+    {
+     "desc": "Calidad del código, optimización, uso de GPU y pruebas estadísticas declaradas; lee Results/reviewer_report.json (estado resolved, o todos los bloqueos resueltos): 0 resueltos de 0 informe(s)",
+     "detail": "Calidad del código, optimización, uso de GPU y pruebas estadísticas declaradas; lee Results/reviewer_report.json (estado resolved, o todos los bloqueos resueltos): 0 resueltos de 0 informe(s)",
+     "id": "5.13",
+     "name": "Revisión del código (experiments-reviewer) antes del ensayo",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Solo para corridas remotas (local corre directo). /kaggle-accounts validate y smith team add --attest (una cuenta por persona y servicio); luego generate-job → submit --smoke → fetch --smoke y smoke record → readiness → gate (operador) → submit → status / poll → fetch. Ensayos aprobados: 0; ledgers con envíos: 0",
+     "detail": "Solo para corridas remotas (local corre directo). /kaggle-accounts validate y smith team add --attest (una cuenta por persona y servicio); luego generate-job → submit --smoke → fetch --smoke y smoke record → readiness → gate (operador) → submit → status / poll → fetch. Ensayos aprobados: 0; ledgers con envíos: 0",
+     "id": "5.14",
+     "name": "Ensayo remoto y autorización del lanzamiento (operador)",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Cada experimento del último protocolo se justifica con 2 a 5 referencias del pool del SOTA en .papersmith/citations.json; las acciones de implementación y G-EXP-POC las esperan (0 de 0 citados)",
+     "detail": "Cada experimento del último protocolo se justifica con 2 a 5 referencias del pool del SOTA en .papersmith/citations.json; las acciones de implementación y G-EXP-POC las esperan (0 de 0 citados)",
+     "id": "5.15",
+     "name": "Citas del SOTA de los experimentos",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "write",
+    "validate"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Nombra un bloque o una acción: abrir el árbol paper/, ver qué fase de escritura está desbloqueada, o escribir un bloque.",
+      "Un bloque se escribe solo: el agente nunca toca otro byte de paper/main.tex.",
+      "Cada afirmación necesita una fuente que la sostenga (resolve); sin fuente, no se escribe.",
+      "refs.bib proviene de bib build; cuando cambien las citas, ejecute resolve --references para guardar el resumen de cada artículo.",
+      "Escribe en el idioma del paper; el registro y el estilo vienen de las declaraciones."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Abrir el árbol del paper",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: abre el esqueleto de secciones y bloques del paper.",
+     "prefix": "skeleton ",
+     "slash": "/paper-writing"
+    },
+    {
+     "desc": "Contratos de sección y bloques canónicos.",
+     "kind": "redirect",
+     "label": "Ver secciones del paper",
+     "section": "",
+     "tab": "sections"
+    }
+   ],
+   "agent": "paper-writing",
+   "blocked_by": "Fase 5",
+   "cli_command": "/paper-writing <text>",
+   "desc": "Andamiaje de paper/main.tex con bloques canónicos y contratos de sección bajo la clase tipográfica del journal.",
+   "detail": "paper/main.tex pendiente de andamiaje",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Manuscrito",
+     "mtime": 0,
+     "path": "paper/main.tex"
+    },
+    {
+     "count": 0,
+     "label": "Contratos de sección",
+     "mtime": 0,
+     "path": "sections/*.md"
+    }
+   ],
+   "gate": "G-SCAFFOLD",
+   "id": "Fase 6",
+   "name": "Fase 6: Andamiaje de Manuscrito & Contratos",
+   "outputs": [
+    "paper/main.tex",
+    "paper/refs.bib",
+    "sections/*.md"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "paper-writing"
+   ],
+   "stage_id": "scaffolding",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Contratos canónicos en sections/*.md",
+     "detail": "Contratos canónicos en sections/*.md",
+     "id": "6.1",
+     "name": "Estructura de Secciones",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Marcadores y hashes SHA-256 integrados",
+     "detail": "Marcadores y hashes SHA-256 integrados",
+     "id": "6.2",
+     "name": "Apertura de Bloques Canónicos",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Preguntas editoriales y acoplamiento de hechos",
+     "detail": "Preguntas editoriales y acoplamiento de hechos",
+     "id": "6.3",
+     "name": "Asignación de Roles Retóricos",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Plantilla LaTeX del journal objetivo",
+     "detail": "Plantilla LaTeX del journal objetivo",
+     "id": "6.4",
+     "name": "Configuración Tipográfica",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "write"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Una declaración fija una decisión del paper: autoría CRediT, financiación, datos y código, ética, idioma o estilo.",
+      "Escribe la declaración y su valor; queda registrada con su procedencia (mark)."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Registrar una declaración",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: idioma del manuscrito: inglés; disponibilidad de código: GitHub público.",
+     "prefix": "mark ",
+     "slash": "/paper-writing"
+    },
+    {
+     "desc": "Declaraciones y bloques del manuscrito.",
+     "kind": "redirect",
+     "label": "Ver secciones del paper",
+     "section": "",
+     "tab": "sections"
+    }
+   ],
+   "agent": "paper-writing (mark)",
+   "blocked_by": "Fase 6",
+   "cli_command": "/paper-writing <text>",
+   "desc": "Fijación de declaraciones operativas: autoría CRediT, financiación, repositorio abierto y consideraciones éticas.",
+   "detail": "Declaraciones pendientes de fijación",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Manuscrito (región de declaraciones)",
+     "mtime": 0,
+     "path": "paper/main.tex"
+    }
+   ],
+   "gate": "G-DECLARATIONS",
+   "id": "Fase 7",
+   "name": "Fase 7: Declaraciones Operativas & Coautoría",
+   "outputs": [
+    "paper/main.tex (declarations)"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "paper-writing"
+   ],
+   "stage_id": "declarations",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Roles autorales formalizados",
+     "detail": "Roles autorales formalizados",
+     "id": "7.1",
+     "name": "Taxonomía CRediT de Coautoría",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Protocolos éticos e institucionales",
+     "detail": "Protocolos éticos e institucionales",
+     "id": "7.2",
+     "name": "Declaración Ética",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Repositorio y accesibilidad",
+     "detail": "Repositorio y accesibilidad",
+     "id": "7.3",
+     "name": "Disponibilidad de Datos y Código",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Región declarations bloqueada con hash",
+     "detail": "Región declarations bloqueada con hash",
+     "id": "7.4",
+     "name": "Sellado en main.tex",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "write"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Nombra un bloque o una acción: abrir el árbol paper/, ver qué fase de escritura está desbloqueada, o escribir un bloque.",
+      "Un bloque se escribe solo: el agente nunca toca otro byte de paper/main.tex.",
+      "Cada afirmación necesita una fuente que la sostenga (resolve); sin fuente, no se escribe.",
+      "refs.bib proviene de bib build; cuando cambien las citas, ejecute resolve --references para guardar el resumen de cada artículo.",
+      "Escribe en el idioma del paper; el registro y el estilo vienen de las declaraciones."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Escribir un bloque",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: escribe el bloque intro.motivation",
+     "prefix": "",
+     "slash": "/paper-writing"
+    },
+    {
+     "desc": "Estado de cada bloque.",
+     "kind": "redirect",
+     "label": "Ver secciones del paper",
+     "section": "",
+     "tab": "sections"
+    },
+    {
+     "desc": "Previsualización de paper/main.pdf.",
+     "kind": "redirect",
+     "label": "Ver el PDF",
+     "section": "",
+     "tab": "preview"
+    }
+   ],
+   "agent": "paper-writing (redactor)",
+   "blocked_by": "Fase 7",
+   "cli_command": "/paper-writing <text>",
+   "desc": "Redacción técnica por oleadas de los bloques canónicos del manuscrito a partir de los datos experimentales.",
+   "detail": "0/0 bloques canónicos redactados (0 palabras)",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Manuscrito",
+     "mtime": 0,
+     "path": "paper/main.tex"
+    }
+   ],
+   "gate": "G-WRITING",
+   "id": "Fase 8",
+   "manuscript_ref": {
+    "pages": "1–10",
+    "words": 0
+   },
+   "name": "Fase 8: Redacción Técnica & Transposición",
+   "outputs": [
+    "paper/main.tex",
+    "sections/*.md"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "paper-writing"
+   ],
+   "stage_id": "writing",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Slots iniciales en pág. 1",
+     "detail": "Slots iniciales en pág. 1",
+     "id": "8.1",
+     "name": "Wave 1: Título, Keywords & Abstract",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Bloques de introducción y motivación",
+     "detail": "Bloques de introducción y motivación",
+     "id": "8.2",
+     "name": "Wave 2: Introducción & Hipótesis",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Estado del arte y tabla comparativa",
+     "detail": "Estado del arte y tabla comparativa",
+     "id": "8.3",
+     "name": "Wave 3: Related Work & SOTA",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Bloques técnicos y experimentales",
+     "detail": "Bloques técnicos y experimentales",
+     "id": "8.4",
+     "name": "Wave 4–9: Métodos, Resultados & Conclusiones",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "write",
+    "substitute"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "guide": [
+      "Indica el id de la figura ya compilada en paper/Figures/<id>.pdf.",
+      "La revisión juzga si la imagen se lee por sí misma, no el texto que la describe."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Revisar una figura",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: revisa la figura fig-architecture",
+     "prefix": "",
+     "slash": "/figure-review"
+    },
+    {
+     "desc": "Figuras en el manuscrito compilado.",
+     "kind": "redirect",
+     "label": "Ver el PDF",
+     "section": "",
+     "tab": "preview"
+    }
+   ],
+   "agent": "figure-review",
+   "blocked_by": "Fase 8",
+   "cli_command": "/figure-review <text>",
+   "desc": "Elaboración de diagramas de arquitectura, figuras vectoriales, esquemas y grounding con el texto.",
+   "detail": "0 figuras en paper/Figures/",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Figuras compiladas",
+     "mtime": 0,
+     "path": "paper/Figures/*.pdf"
+    }
+   ],
+   "gate": "G-FIGURES",
+   "id": "Fase 9",
+   "name": "Fase 9: Diagramas Técnicos & Grounding",
+   "outputs": [
+    "paper/Figures/"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "figure-review"
+   ],
+   "stage_id": "figures",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Figuras estructurales y topológicas",
+     "detail": "Figuras estructurales y topológicas",
+     "id": "9.1",
+     "name": "Diagramas de Arquitectura & Sistema",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Rendimiento y contrastes empíricos",
+     "detail": "Rendimiento y contrastes empíricos",
+     "id": "9.2",
+     "name": "Curvas y Gráficas Experimentales",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Flujos de procesamiento y transducción",
+     "detail": "Flujos de procesamiento y transducción",
+     "id": "9.3",
+     "name": "Esquemas Metodológicos",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Anclaje de referencias cruzadas",
+     "detail": "Anclaje de referencias cruzadas",
+     "id": "9.4",
+     "name": "Grounding de Figuras en Texto",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "write",
+    "latexmk"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "desc": "Visor PDF con recarga en vivo.",
+     "kind": "redirect",
+     "label": "Ver el PDF",
+     "section": "",
+     "tab": "preview"
+    }
+   ],
+   "agent": "pdflatex",
+   "blocked_by": "Fase 9",
+   "desc": "Compilación del manuscrito LaTeX a PDF con maquetación editorial, verificación de referencias BibTeX y visor interactivo.",
+   "detail": "paper/main.pdf pendiente de compilación",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "PDF compilado",
+     "mtime": 0,
+     "path": "paper/main.pdf"
+    }
+   ],
+   "gate": "G-PDF",
+   "id": "Fase 10",
+   "manuscript_ref": {
+    "file": "paper/main.pdf",
+    "pages": 0,
+    "size_mb": 0.0
+   },
+   "name": "Fase 10: Compilación & Manuscrito PDF",
+   "outputs": [
+    "paper/main.pdf"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "paper-writing"
+   ],
+   "stage_id": "paper",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "0 errores fatales en compilación",
+     "detail": "0 errores fatales en compilación",
+     "id": "10.1",
+     "name": "Compilación pdfTeX",
+     "status": "PENDING"
+    },
+    {
+     "desc": "0 citas vinculadas sin huérfanas",
+     "detail": "0 citas vinculadas sin huérfanas",
+     "id": "10.2",
+     "name": "Vinculación BibTeX",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Generación de PDF optimizado",
+     "detail": "Generación de PDF optimizado",
+     "id": "10.3",
+     "name": "Optimización Vectorial",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Visor PDF.js con control de cambios",
+     "detail": "Visor PDF.js con control de cambios",
+     "id": "10.4",
+     "name": "Visor PDF Interactivo",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "bash"
+   ],
+   "unlocked": false
+  },
+  {
+   "actions": [
+    {
+     "command": "smith audit . --verbose",
+     "desc": "Estructura y consistencia del workspace.",
+     "kind": "command",
+     "label": "Auditar el workspace"
+    },
+    {
+     "guide": [
+      "Nombra el sujeto: un skill, un CLI o cualquier conjunto cerrado (operaciones, subcomandos, códigos de error).",
+      "La auditoría busca la brecha entre lo que el código acepta y lo que su documentación afirma."
+     ],
+     "keyword_help": false,
+     "kind": "prompt",
+     "label": "Auditar un skill o un CLI",
+     "min_sentences": 0,
+     "optional": false,
+     "placeholder": "Ej.: audita skills/paper-writing",
+     "prefix": "",
+     "slash": "/skill-audit"
+    },
+    {
+     "desc": "Estado de las compuertas del framework, al final de Pipeline y Avance.",
+     "kind": "redirect",
+     "label": "Ver compuertas",
+     "section": "gates",
+     "tab": "pipeline"
+    }
+   ],
+   "agent": "skill-audit & smith audit",
+   "blocked_by": null,
+   "cli_command": "smith audit . --verbose",
+   "desc": "Verificación estricta de las 4 compuertas del framework: readiness, acoplamiento de hechos, blindaje de estilo y figuras.",
+   "detail": "Auditoría transversal pendiente",
+   "evidence": [
+    {
+     "count": 0,
+     "label": "Veredicto de auditoría",
+     "mtime": 0,
+     "path": ".papersmith/audit.json"
+    }
+   ],
+   "gate": "G-AUDIT",
+   "id": "Fase 11",
+   "name": "Fase 11: Auditoría Transversal & Gates",
+   "outputs": [
+    ".papersmith/audit.json"
+   ],
+   "progress": 0.0,
+   "skills": [
+    "skill-audit"
+   ],
+   "stage_id": "audit",
+   "status": "PENDING",
+   "subfases": [
+    {
+     "desc": "Contratos canónicos validados",
+     "detail": "Contratos canónicos validados",
+     "id": "11.1",
+     "name": "Gate G1: Writing Readiness",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Hechos acoplados con fuentes de insumo",
+     "detail": "Hechos acoplados con fuentes de insumo",
+     "id": "11.2",
+     "name": "Gate G2: Coupling Verification",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Blindaje retórico y de citas",
+     "detail": "Blindaje retórico y de citas",
+     "id": "11.3",
+     "name": "Gate G3: Style Shield",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Figuras ancladas con referencias en texto",
+     "detail": "Figuras ancladas con referencias en texto",
+     "id": "11.4",
+     "name": "Gate G4: Figure Grounding",
+     "status": "PENDING"
+    }
+   ],
+   "tools": [
+    "read",
+    "bash"
+   ],
+   "unlocked": true
+  }
+ ],
+ "project_name": "<workspace>",
+ "proposals": {
+  "count": 0,
+  "files": []
+ },
+ "run_details": {
+  "docx_ready": false,
+  "docx_size": 0,
+  "pdf_mtime": 0,
+  "pdf_ready": false,
+  "pdf_size": 0,
+  "title": "<workspace>"
+ },
+ "sections": [
+  {
+   "blocks_total": 0,
+   "blocks_written": 0,
+   "canonical_blocks": [
+    {
+     "id": "materials-and-methods.mm-preamble",
+     "question": "¿Cuáles son los módulos y componentes principales del sistema o modelo?",
+     "role": "Visión Modular del Sistema"
+    },
+    {
+     "id": "materials-and-methods.mm-borrowed-machinery",
+     "question": "¿Qué mecanismos o arquitecturas base se adoptan y cómo se conectan?",
+     "role": "Fundamentos y Topología"
+    },
+    {
+     "id": "materials-and-methods.mm-proposal",
+     "question": "¿Cuál es la formulación matemática o diseño específico introducido?",
+     "role": "Innovación Metodológica Específica"
+    }
+   ],
+   "citations": 0,
+   "cross_relations": "Especifica la arquitectura y métodos cuyo rendimiento se evalúa en las secciones experimentales.",
+   "filename": "01-materials-and-methods.md",
+   "has_figures": false,
+   "id": "01-materials-and-methods",
+   "pdf_page": 4,
+   "principles": "Descripción rigurosa y reproducible sin ambigüedades. Modelos formales, formulación matemática y arquitectura del sistema.",
+   "section": "01-materials-and-methods",
+   "status": "SCAFFOLDED",
+   "title": "01 Materials And Methods",
+   "words": 0
+  },
+  {
+   "blocks_total": 0,
+   "blocks_written": 0,
+   "canonical_blocks": [
+    {
+     "id": "experimental-setup.es-preamble",
+     "question": "¿Cuál es la estrategia metodológica adoptada para validar la propuesta?",
+     "role": "Estrategia Experimental"
+    },
+    {
+     "id": "experimental-setup.es-dataset",
+     "question": "¿Qué fuentes de datos, instrumentos o entornos de prueba se utilizaron?",
+     "role": "Datasets o Fuentes de Señales"
+    },
+    {
+     "id": "experimental-setup.es-assessment",
+     "question": "¿Cuáles son los criterios de éxito y métricas formales de desempeño?",
+     "role": "Métricas de Evaluación"
+    },
+    {
+     "id": "experimental-setup.es-training-details",
+     "question": "¿Cuáles son los hiperparámetros, tasas y protocolos de experimentación?",
+     "role": "Parámetros y Protocolos"
+    }
+   ],
+   "citations": 0,
+   "cross_relations": "Fija las reglas y condiciones empíricas para evaluar las hipótesis planteadas en la Introducción.",
+   "filename": "02-experimental-setup.md",
+   "has_figures": false,
+   "id": "02-experimental-setup",
+   "pdf_page": 5,
+   "principles": "Protocolos reproducibles de validación: configuración de banco/datasets, instrumental, métricas de evaluación y parámetros.",
+   "section": "02-experimental-setup",
+   "status": "SCAFFOLDED",
+   "title": "02 Experimental Setup",
+   "words": 0
+  },
+  {
+   "blocks_total": 0,
+   "blocks_written": 0,
+   "canonical_blocks": [
+    {
+     "id": "results-and-discussion.rd-general-task",
+     "question": "¿Se corroboran las hipótesis principales planteadas en la introducción?",
+     "role": "Validación de Hipótesis y Tarea Principal"
+    },
+    {
+     "id": "results-and-discussion.rd-contribution-blocks",
+     "question": "¿Cuáles son los resultados empíricos obtenidos frente a las métricas de éxito?",
+     "role": "Análisis Cuantitativo y Desempeño"
+    },
+    {
+     "id": "results-and-discussion.rd-cost",
+     "question": "¿Qué ventajas cuantitativas y cualitativas se demuestran respecto al estado del arte?",
+     "role": "Contraste con Baselines y Discusión"
+    }
+   ],
+   "citations": 0,
+   "cross_relations": "Valida empíricamente las hipótesis planteadas, confirmando los claims del Abstract.",
+   "filename": "03-results-and-discussion.md",
+   "has_figures": false,
+   "id": "03-results-and-discussion",
+   "pdf_page": 6,
+   "principles": "Densidad de evidencia cuantitativa. Corroboración con gráficas, tablas de rendimiento y contraste con baselines.",
+   "section": "03-results-and-discussion",
+   "status": "SCAFFOLDED",
+   "title": "03 Results And Discussion",
+   "words": 0
+  },
+  {
+   "blocks_total": 0,
+   "blocks_written": 0,
+   "canonical_blocks": [
+    {
+     "id": "limitations.lim-opening-concession",
+     "question": "¿Cuáles son los límites de validez y supuestos asumidos en el trabajo?",
+     "role": "Concesión Inicial y Alcance"
+    },
+    {
+     "id": "limitations.lim-proposal-items",
+     "question": "¿Qué requerimientos de cómputo, energía o datos condicionan el sistema?",
+     "role": "Restricciones de Recursos o Cómputo"
+    },
+    {
+     "id": "limitations.lim-validation-items",
+     "question": "¿Qué escenarios o distribuciones aún no han sido cubiertos exhaustivamente?",
+     "role": "Representatividad de la Muestra/Datos"
+    },
+    {
+     "id": "limitations.lim-failure-mode",
+     "question": "¿En qué casos extremos o bajo qué perturbaciones podría degradarse el rendimiento?",
+     "role": "Modos de Fallo Potenciales"
+    },
+    {
+     "id": "limitations.lim-closing",
+     "question": "¿Cómo pueden mitigarse estas limitaciones en futuras iteraciones?",
+     "role": "Perspectiva Constructiva"
+    }
+   ],
+   "citations": 0,
+   "cross_relations": "Dialoga con el Related Work y establece las líneas prioritarias para el trabajo futuro.",
+   "filename": "04-limitations.md",
+   "has_figures": false,
+   "id": "04-limitations",
+   "pdf_page": 8,
+   "principles": "Autocrítica constructiva y honestidad científica: supuestos, complejidad computacional, trade-offs y condiciones de fallo.",
+   "section": "04-limitations",
+   "status": "SCAFFOLDED",
+   "title": "04 Limitations",
+   "words": 0
+  },
+  {
+   "blocks_total": 0,
+   "blocks_written": 0,
+   "canonical_blocks": [
+    {
+     "id": "related-work.rw-preamble",
+     "question": "¿Cómo ha evolucionado el área y qué vertientes principales existen?",
+     "role": "Evolución y Panorama"
+    },
+    {
+     "id": "related-work.rw-panorama",
+     "question": "¿Qué fortalezas y debilidades presentan los trabajos previos relevantes?",
+     "role": "Aproximaciones Actuales y Limitaciones"
+    },
+    {
+     "id": "related-work.rw-problem-blocks",
+     "question": "¿De qué manera impactan las limitaciones existentes en el rendimiento global?",
+     "role": "Impacto de las Brechas No Resueltas"
+    },
+    {
+     "id": "related-work.rw-closing",
+     "question": "¿Por qué la propuesta se sitúa en una posición diferencial respecto al SOTA?",
+     "role": "Posicionamiento de la Propuesta"
+    },
+    {
+     "id": "related-work.rw-synthesis-artefact",
+     "question": "¿Cómo sustenta el análisis comparativo las decisiones metodológicas tomadas?",
+     "role": "Síntesis del Atlas SOTA"
+    }
+   ],
+   "citations": 0,
+   "cross_relations": "Establece el marco de referencia que justifica las decisiones de diseño y experimentación.",
+   "filename": "05-related-work.md",
+   "has_figures": false,
+   "id": "05-related-work",
+   "pdf_page": 3,
+   "principles": "Taxonomía comparativa rigurosa contra el estado del arte (SOTA). Tabla formal confrontando características clave, métricas y brechas.",
+   "section": "05-related-work",
+   "status": "SCAFFOLDED",
+   "title": "05 Related Work",
+   "words": 0
+  },
+  {
+   "blocks_total": 0,
+   "blocks_written": 0,
+   "canonical_blocks": [
+    {
+     "id": "introduction.block-1",
+     "question": "¿Cuál es el contexto y la motivación fundamental del problema?",
+     "role": "Escenario y Motivación"
+    },
+    {
+     "id": "introduction.block-4a",
+     "question": "¿Cómo se estructuró la investigación y el marco de trabajo?",
+     "role": "Hoja de Ruta Metodológica"
+    },
+    {
+     "id": "introduction.block-2",
+     "question": "¿Qué limitaciones técnicas o teóricas impiden resolver el problema hoy?",
+     "role": "Cuello de Botella y Desafíos"
+    },
+    {
+     "id": "introduction.block-3",
+     "question": "¿Cómo aborda el sistema propuesto las limitaciones identificadas?",
+     "role": "Solución Propuesta"
+    },
+    {
+     "id": "introduction.block-4b",
+     "question": "¿Cuáles son las hipótesis que el estudio somete a prueba empírica?",
+     "role": "Hipótesis Comprobables"
+    },
+    {
+     "id": "introduction.block-5",
+     "question": "¿Cómo está organizada la lectura de las siguientes secciones?",
+     "role": "Estructura del Manuscrito"
+    },
+    {
+     "id": "introduction.block-6",
+     "question": "¿Cuáles son los aportes científicos y técnicos definitivos del artículo?",
+     "role": "Contribuciones Clave"
+    }
+   ],
+   "citations": 0,
+   "cross_relations": "Las hipótesis planteadas se validan individualmente en Results y se sintetizan en Conclusions.",
+   "filename": "06-introduction.md",
+   "has_figures": false,
+   "id": "06-introduction",
+   "pdf_page": 1,
+   "principles": "Construcción de argumento secuencial: justificación del problema, mapa metodológico, cuello de botella actual, solución propuesta, hipótesis comprobables y contribuciones.",
+   "section": "06-introduction",
+   "status": "SCAFFOLDED",
+   "title": "06 Introduction",
+   "words": 0
+  },
+  {
+   "blocks_total": 0,
+   "blocks_written": 0,
+   "canonical_blocks": [
+    {
+     "id": "conclusions.concl-block-1",
+     "question": "¿Qué reto fundamental abordó y resolvió esta investigación?",
+     "role": "Recapitulación del Problema"
+    },
+    {
+     "id": "conclusions.concl-block-2",
+     "question": "¿Cuáles son los principales hallazgos y avances consolidados?",
+     "role": "Síntesis de Contribución Principal"
+    },
+    {
+     "id": "conclusions.concl-block-3",
+     "question": "¿Qué implicaciones prácticas o teóricas tiene este avance para la disciplina?",
+     "role": "Implicaciones Científicas o Tecnológicas"
+    },
+    {
+     "id": "conclusions.concl-block-4",
+     "question": "¿Qué recursos quedan disponibles para la comunidad y qué trabajo futuro se abre?",
+     "role": "Líneas Futuras y Reproducibilidad"
+    }
+   ],
+   "citations": 0,
+   "cross_relations": "Cierra el ciclo argumentativo abierto en el Abstract y la Introducción.",
+   "filename": "07-conclusions.md",
+   "has_figures": false,
+   "id": "07-conclusions",
+   "pdf_page": 8,
+   "principles": "Síntesis concluyente de las aportaciones fundamentales sin reiterar datos brutos. Proyección y direcciones de trabajo futuro.",
+   "section": "07-conclusions",
+   "status": "SCAFFOLDED",
+   "title": "07 Conclusions",
+   "words": 0
+  },
+  {
+   "blocks_total": 0,
+   "blocks_written": 0,
+   "canonical_blocks": [
+    {
+     "id": "abstract.slot-1",
+     "question": "¿Por qué es crucial este problema y cuál es el dominio de aplicación?",
+     "role": "Contexto del Problema"
+    },
+    {
+     "id": "abstract.slot-2",
+     "question": "¿Qué deficiencias o limitaciones presentan las aproximaciones actuales?",
+     "role": "Brecha Tecnológica / Científica"
+    },
+    {
+     "id": "abstract.slot-3",
+     "question": "¿Qué propone este trabajo para resolver dicha brecha?",
+     "role": "Propuesta Principal"
+    },
+    {
+     "id": "abstract.slot-4",
+     "question": "¿Qué componentes integran el sistema o modelo propuesto?",
+     "role": "Arquitectura y Metodología"
+    },
+    {
+     "id": "abstract.slot-5",
+     "question": "¿Qué métricas de rendimiento y validación empírica se alcanzaron?",
+     "role": "Resultados Experimentales"
+    },
+    {
+     "id": "abstract.slot-6",
+     "question": "¿Cuál es la precisión, latencia o ventaja empírica demostrada?",
+     "role": "Métrica Diferenciadora"
+    },
+    {
+     "id": "abstract.slot-7",
+     "question": "¿Cómo transforma este avance el campo de investigación?",
+     "role": "Impacto y Reproducibilidad"
+    }
+   ],
+   "citations": 0,
+   "cross_relations": "Resume la totalidad del manuscrito; cada slot anticipa una sección del paper.",
+   "filename": "08-abstract.md",
+   "has_figures": false,
+   "id": "08-abstract",
+   "pdf_page": 1,
+   "principles": "Estructura canónica de slots: Contexto -> Brecha técnica -> Propuesta metodológica -> Arquitectura/Diseño -> Resultados experimentales -> Precisión/Rendimiento -> Impacto y reproducibilidad.",
+   "section": "08-abstract",
+   "status": "SCAFFOLDED",
+   "title": "08 Abstract",
+   "words": 0
+  },
+  {
+   "blocks_total": 0,
+   "blocks_written": 0,
+   "canonical_blocks": [
+    {
+     "id": "title-and-keywords.title",
+     "question": "¿Cuál es la contribución técnica y el dominio de aplicación del trabajo?",
+     "role": "Título Principal"
+    },
+    {
+     "id": "title-and-keywords.keywords",
+     "question": "¿Cuáles son los términos y descriptores indexables del manuscrito?",
+     "role": "Palabras Clave Indexables"
+    }
+   ],
+   "citations": 0,
+   "cross_relations": "Proyecta los términos clave que se desarrollan en el Abstract y se formalizan en la Introducción.",
+   "filename": "09-title-and-keywords.md",
+   "has_figures": false,
+   "id": "09-title-and-keywords",
+   "pdf_page": 1,
+   "principles": "Concisión técnica informativa sin acrónimos ambiguos. Identificar el sistema/modelo y dominio de aplicación.",
+   "section": "09-title-and-keywords",
+   "status": "SCAFFOLDED",
+   "title": "09 Title And Keywords",
+   "words": 0
+  },
+  {
+   "blocks_total": 0,
+   "blocks_written": 0,
+   "canonical_blocks": [
+    {
+     "id": "back-matter.bm-author-contributions",
+     "question": "¿Qué roles y contribuciones desempeñó cada autor del manuscrito?",
+     "role": "Taxonomía CRediT de Coautoría"
+    },
+    {
+     "id": "back-matter.bm-funding",
+     "question": "¿Qué proyectos, becas o entidades financiaron la investigación?",
+     "role": "Declaración de Financiación"
+    },
+    {
+     "id": "back-matter.bm-data-availability",
+     "question": "¿Dónde reposan los datasets, código fuente y artefactos reproducibles?",
+     "role": "Disponibilidad de Datos y Código"
+    },
+    {
+     "id": "back-matter.bm-conflicts-of-interest",
+     "question": "¿Existe algún conflicto de interés financiero o personal que declarar?",
+     "role": "Conflictos de Interés"
+    },
+    {
+     "id": "back-matter.bm-acknowledgments",
+     "question": "¿A qué instituciones, revisores o colaboradores técnicos se agradece?",
+     "role": "Agradecimientos"
+    },
+    {
+     "id": "back-matter.bm-appendices",
+     "question": "¿Qué derivaciones matemáticas, tablas suplementarias o detalles se anexan?",
+     "role": "Apéndices Técnicos"
+    }
+   ],
+   "citations": 0,
+   "cross_relations": "Cumple los requisitos regulatorios y éticos de publicación académica.",
+   "filename": "10-back-matter.md",
+   "has_figures": false,
+   "id": "10-back-matter",
+   "pdf_page": 9,
+   "principles": "Transparencia formal: autoría CRediT, fuentes de financiación, disponibilidad de datos/código y declaraciones éticas.",
+   "section": "10-back-matter",
+   "status": "SCAFFOLDED",
+   "title": "10 Back Matter",
+   "words": 0
+  }
+ ],
+ "state": {
+  "experiments": {
+   "count": 0,
+   "files": []
+  },
+  "figures": {
+   "count": 0,
+   "pdf": [],
+   "rasters": []
+  },
+  "gate_links": {
+   "coupling-verification": {
+    "consumed_by": "audit",
+    "from": "declarations",
+    "label": "facts"
+   },
+   "diagram-raster": {
+    "consumed_by": "audit",
+    "from": "figures",
+    "label": "figures"
+   },
+   "grounding-style-leak": {
+    "consumed_by": "audit",
+    "from": "writing",
+    "label": "citations"
+   },
+   "writing-readiness": {
+    "consumed_by": "audit",
+    "from": "scaffolding",
+    "label": "contracts"
+   }
+  },
+  "gates": [
+   {
+    "id": "writing-readiness",
+    "name": "Writing Readiness Gate",
+    "parts": {
+     "contracts_ok": 0,
+     "contracts_total": 10
+    },
+    "reasons": [
+     "contract missing or malformed: 01-materials-and-methods",
+     "contract missing or malformed: 02-experimental-setup",
+     "contract missing or malformed: 03-results-and-discussion",
+     "contract missing or malformed: 04-limitations",
+     "contract missing or malformed: 05-related-work",
+     "contract missing or malformed: 06-introduction",
+     "contract missing or malformed: 07-conclusions",
+     "contract missing or malformed: 08-abstract",
+     "contract missing or malformed: 09-title-and-keywords",
+     "contract missing or malformed: 10-back-matter"
+    ],
+    "state": "BLOCKED"
+   },
+   {
+    "id": "coupling-verification",
+    "name": "Coupling Verification Gate",
+    "parts": {
+     "declarations": [],
+     "demanded": [],
+     "external": [
+      "dataset",
+      "experimental-design",
+      "formulation",
+      "implementation",
+      "results"
+     ],
+     "produced": [],
+     "unmatched": []
+    },
+    "reasons": [],
+    "state": "PASSED"
+   },
+   {
+    "id": "grounding-style-leak",
+    "name": "Grounding & Style Leak Gate",
+    "parts": {
+     "leaks": [],
+     "placeholder_citations": 0,
+     "verified_citations": 0
+    },
+    "reasons": [],
+    "state": "PASSED"
+   },
+   {
+    "id": "diagram-raster",
+    "name": "Diagram & Raster Gate",
+    "parts": {
+     "compiled": [],
+     "obligations": 0,
+     "rasters": []
+    },
+    "reasons": [],
+    "state": "PASSED"
+   }
+  ],
+  "generated_at": "<generated_at>",
+  "inbox": {
+   "count": 0,
+   "directory": null,
+   "paths": []
+  },
+  "paper_metadata": {
+   "authors": [],
+   "compute_target": "unspecified",
+   "domain_profile": "unspecified",
+   "name": "<workspace>",
+   "title": "<workspace>",
+   "tools": [],
+   "topic": "unspecified",
+   "venue_target": "unspecified"
+  },
+  "pipeline_chain": [
+   {
+    "from": "plausibility",
+    "label": "top-5 to ingest",
+    "to": "ingestion"
+   },
+   {
+    "from": "ingestion",
+    "label": "guidance/",
+    "to": "proposal"
+   },
+   {
+    "from": "proposal",
+    "label": "rNN revision",
+    "to": "experimental-deliberation"
+   },
+   {
+    "from": "experimental-deliberation",
+    "label": "protocol",
+    "to": "implementation"
+   },
+   {
+    "from": "implementation",
+    "label": "verified PoC (G-EXP-POC)",
+    "to": "experimental-implementation"
+   },
+   {
+    "from": "experimental-implementation",
+    "label": "job ready",
+    "to": "credentials"
+   },
+   {
+    "from": "credentials",
+    "label": "accounts validated",
+    "to": "remote"
+   },
+   {
+    "from": "remote",
+    "label": "findings approved (G-NOVELTY)",
+    "to": "scaffolding"
+   },
+   {
+    "from": "scaffolding",
+    "label": "section contracts",
+    "to": "declarations"
+   },
+   {
+    "from": "declarations",
+    "label": "declarations",
+    "to": "writing"
+   },
+   {
+    "from": "writing",
+    "label": "sections",
+    "to": "figures"
+   },
+   {
+    "from": "figures",
+    "label": "anchors",
+    "to": "paper"
+   }
+  ],
+  "pipeline_stages": [
+   {
+    "active": false,
+    "detail": "0/4 harness projection(s)",
+    "id": "harness",
+    "progress": 0.0,
+    "title": "Harness",
+    "workers": []
+   },
+   {
+    "active": false,
+    "detail": "no sota-pool artifact",
+    "id": "plausibility",
+    "progress": 0.0,
+    "title": "Plausibility",
+    "workers": []
+   },
+   {
+    "active": false,
+    "detail": "0 guidance file(s)",
+    "id": "ingestion",
+    "progress": 0.0,
+    "title": "Ingestion",
+    "workers": []
+   },
+   {
+    "active": false,
+    "detail": "no proposal revision",
+    "id": "proposal",
+    "progress": 0.0,
+    "title": "Proposal deliberation",
+    "workers": []
+   },
+   {
+    "active": false,
+    "detail": "0 deliberation record(s)",
+    "id": "experimental-deliberation",
+    "progress": 0.0,
+    "title": "Experimental deliberation",
+    "workers": []
+   },
+   {
+    "active": false,
+    "detail": "0 implementation(s)",
+    "id": "implementation",
+    "progress": 0.0,
+    "title": "Proof of concept",
+    "workers": []
+   },
+   {
+    "active": false,
+    "detail": "0 experimental revision(s)",
+    "id": "experimental-implementation",
+    "progress": 0.0,
+    "title": "Experimental implementation",
+    "workers": []
+   },
+   {
+    "active": false,
+    "detail": "no validated credentials",
+    "id": "credentials",
+    "progress": 0.0,
+    "title": "Credentials",
+    "workers": []
+   },
+   {
+    "active": false,
+    "detail": "0 inbox entry(ies)",
+    "id": "remote",
+    "progress": 0.0,
+    "title": "Remote execution",
+    "workers": []
+   },
+   {
+    "active": false,
+    "detail": "paper/main.tex absent",
+    "id": "scaffolding",
+    "progress": 0.0,
+    "title": "Scaffolding",
+    "workers": []
+   },
+   {
+    "active": false,
+    "detail": "no declarations region in paper/main.tex",
+    "id": "declarations",
+    "progress": 0.0,
+    "title": "Declarations",
+    "workers": []
+   },
+   {
+    "active": false,
+    "detail": "0/0 blocks written",
+    "id": "writing",
+    "progress": 0.0,
+    "title": "Writing",
+    "workers": []
+   },
+   {
+    "active": false,
+    "detail": "0 figure file(s)",
+    "id": "figures",
+    "progress": 0.0,
+    "title": "Figures and grounding",
+    "workers": []
+   },
+   {
+    "active": false,
+    "detail": "paper/main.pdf not compiled",
+    "id": "paper",
+    "progress": 0.0,
+    "title": "Paper",
+    "workers": []
+   },
+   {
+    "active": false,
+    "detail": "3/4 gates passed",
+    "id": "audit",
+    "progress": 0.75,
+    "title": "Audit (transversal)",
+    "workers": []
+   }
+  ],
+  "sections": [
+   {
+    "blocks": [],
+    "blocks_total": 0,
+    "blocks_written": 0,
+    "citations": {
+     "placeholders": 0,
+     "unresolved_keys": [],
+     "verified": 0
+    },
+    "extent": {
+     "max_words": null,
+     "min_words": null
+    },
+    "facts": {
+     "declarations": [],
+     "demands": [],
+     "produces": []
+    },
+    "file": "sections/01-materials-and-methods.md",
+    "has_contract": false,
+    "id": "01-materials-and-methods",
+    "mode": null,
+    "position": null,
+    "section": "01-materials-and-methods",
+    "status": "SCAFFOLDED",
+    "word_count": 0
+   },
+   {
+    "blocks": [],
+    "blocks_total": 0,
+    "blocks_written": 0,
+    "citations": {
+     "placeholders": 0,
+     "unresolved_keys": [],
+     "verified": 0
+    },
+    "extent": {
+     "max_words": null,
+     "min_words": null
+    },
+    "facts": {
+     "declarations": [],
+     "demands": [],
+     "produces": []
+    },
+    "file": "sections/02-experimental-setup.md",
+    "has_contract": false,
+    "id": "02-experimental-setup",
+    "mode": null,
+    "position": null,
+    "section": "02-experimental-setup",
+    "status": "SCAFFOLDED",
+    "word_count": 0
+   },
+   {
+    "blocks": [],
+    "blocks_total": 0,
+    "blocks_written": 0,
+    "citations": {
+     "placeholders": 0,
+     "unresolved_keys": [],
+     "verified": 0
+    },
+    "extent": {
+     "max_words": null,
+     "min_words": null
+    },
+    "facts": {
+     "declarations": [],
+     "demands": [],
+     "produces": []
+    },
+    "file": "sections/03-results-and-discussion.md",
+    "has_contract": false,
+    "id": "03-results-and-discussion",
+    "mode": null,
+    "position": null,
+    "section": "03-results-and-discussion",
+    "status": "SCAFFOLDED",
+    "word_count": 0
+   },
+   {
+    "blocks": [],
+    "blocks_total": 0,
+    "blocks_written": 0,
+    "citations": {
+     "placeholders": 0,
+     "unresolved_keys": [],
+     "verified": 0
+    },
+    "extent": {
+     "max_words": null,
+     "min_words": null
+    },
+    "facts": {
+     "declarations": [],
+     "demands": [],
+     "produces": []
+    },
+    "file": "sections/04-limitations.md",
+    "has_contract": false,
+    "id": "04-limitations",
+    "mode": null,
+    "position": null,
+    "section": "04-limitations",
+    "status": "SCAFFOLDED",
+    "word_count": 0
+   },
+   {
+    "blocks": [],
+    "blocks_total": 0,
+    "blocks_written": 0,
+    "citations": {
+     "placeholders": 0,
+     "unresolved_keys": [],
+     "verified": 0
+    },
+    "extent": {
+     "max_words": null,
+     "min_words": null
+    },
+    "facts": {
+     "declarations": [],
+     "demands": [],
+     "produces": []
+    },
+    "file": "sections/05-related-work.md",
+    "has_contract": false,
+    "id": "05-related-work",
+    "mode": null,
+    "position": null,
+    "section": "05-related-work",
+    "status": "SCAFFOLDED",
+    "word_count": 0
+   },
+   {
+    "blocks": [],
+    "blocks_total": 0,
+    "blocks_written": 0,
+    "citations": {
+     "placeholders": 0,
+     "unresolved_keys": [],
+     "verified": 0
+    },
+    "extent": {
+     "max_words": null,
+     "min_words": null
+    },
+    "facts": {
+     "declarations": [],
+     "demands": [],
+     "produces": []
+    },
+    "file": "sections/06-introduction.md",
+    "has_contract": false,
+    "id": "06-introduction",
+    "mode": null,
+    "position": null,
+    "section": "06-introduction",
+    "status": "SCAFFOLDED",
+    "word_count": 0
+   },
+   {
+    "blocks": [],
+    "blocks_total": 0,
+    "blocks_written": 0,
+    "citations": {
+     "placeholders": 0,
+     "unresolved_keys": [],
+     "verified": 0
+    },
+    "extent": {
+     "max_words": null,
+     "min_words": null
+    },
+    "facts": {
+     "declarations": [],
+     "demands": [],
+     "produces": []
+    },
+    "file": "sections/07-conclusions.md",
+    "has_contract": false,
+    "id": "07-conclusions",
+    "mode": null,
+    "position": null,
+    "section": "07-conclusions",
+    "status": "SCAFFOLDED",
+    "word_count": 0
+   },
+   {
+    "blocks": [],
+    "blocks_total": 0,
+    "blocks_written": 0,
+    "citations": {
+     "placeholders": 0,
+     "unresolved_keys": [],
+     "verified": 0
+    },
+    "extent": {
+     "max_words": null,
+     "min_words": null
+    },
+    "facts": {
+     "declarations": [],
+     "demands": [],
+     "produces": []
+    },
+    "file": "sections/08-abstract.md",
+    "has_contract": false,
+    "id": "08-abstract",
+    "mode": null,
+    "position": null,
+    "section": "08-abstract",
+    "status": "SCAFFOLDED",
+    "word_count": 0
+   },
+   {
+    "blocks": [],
+    "blocks_total": 0,
+    "blocks_written": 0,
+    "citations": {
+     "placeholders": 0,
+     "unresolved_keys": [],
+     "verified": 0
+    },
+    "extent": {
+     "max_words": null,
+     "min_words": null
+    },
+    "facts": {
+     "declarations": [],
+     "demands": [],
+     "produces": []
+    },
+    "file": "sections/09-title-and-keywords.md",
+    "has_contract": false,
+    "id": "09-title-and-keywords",
+    "mode": null,
+    "position": null,
+    "section": "09-title-and-keywords",
+    "status": "SCAFFOLDED",
+    "word_count": 0
+   },
+   {
+    "blocks": [],
+    "blocks_total": 0,
+    "blocks_written": 0,
+    "citations": {
+     "placeholders": 0,
+     "unresolved_keys": [],
+     "verified": 0
+    },
+    "extent": {
+     "max_words": null,
+     "min_words": null
+    },
+    "facts": {
+     "declarations": [],
+     "demands": [],
+     "produces": []
+    },
+    "file": "sections/10-back-matter.md",
+    "has_contract": false,
+    "id": "10-back-matter",
+    "mode": null,
+    "position": null,
+    "section": "10-back-matter",
+    "status": "SCAFFOLDED",
+    "word_count": 0
+   }
+  ],
+  "totals": {
+   "blocks_total": 0,
+   "blocks_written": 0,
+   "gates_passed": 3,
+   "gates_total": 4,
+   "placeholder_citations": 0,
+   "sections": 10,
+   "word_count": 0
+  },
+  "workspace": {
+   "name": "<workspace>",
+   "root": "<root>",
+   "version": null
+  }
+ },
+ "target_title": "<workspace>",
+ "telemetria": [],
+ "topic": "unspecified",
+ "totals": {
+  "bibtex_entries": 0,
+  "blocks_total": 0,
+  "blocks_written": 0,
+  "gates_passed": 0,
+  "gates_total": 6,
+  "pdf_pages": 0,
+  "phases_active": 0,
+  "phases_completed": 0,
+  "phases_total": 11,
+  "sections_count": 10,
+  "total_tokens": "0",
+  "total_tool_uses": 0,
+  "total_words": 0
+ }
+}

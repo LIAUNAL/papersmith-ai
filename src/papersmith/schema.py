@@ -172,6 +172,11 @@ def validate_config_json(data: Any) -> dict:
         _number(engine["max_retries"], "config.execution_engine.max_retries", integer=True)
     _string(root.get("created_at"), "config.created_at")
     _string(root.get("updated_at"), "config.updated_at")
-    if "paper_kind" in root and root["paper_kind"] not in ("experimental", "review"):
-        _fail("config.paper_kind", "must be experimental or review")
+    if "paper_kind" in root:
+        # Imported here: ``manifest`` imports the generators, which import
+        # this module through ``core.config``.
+        from .core import manifest
+
+        if root["paper_kind"] not in manifest.LINES:
+            _fail("config.paper_kind", f"must be {manifest.or_list(tuple(manifest.LINES))}")
     return root

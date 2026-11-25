@@ -41,6 +41,7 @@ SKILL_NAMES = (
     "kaggle-accounts",
     "math-tutor",
     "paper-ingestion",
+    "paper-type",
     "paper-writing",
     "pixelrag",
     "plausibility",
@@ -50,6 +51,7 @@ SKILL_NAMES = (
     "remote-execution",
     "remote-parallelism",
     "skill-audit",
+    "study-protocol-deliberation",
     "ui-github",
     "upgrade-project",
 )
@@ -82,11 +84,13 @@ class SkillTreeTests(unittest.TestCase):
 
     def test_every_repository_skill_ships_in_the_workspace(self) -> None:
         workspace = make_workspace(new_tmp(self))
-        # Review-only skills (``manifest.REVIEW_ONLY_PREFIXES``) ship only to a
-        # review workspace (``smith init --kind review``).
-        review_only = {prefix.split("/")[1] for prefix in manifest.REVIEW_ONLY_PREFIXES
-                       if prefix.startswith("skills/")}
-        repo = {path.name for path in (REPO_ROOT / "skills").iterdir() if path.is_dir()} - review_only
+        # Line-only skills (each line's ``only_prefixes`` in ``manifest.LINES``,
+        # such as ``systematic-review``) ship only to a workspace of that line
+        # (``smith init --kind <line>``).
+        line_only = {prefix.split("/")[1] for line in manifest.LINES.values()
+                     for prefix in line.only_prefixes if prefix.startswith("skills/")}
+        self.assertIn("observational-measurement", line_only)
+        repo = {path.name for path in (REPO_ROOT / "skills").iterdir() if path.is_dir()} - line_only
         shipped = {path.name for path in (workspace / "skills").iterdir() if path.is_dir()}
         self.assertEqual(shipped, repo, "the workspace must ship the whole skill tree")
 
@@ -189,6 +193,14 @@ class SkillFrontDoorTests(unittest.TestCase):
         payload = json.loads(experiments.stdout)
         self.assertEqual(payload["status"], "ok")
         self.assertIn("experiments", payload["objective"]["purpose"])
+
+        protocol = run_node(
+            workspace / "skills/study-protocol-deliberation/cli.mjs",
+            '{"operation":"STATUS"}', workspace=workspace)
+        self.assertEqual(protocol.returncode, 0, protocol.stderr)
+        payload = json.loads(protocol.stdout)
+        self.assertEqual(payload["status"], "ok")
+        self.assertIn("study protocol", payload["objective"]["purpose"])
 
 
 class SkillWorkspaceVerbTests(unittest.TestCase):

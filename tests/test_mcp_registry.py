@@ -87,7 +87,7 @@ def _paper_build_plan(spec: registry.ToolSpec) -> tuple[tuple[str, ...], tuple[r
 #: option in the other direction.
 _PAPER_CLI_ONLY_FLAGS: dict[str, frozenset[str]] = {
     # `observe` omits the optional disk-truth reconciliation half of the CLI.
-    "papersmith.paper_observe": frozenset({"--experiments", "--implementation", "--proposals"}),
+    "papersmith.paper_observe": frozenset({"--experiments", "--flow", "--implementation", "--proposals", "--protocol"}),
     # `declare` withholds the decline-with-condition surface and the
     # --sections override.
     "papersmith.paper_declare": frozenset({"--condition", "--decline", "--reason", "--sections"}),
