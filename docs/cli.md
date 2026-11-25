@@ -583,7 +583,9 @@ Works outside a workspace (the probe then comes from the kit). Always exits `0`.
 ROCm on a supported AMD target and the CPU build otherwise, and prints why.
 It builds the environment from that build's lock, `env/<cpu|cuda|rocm>.conda-lock.yml`.
 An environment already built from the same lock bytes (recorded in its
-`conda-meta/papersmith-environment.json`) is left as it is; any other existing
+`conda-meta/papersmith-environment.json`, with whether the ingestion layer went
+in) is left as it is, unless `--rebuild` asks for a rebuild anyway (after packages
+were changed by hand); any other existing
 environment is rebuilt so it holds exactly the lock's packages, after every
 package has been downloaded, so a failed download leaves it untouched (packages
 added to it by hand are not kept); on

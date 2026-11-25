@@ -259,7 +259,7 @@ def pip_requirement(name: str, constraint: str) -> str | None:
         return None
     if constraint.startswith("=") and not constraint.startswith("=="):
         # conda's `=X` matches any version that starts with X (X.*); pip spells that `==X.*`.
-        version = constraint[1:].strip()
+        version = constraint[1:].strip().split("=", 1)[0]  # `=X=build`: pip has no build string
         constraint = "==" + (version if version.endswith("*") else version + ".*")
     return PIP_DISTRIBUTIONS.get(name, name) + constraint
 

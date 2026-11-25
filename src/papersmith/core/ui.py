@@ -14,6 +14,7 @@ import contextlib
 import importlib.util
 import ipaddress
 import json
+import logging
 import os
 import re
 import secrets
@@ -78,7 +79,10 @@ def ui_env_packages(kit_root: Path | None = None) -> tuple[str, ...]:
             requirement = manifest.pip_requirement(name, constraint)
             if requirement is not None:
                 declared[manifest.PIP_DISTRIBUTIONS.get(name, name)] = requirement
-    except Exception:  # noqa: BLE001 - see above
+    except Exception as exc:  # noqa: BLE001 - see above
+        logging.getLogger(__name__).warning(
+            "the dashboard's package bounds could not be read from the kit's %s (%s); "
+            "installing them unbounded", manifest.ENV_SOURCE, exc)
         declared = {}
     return tuple(declared.get(name, name) for name in UI_ENV_DISTRIBUTIONS)
 

@@ -47,8 +47,10 @@ class UiRuntimeBootstrapTests(unittest.TestCase):
         from papersmith import kit
         from papersmith.core import ui as ui_module
 
-        with mock.patch.object(kit, "resolve_kit_root", side_effect=RuntimeError("no kit")):
+        with mock.patch.object(kit, "resolve_kit_root", side_effect=RuntimeError("no kit")), \
+                self.assertLogs("papersmith.core.ui", level="WARNING") as logs:
             self.assertEqual(ui_module.ui_env_packages(), ui_module.UI_ENV_DISTRIBUTIONS)
+        self.assertIn("unbounded", logs.output[0])
         with mock.patch.object(ui_module.manifest, "conda_dependencies", side_effect=ValueError("bad yml")):
             self.assertEqual(ui_module.ui_env_packages(Path("/nowhere")), ui_module.UI_ENV_DISTRIBUTIONS)
 

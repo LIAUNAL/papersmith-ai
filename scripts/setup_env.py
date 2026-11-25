@@ -392,10 +392,14 @@ def environment_args(kind: str, asset: str) -> list[str]:
 STAMP = Path("conda-meta") / "papersmith-environment.json"
 
 
-def environment_fingerprint(kind: str, files: list[str]) -> dict:
-    """The kind plus the sha256 of every file the build reads (lock or sources)."""
+def environment_fingerprint(kind: str, files: list[str], ingestion: bool) -> dict:
+    """The kind, whether the ingestion layer goes in, and the sha256 of every file
+    the build reads (lock or sources, and env/ingestion.txt when it goes in)."""
     paths = [Path(arg) for arg, before in zip(files, ["", *files]) if before == "-f"]
-    return {"kind": kind, "files": {path.name: _sha256(path) for path in paths}}
+    if ingestion:
+        paths.append(INGESTION_REQUIREMENTS)
+    return {"kind": kind, "ingestion": ingestion,
+            "files": {path.name: _sha256(path) for path in paths if path.is_file()}}
 
 
 def read_stamp(path: Path) -> dict | None:
@@ -422,11 +426,12 @@ def cmd_install(args: argparse.Namespace) -> int:
     mm = find_micromamba() or bootstrap_micromamba()
 
     files = environment_args(kind, platform_asset())
-    fingerprint = environment_fingerprint(kind, files)
+    fingerprint = environment_fingerprint(kind, files, not args.no_ingestion)
     stamp = MAMBA_ROOT / "envs" / args.name / STAMP
     existed = env_exists(args.name)
-    if existed and read_stamp(stamp) == fingerprint:
-        print(f"[setup] the environment '{args.name}' already matches its lock; not rebuilt")
+    if existed and not getattr(args, "rebuild", False) and read_stamp(stamp) == fingerprint:
+        print(f"[setup] the environment '{args.name}' already matches its lock; not rebuilt "
+              "(--rebuild rebuilds it anyway, e.g. after packages were changed by hand)")
     else:
         if existed:
             # `create -y` over an existing environment removes it and builds it
@@ -529,6 +534,8 @@ def main() -> int:
     p_install.add_argument("--cuda", action="store_true", help="force CUDA PyTorch")
     p_install.add_argument("--rocm", action="store_true",
                            help="force AMD's ROCm PyTorch wheels for the detected gfx target")
+    p_install.add_argument("--rebuild", action="store_true",
+                           help="rebuild the environment even when it already matches its lock")
     p_install.add_argument("--no-ingestion", action="store_true",
                            help="skip env/ingestion.txt (docling, the heavy ingestion engine); "
                                 "the pypdfium2 fast path stays")
