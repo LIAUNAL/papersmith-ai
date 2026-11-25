@@ -31,6 +31,7 @@ from papersmith.core import init as init_module
 from skills._core.command_center import server, study_view
 from skills._core.paper_types import registry
 from tests.test_analysis_log import FIELDS, MARKER
+from papersmith import __version__
 
 REPO = Path(__file__).resolve().parents[1]
 PAGE = (REPO / "skills/_core/command_center/static/index.html").read_text(encoding="utf-8")
@@ -505,7 +506,7 @@ class StudyTabMarkupTests(unittest.TestCase):
         self.assertEqual(kinds.group(1).split(), list(study_view.EMPIRICAL_KINDS))
         self.assertIn('<div id="pane-study" class="tab-pane">', PAGE)
         self.assertIn('id="studyPanel"', PAGE)
-        self.assertIn('src="./study-panel.js?v=0.82.0"', PAGE)
+        self.assertIn(f'src="./study-panel.js?v={__version__}"', PAGE)
         self.assertRegex(PAGE, r"if \(tabId === 'study'\) \{?\s*window\.refreshStudyPanel\?\.\(\)")
         self.assertIn("study: () => window.refreshStudyPanel?.()", PAGE)
         allow = re.search(r"\[('pipeline'[^\]]*)\]\.includes\(hash\)", PAGE)

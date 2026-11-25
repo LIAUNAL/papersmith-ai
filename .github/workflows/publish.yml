@@ -71,7 +71,7 @@ jobs:
       # same in pyproject.toml.
       - name: Verify the artifacts carry the kit
         run: |
-          python3 -m pip install --upgrade pytest
+          python3 -m pip install --upgrade pytest setuptools
           python3 -m pytest tests/test_pypi_publishing.py -q
 
       # The last check is the real one: install the built wheel into a clean

@@ -28,6 +28,7 @@ from fastapi.testclient import TestClient
 import tests.test_experimental_line_characterization as characterization
 from papersmith.core import init as init_module
 from skills._core.command_center import review_board, review_view, server
+from papersmith import __version__
 
 REPO = Path(__file__).resolve().parents[1]
 PAGE = (REPO / "skills/_core/command_center/static/index.html").read_text(encoding="utf-8")
@@ -439,7 +440,7 @@ class ReviewTabMarkupTests(unittest.TestCase):
         self.assertIn('body:not([data-paper-kind="review"]) [data-kinds="review"] { display: none !important; }', PAGE)
         self.assertIn('<div id="pane-review" class="tab-pane">', PAGE)
         self.assertIn('id="reviewPanel"', PAGE)
-        self.assertIn('src="./review-panel.js?v=0.82.0"', PAGE)
+        self.assertIn(f'src="./review-panel.js?v={__version__}"', PAGE)
         self.assertRegex(PAGE, r"if \(tabId === 'review'\) \{?\s*window\.refreshReviewPanel\?\.\(\)")
         self.assertIn("review: () => window.refreshReviewPanel?.()", PAGE)
 

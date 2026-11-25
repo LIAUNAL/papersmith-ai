@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.83.0
 
 - **Paper types: plausibility now ends by agreeing which kind of paper the idea
   becomes (#198, closes #197).** `/paper-type` records the accepted idea in
