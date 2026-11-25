@@ -189,7 +189,7 @@ class StepsTests(QualBoardCase):
             encoding="utf-8")
         self.assertEqual(len(re.findall(r"^\s*(\d+)\. \*\*", flow, re.M)), len(STEPS))
         self.assertEqual(list(empirical_board.LINE_TABLES[KIND].steps), STEPS)
-        self.assertEqual(lines.board(KIND).flow_html, "papersmith-flow.html")
+        self.assertEqual(lines.board(KIND).flow_html, f"papersmith-{KIND}-flow.html")
 
     def test_the_agreed_variant_passes_step_two(self) -> None:
         root = self.workspace()

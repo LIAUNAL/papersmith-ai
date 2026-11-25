@@ -2803,8 +2803,6 @@ class LineTable:
     phase_gates: Mapping[str, str]
     ungated: frozenset[str]
     transversal: str
-    #: The flow diagram ``/api/flow`` serves; per-line diagrams are deferred (E11).
-    flow_html: str = "papersmith-flow.html"
     #: Gates listed only when the operator declared a validation with people
     #: (:func:`with_people`); they are read always, so a step can show them.
     conditional_gates: frozenset[str] = frozenset()
@@ -2817,6 +2815,13 @@ class LineTable:
     #: ``(ctx, gate id) -> listed?`` for a gate that does not apply to every
     #: workspace of the line; read always, it is listed only when this says so.
     lists_gate: Callable[[Context, str], bool] | None = None
+
+    @property
+    def flow_html(self) -> str:
+        """The flow diagram ``/api/flow`` serves: this line's own page, generated
+        from this table (scripts/line_flow_candidates.py, then
+        docs/diagrams/papersmith-line-flow.build.mjs) and shipped in ``static/``."""
+        return f"papersmith-{self.kind}-flow.html"
 
 
 #: kind -> its table. A later line adds its own here.
