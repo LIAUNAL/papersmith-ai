@@ -12,6 +12,7 @@ to the current directory and has to point at an initialized workspace, except fo
 | `init` | Creates a standalone research workspace |
 | `upgrade` | Syncs the framework's scaffolding while preserving the research |
 | `kind` | Moves a workspace to the line of the paper type agreed after plausibility (`kind set <type> --by <name>`) |
+| `idea` | Optional guided phase before plausibility: sources, profile, experience, interests, three topics and a two-sentence draft in `.papersmith/idea_brief.json` |
 | `status` | Reports workspace health, proposals, runs and inbox |
 | `ingest` | Ingests a literature PDF or URL into Markdown |
 | `deliberate` | Talks to the `proposal-deliberation` engine |
@@ -238,6 +239,44 @@ is recorded.
 | `--by TEXT` | The operator who agreed the type (required) |
 | `--force` | Moves the workspace even when a proposal revision (`proposals/*-r*.md`) or `paper/main.tex` exists (in an empirical-line workspace, also a study-protocol revision or the protocol lock) |
 | `--allow-dirty-kit` | Moves the workspace even when the kit source has uncommitted changes, as `smith upgrade --allow-dirty-kit` |
+
+### `smith idea [<verb>] [<dir>]`
+
+```bash
+smith idea                                   # start: the six steps, interactively
+smith idea start --answers answers.json --bank none --yes
+smith idea bank --list
+smith idea bank --choose banco-lia
+smith idea profile --orcid 0000-0002-1825-0097
+smith idea topics --propose
+smith idea topics --choose t1,t3
+smith idea draft --compose
+smith idea draft --check
+smith idea approve
+smith idea handoff
+smith idea show --json
+```
+
+The optional guided phase before plausibility (lane 2a of phase 2; the skill
+is `/idea-shaping` and the dashboard's *Idea* tab shows the same record). It
+helps an operator with a vague idea reach the two sentences `/plausibility`
+needs, and records every step in `.papersmith/idea_brief.json`, which
+plausibility and `/paper-type` may read. `smith idea` forwards to the engine
+`skills/_core/idea/idea_cli.py`; plain `smith idea` runs `start`. Every verb
+takes `--json` to print JSON on stdout.
+
+| Verb | What it does |
+|------|--------------|
+| `start` | Runs steps 1 to 6 interactively, one question at a time. `--answers FILE.json` runs them without interaction from a file of answers, `--bank banco-lia\|none\|<server>` sets the step-1 source, and `--yes` accepts the proposals without asking |
+| `show` | Prints the brief |
+| `bank` | Step 1, the sources. `--list` lists `banco-lia` and the other servers of the workspace's `.mcp.json` that smith does not manage; `--probe SERVER` runs `initialize` and `tools/list` and reports whether it is available and compatible (it exposes `search_bank`, optionally `taxonomy`) and its tools; `--choose banco-lia\|none\|SERVER` records the choice (a compatible server is searched like banco-lia; any other is usable only through the agent's own `mcp__<server>__*` tools; `none` queries no bank); `--add NAME --command ...` or `--add NAME --url ...` writes a server entry to `.mcp.json`, keeping the other servers |
+| `profile` | Step 2. `--orcid`, `--openalex`, `--scholar` or `--name` finds the author in OpenAlex and summarises their works into topics. A Google Scholar link is used only to find the author's name; Scholar is never scraped. Offline or unmatched, it records the reason and never fails |
+| `experience` | Step 3: level (`student`, `early-career`, `experienced`, `senior`), methods, resources (data, equipment, compute) and time |
+| `interests` | Step 4: keywords, application domain and an admired paper |
+| `topics` | Step 5. `--propose` computes three candidate topics from the interests, the profile and, when the chosen bank is compatible, its hits, each evidence item naming its source, with OpenAlex counts of the last four years when reachable; `--choose t1,t2` records the operator's pick or combination |
+| `draft` | Step 6. `--compose` writes a draft of two or more sentences naming a problem and a proposal from the chosen topics; `--text -` stores the text read from stdin; `--check` runs the plausibility rules of the prompt gate and records the score and what is missing |
+| `approve` | Records the operator's approval of the draft; refuses while the gate fails |
+| `handoff` | Prints `/plausibility <draft>`; refuses unless the draft is approved. It never launches plausibility |
 
 ### `smith status [<dir>]`
 

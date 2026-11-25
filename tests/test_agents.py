@@ -39,7 +39,8 @@ SKILLS = ROOT / "skills"
 # nor a TypeScript `profile.ts` `objective`. Pinned by name, not discovered,
 # so removing an entry (or a skill quietly growing a north) changes what the
 # seal below expects to check, rather than changing what it silently skips.
-NORTHLESS_SKILLS = {"skill-audit", "plausibility", "math-tutor", "experiments-tutor", "prompt-gate", "paper-type"}
+NORTHLESS_SKILLS = {"skill-audit", "plausibility", "math-tutor", "experiments-tutor", "prompt-gate", "paper-type",
+                    "idea-shaping"}
 
 # The agents that run on the lighter model. `.claude/agents` is copied into a
 # workspace, not rendered, so the `model:` line written in these sources IS the

@@ -21,6 +21,7 @@ tool refuses when a stage's input is missing.
    sentences>` scouts the state of the art; on acceptance, `/paper-type`
    records the type and the variant the operator agrees in
    `.papersmith/paper_type.json`: `materials` or `modelling-simulation`.
+   A vague idea can be shaped first with `/idea-shaping` (`smith idea`).
 3. **Sample matrix or model definition**: the operator decides what the study
    varies and holds fixed. For `materials`, the samples to make (the
    compositions, the process conditions, the specimens per condition) and the

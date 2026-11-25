@@ -19,6 +19,7 @@ written by the shared empirical tools and the datasets skill, and
    sentences>` scouts the state of the art and the closest existing
    resources; on acceptance, `/paper-type` records the type the operator
    agrees in `.papersmith/paper_type.json`.
+   A vague idea can be shaped first with `/idea-shaping` (`smith idea`).
 3. **Collection protocol** (gate G-STUDY-PROTOCOL):
    `/study-protocol-deliberation` keeps the protocol as managed revisions
    `protocol/study-protocol-<slug>-vNN.md`: the purpose of the resource, the

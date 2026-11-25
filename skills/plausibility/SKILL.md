@@ -26,6 +26,14 @@ by title and DOI), never SOTA evidence: they enter the pool only if the
 scout finds them as references on their own merits, and the report never
 cites the draft's items as state of the art.
 
+An operator who needs more guidance than keywords can shape the idea first
+with `/idea-shaping` (`skills/idea-shaping/SKILL.md`, `smith idea`, or the
+dashboard's Idea tab): it asks which bank to use, if any, the operator's
+profile, experience and interests, proposes three topics with their evidence,
+and hands over `/plausibility <draft>` once the draft passes this skill's
+two-sentence rule and the operator approves it. Treat that draft like any
+other idea; its bank items are continuity context, as above.
+
 ## The three stretches
 
 | Stretch | Delegated to | Begins after | Ends at | Measure this before delegating |
@@ -309,6 +317,7 @@ set <type> --by <name>` to its own line's flow (`smith init --kind` takes
 | --- | --- |
 | Idea under two sentences | Refuse before searching; scouting an unstated idea invents its own question |
 | The idea comes from the dashboard's thematic help | Treat it as any stated idea: two sentences still apply, and its LIA items are continuity context, never SOTA evidence |
+| The idea is vague, or the operator asks for help building it | Suggest `/idea-shaping` first; never shape it here, and never refuse to scout a stated two-sentence idea for lacking a brief |
 | Fewer than 25 resolvable candidates | Report the pool short with what was tried; never pad with unquoted entries |
 | More than 7 families | Keep the 7 the abstracts lean on hardest and say which were left out |
 | The checker refuses | Fix the atlas and re-run, up to 3 repair passes; then stop with the violations quoted in `owed` |

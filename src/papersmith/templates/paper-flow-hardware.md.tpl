@@ -19,6 +19,7 @@ when a stage's input is missing.
    acceptance, `/paper-type` records the type the operator agrees in
    `.papersmith/paper_type.json`. The reporting checklists are `hardwarex`
    and `gum-reporting`.
+   A vague idea can be shaped first with `/idea-shaping` (`smith idea`).
 3. **Requirements and specifications** (gate G-SPEC):
    `/study-protocol-deliberation` keeps the hardware's protocol as managed
    revisions `protocol/study-protocol-<slug>-vNN.md`: what the hardware must

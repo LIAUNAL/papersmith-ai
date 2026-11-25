@@ -37,7 +37,7 @@ from papersmith.kit import resolve_and_validate
 
 ROOT = Path(__file__).resolve().parents[1]
 
-#: The twenty-four command-bearing skills, in the deterministic order
+#: The twenty-five command-bearing skills, in the deterministic order
 #: ``collect_commands`` sorts them into. Pinned literally so a new or renamed
 #: top-level skill has to be acknowledged here.
 COMMAND_NAMES = (
@@ -48,6 +48,7 @@ COMMAND_NAMES = (
     "experiments-tutor",
     "figure-review",
     "hyperparameter-search",
+    "idea-shaping",
     "journal-finder",
     "kaggle-accounts",
     "math-tutor",
@@ -67,7 +68,7 @@ COMMAND_NAMES = (
     "upgrade-project",
 )
 
-#: The twenty-nine agent definitions, in the deterministic order
+#: The thirty-four agent definitions, in the deterministic order
 #: ``collect_pi_agents`` sorts them into. Pinned literally so a new or renamed
 #: agent has to be acknowledged here -- and in the `.pi/agents/` projection
 #: the Pi harness discovers.
@@ -87,6 +88,7 @@ AGENT_NAMES = (
     "experiments-walk",
     "figure-auditor",
     "figure-visual-reviewer",
+    "idea-guide",
     "implementation-build",
     "implementation-walk",
     "insumos-observer",

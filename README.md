@@ -84,6 +84,7 @@ The full path, from a PDF to a compiled paper:
 
 | # | You invoke | What it does | Where it leaves the result |
 |---|---------|----------|-------------------------|
+| 0 | `/idea-shaping` (or `smith idea`, or the dashboard's *Idea* tab) | Optional, before step 1 (lane 2a of the dashboard's phase 2), for an idea that is still vague: you decide which knowledge bank to use (`banco-lia`, another bank MCP, or none), then answer one question at a time about your author profile (ORCID, OpenAlex, or a Google Scholar link used only to find you in OpenAlex), your experience and your interests; the `idea-guide` agent proposes three topics, each with its evidence and where it came from, you pick or combine them, and a draft of at least two sentences that passes the plausibility prompt gate becomes `/plausibility <draft>` when you launch it | `.papersmith/idea_brief.json` |
 | 1 | `/plausibility` | Explores the idea before any ingestion, in three stretches: it tracks ~25 references through their abstracts, maps the constellation in a single HTML and discusses the plausibility of the hypothesis against that SOTA. Without clear sentences, the dashboard's optional thematic help turns 3 to 5 keywords into a proposed idea from the lab bank (`banco-lia`) that you edit and approve before it runs as this prompt | `sota-pool/` (ignored, like `guidance/`) |
 | 1b | `/paper-type` (or the dashboard's *Tipo de paper* tab) | Once you accept the plausibility report: scores the idea against smith's eight paper types (a deterministic 0-100 match per type, no model call), has the `paper-type-advisor` agent relate each type to the idea and propose a type and variant, and records the type you agree. An applied-AI type keeps this flow; any other moves the workspace to its own line with `smith kind set <type> --by <name>` (see [The paper type and the eight lines](#the-paper-type-and-the-eight-lines)) | `.papersmith/plausibility.json` (the accepted idea) and `.papersmith/paper_type.json` (scores, suggestion, agreement) |
 | 2 | `/paper-ingestion` | Converts the reference PDFs into readable Markdown (equations in LaTeX, tables as tables, figures as files) | `guidance/<folder>/` |
@@ -1046,6 +1047,22 @@ package and later runs work offline. If the bank cannot be reached the panel
 says why and you write the idea yourself. Details and the endpoint
 (`POST /api/plausibility/suggest`) are in [docs/mcp.md](docs/mcp.md#the-dashboards-thematic-help).
 
+**Idea shaping, when keywords are not enough.** `/idea-shaping` (or `smith
+idea` in a terminal, or the dashboard's *Idea* tab) is an optional guided
+phase before this step, lane 2a of phase 2. You first decide the sources:
+`banco-lia`, another bank MCP of the workspace's `.mcp.json` (searched like
+banco-lia when it exposes `search_bank`, otherwise only through the agent's
+own tools), or none. Then it asks for your author profile (ORCID, OpenAlex,
+or a Google Scholar link used only to find you in OpenAlex; Scholar is never
+scraped), your experience and your interests, one question at a time. The
+`idea-guide` agent proposes three candidate topics, each with its evidence and
+the source it came from; you pick or combine them, and the draft is checked
+live against the plausibility prompt gate. Once you approve it, `smith idea
+handoff` prints `/plausibility <draft>`; launching it stays your decision.
+Every answer is recorded in `.papersmith/idea_brief.json`. See
+[`smith idea`](docs/cli.md#smith-idea-verb-dir) and
+[section 32 of the skills tour](docs/skills.md#32-idea-shaping--a-vague-idea-shaped-into-two-sentences-before-plausibility).
+
 ### Step 2 — Put each PDF in the folder according to its role
 
 | Folder | What goes here |
@@ -1317,7 +1334,7 @@ my-paper/
 │   ├── manifest.json            #   hashes of everything the framework generated
 │   ├── runs_ledger.jsonl        #   every dispatched run, in order
 │   └── version                  #   framework version that created it
-├── .claude/agents/              # the thirty-three subagents (single source of truth)
+├── .claude/agents/              # the thirty-four subagents (single source of truth)
 ├── skills/                      # the kit copy: the skills + _core
 │   └── _core/                   #   the two shared engines (deliberation, implementation)
 ├── sections/                    # the ten section contracts (they travel WITH content, like skills/)
@@ -1544,7 +1561,7 @@ repo-only).
 
 ## The agents
 
-A workspace ships **thirty-three subagents** in `.claude/agents/`. They are short
+A workspace ships **thirty-four subagents** in `.claude/agents/`. They are short
 bursts of work that a harness launches (for example, with the Task tool) on
 request, not replacements for the CLI. The shape is always the
 same — **one burst between two operator gates**: the agent decides
@@ -1580,6 +1597,7 @@ to establish it. The operator opens and closes the gates.
 | `novelty-screener` | Discusses the hypothesis against the pool's abstracts, grades novelty and plausibility with an exact citation —all provisional— and ranks the top-5 for later ingestion, closing with a plausibility paragraph. Dialogue with a report at the end; it does not publish, does not write, does not ingest, does not deliberate. | `plausibility` |
 | `sota-scout` | Tracks the idea across the open literature —25 references with abstracts, each in its family (3 to 7 in the pool)— as `sota-pool/candidates.json`. It ends in the pool; it does not ingest nor finally grade anything. | `plausibility` |
 | `paper-type-advisor` | One paper-type reading after plausibility: from the accepted idea, its deterministic scores against the paper-type catalogue and what plausibility found, it relates every type to the idea and proposes a type and variant for the operator to agree. It reads only; it never writes the workspace nor records an agreement. | `paper-type` |
+| `idea-guide` | One idea-shaping reading before plausibility: from the idea brief (the sources the operator chose, their profile, experience and interests, and the engine's candidate topics) it returns three candidate topics, each with its rationale and its evidence named by source, and a draft of at least two sentences naming a problem and a proposal. It reads only; it never writes the brief, never chooses for the operator and never launches plausibility. | `idea-shaping` |
 | `sota-grapher` | Maps the pool to its constellation —one solar system per paper grouped by family, 20 planets maximum, edges between sibling systems— as `atlas.json` plus the single `atlas.html`, running checker and renderer until green. | `plausibility` |
 | `translator` | Translates one block (or one fragment outside the blocks: title, heading, caption) of the finished, verified English manuscript into neutral academic Spanish, from the English text, the paper's glossary of protected terms and the block's last style findings; keeps every citation key, label, formula, number and paragraph. It hands the Spanish body to `paper_cli.py translate store`, which judges it, and never edits `paper/main.tex`. | `paper-writing` |
 | `translation-style-reviewer` | Reads `translate audit` (style, flow, redundancy, cross-block repetition, per-block fidelity) and the stored Spanish blocks against their English, judges what the script cannot see (a restated idea, a sentence that drifted, a calque) and proposes a fix per finding with each location quoted. It never edits a file nor assigns a score. | `paper-writing` |
@@ -1592,7 +1610,7 @@ Three rules that order everything else:
 - **The source of truth is `.claude/agents/`.** Each harness's routing docs
   (`CLAUDE.md`, `.pi/APPEND_SYSTEM.md`, `OPENCODE.md`,
   `.agents/AGENTS.md`) list
-  all thirty-three, and they are generated: an agent is changed
+  all thirty-four, and they are generated: an agent is changed
   there, not in the projection.
 - **Each agent declares the skill it loads** (`skills/<name>/SKILL.md`), and that
   binding is verified: an agent that points at a skill the workspace does not

@@ -32,6 +32,8 @@ the folder name.
 
 ```mermaid
 flowchart TD
+    VAGUE["a vague idea (optional)"] --> IS["32. idea-shaping"]
+    IS -- "/plausibility <draft>, launched by the operator" --> PL
     IDEA["the idea, in two sentences"] --> PL["1. plausibility"]
     PDF["PDFs placed in guidance/"] --> PI["2. paper-ingestion"]
     PL -- "the accepted idea" --> PT["30. paper-type"]
@@ -126,7 +128,9 @@ modules and to the qualitative core (transcripts, codebook, theme sign-off,
 verbatim quotes, consensus rounds and MICMAC). Section 30, `paper-type`, agrees
 the paper type after plausibility and so chooses the line; section 31,
 `study-protocol-deliberation`, is the deliberation engine's third profile, the
-protocol every empirical line locks before its data exist.
+protocol every empirical line locks before its data exist. Section 32,
+`idea-shaping`, is the optional guided phase before plausibility (lane 2a)
+that turns a vague idea into the two sentences plausibility needs.
 
 ---
 
@@ -3706,6 +3710,45 @@ data, a pilot result, an effect size, a variance or a dropout rate, and never
 computes a sample size from data it has not seen; accepting a change and
 authorizing publication stay the operator's. The full contract is
 [`skills/study-protocol-deliberation/SKILL.md`](../skills/study-protocol-deliberation/SKILL.md).
+
+### 32. `idea-shaping` — a vague idea shaped into two sentences, before plausibility
+
+**When.** Before `/plausibility`, when the operator has only a vague idea and
+asks for guidance (`/idea-shaping`, `smith idea` in a terminal, or the
+dashboard's *Idea* tab). It is optional: lane 2a of phase 2, with no phase of
+its own, and it locks nothing. It ships to every workspace.
+
+**How it runs.** Six steps, each recorded in `.papersmith/idea_brief.json` by
+the engine in `skills/_core/idea/` (`smith idea <verb>`, or `python
+skills/_core/idea/idea_cli.py <verb>`), never by hand. (1) Sources, the
+operator's decision: `banco-lia` (managed by smith, probed when chosen, with
+the reason shown when unreachable), another bank MCP (one of the workspace's
+`.mcp.json` servers smith does not manage, or one added with `smith idea bank
+--add`; probed with `tools/list`, it is compatible when it exposes
+`search_bank` and is then searched like banco-lia, and otherwise usable only
+through the agent's own `mcp__<server>__*` tools), or none (no bank is
+queried). (2) Profile: an ORCID iD, an OpenAlex author, or a Google Scholar
+link used only to find the author in OpenAlex or ORCID (Scholar is never
+scraped); the author's works are summarised into topics. (3) Experience:
+level, methods, data and equipment access, time. (4) Interests: keywords,
+application domain, an admired paper. (5) Topics: the engine proposes three
+candidates deterministically from the interests, the profile and the chosen
+bank's hits, with OpenAlex volume counts of the last four years; the skill
+delegates to the `idea-guide` agent, which returns three topics with their
+rationale and evidence and a draft; the operator picks or combines them.
+(6) Draft: at least two sentences naming a problem and a proposal, checked
+live by the prompt gate with the plausibility rules; `approve` refuses while
+the gate fails, and `handoff` prints `/plausibility <draft>`. The questions
+are asked one at a time, with the agent's native question tool when it has
+one.
+
+**What it never does.** It never queries a bank the operator did not choose,
+never presents a topic without naming where its evidence came from, never
+scrapes Google Scholar, never hand-edits the brief, and never runs
+`/plausibility` on the operator's behalf: typing it, or pressing *Launch
+plausibility* in the Idea tab, is the operator's decision. The conversation
+follows the operator's language; the brief stays English. The full contract
+is [`skills/idea-shaping/SKILL.md`](../skills/idea-shaping/SKILL.md).
 
 ### Shared empirical modules (for the empirical paper lines)
 

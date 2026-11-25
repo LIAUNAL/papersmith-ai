@@ -23,6 +23,7 @@ is missing.
    records the type and the variant the operator agrees in
    `.papersmith/paper_type.json`. The variant chooses the reporting
    checklist: `srqr` (or `coreq`), `accord`, or none for an experience report.
+   A vague idea can be shaped first with `/idea-shaping` (`smith idea`).
 3. **Case, panel or experience and its framework** (gate G-STUDY-PROTOCOL,
    optional for an experience report): `/study-protocol-deliberation` keeps
    the protocol as managed revisions `protocol/study-protocol-<slug>-vNN.md`:

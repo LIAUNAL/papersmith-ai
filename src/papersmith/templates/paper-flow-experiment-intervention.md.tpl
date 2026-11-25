@@ -22,6 +22,7 @@ is missing.
    records the type and the variant the operator agrees in
    `.papersmith/paper_type.json`. The variant chooses the reporting
    checklist: `consort-2025` or `arrive-2`.
+   A vague idea can be shaped first with `/idea-shaping` (`smith idea`).
 3. **Protocol and registration** (gates G-STUDY-PROTOCOL and
    G-REGISTRATION): `/study-protocol-deliberation` keeps the protocol as
    managed revisions `protocol/study-protocol-<slug>-vNN.md`: the research
