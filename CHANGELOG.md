@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.84.0
 
 - **Idea shaping: an optional guided phase before plausibility.** An operator
   with a vague idea can run `/idea-shaping`, `smith idea` in a terminal, or
