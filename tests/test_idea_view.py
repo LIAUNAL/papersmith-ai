@@ -183,6 +183,26 @@ class BankTests(Case):
                 self.assertEqual(response.json()["code"], code)
                 self.assertTrue(response.json()["message"])
 
+    def test_bank_add_refuses_non_string_fields(self) -> None:
+        before = (self.root / ".mcp.json").read_bytes()
+        for body in ({"action": "add", "name": 123, "command": ["a"]},
+                     {"action": "add", "name": "x", "command": ["a"]},
+                     {"action": "add", "name": "x", "url": {"u": "https://b"}},
+                     {"action": "add", "name": ["x"], "url": "https://b.example/mcp"},
+                     {"action": "choose", "choice": {"c": 1}},
+                     {"action": "choose", "choice": "other", "server": ["labbank"]},
+                     {"action": "probe", "server": 7},
+                     {"action": "search", "query": ["eeg"]},
+                     {"action": ["add"]}):
+            with self.subTest(body=body):
+                response = self.post("bank", body)
+                self.assertEqual(response.status_code, 422, response.text)
+                self.assertEqual((response.json()["ok"], response.json()["code"]), (False, "FIELD_TYPE"))
+                self.assertTrue(response.json()["message"])
+        self.assertEqual((self.root / ".mcp.json").read_bytes(), before)
+        self.assertFalse((self.root / brief.PATH).exists())
+        self.assertEqual(self.connected, [])
+
 
 class ProfileTests(Case):
     def test_a_name_is_looked_up_in_openalex(self) -> None:
@@ -209,6 +229,29 @@ class ProfileTests(Case):
     def test_nothing_given_is_refused(self) -> None:
         response = self.post("profile", {"text": "  "})
         self.assertEqual((response.status_code, response.json()["code"]), (422, "PROFILE_MISSING"))
+
+    def test_draft_and_profile_refuse_non_string_text(self) -> None:
+        for route, body in (("draft", {"action": "text", "text": {"a": 1}}),
+                            ("draft", {"action": "check", "text": ["two", "sentences"]}),
+                            ("draft", {"action": {"x": 1}}),
+                            ("profile", {"text": {"name": "Ada"}}),
+                            ("profile", {"name": 42}),
+                            ("profile", {"orcid": ["0000-0002-1825-0097"]}),
+                            ("experience", {"level": 3}),
+                            ("experience", {"methods": {"a": 1}}),
+                            ("experience", {"resources": ["gpu", 2]}),
+                            ("experience", {"time": ["six months"]}),
+                            ("interests", {"keywords": [1, 2]}),
+                            ("interests", {"domain": {"d": 1}}),
+                            ("interests", {"admired_paper": 9}),
+                            ("choose", {"topic_ids": [1]}),
+                            ("choose", {"topic_ids": ["t1"], "note": {"n": 1}})):
+            with self.subTest(route=route, body=body):
+                response = self.post(route, body)
+                self.assertEqual(response.status_code, 422, response.text)
+                self.assertEqual((response.json()["ok"], response.json()["code"]), (False, "FIELD_TYPE"))
+        self.assertFalse((self.root / brief.PATH).exists())
+        self.assertEqual(self.openalex.calls, [])
 
 
 class AnswerTests(Case):
@@ -286,6 +329,22 @@ class GuardTests(Case):
                 response = self.post(route, {"action": "choose", "choice": "none"}, Origin="https://evil.example")
                 self.assertEqual(response.status_code, 403)
         self.assertFalse((self.root / brief.PATH).exists())
+
+    def test_idea_posts_reject_foreign_origin(self) -> None:
+        mcp_before = (self.root / ".mcp.json").read_bytes()
+        bodies = {"bank": {"action": "add", "name": "evilbank", "url": "https://evil.example/mcp"},
+                  "profile": {"text": "Ada Lovelace"}, "experience": {"level": "student"},
+                  "interests": {"keywords": ["eeg"]}, "topics": {"n": 3}, "choose": {"topic_ids": ["t1"]},
+                  "draft": {"action": "text", "text": TWO_SENTENCES}, "approve": {}}
+        for origin in ("https://evil.example", "http://127.0.0.1.evil.example", "null"):
+            for route, body in bodies.items():
+                with self.subTest(origin=origin, route=route):
+                    response = self.post(route, body, Origin=origin)
+                    self.assertEqual(response.status_code, 403)
+                    self.assertFalse(response.json()["ok"])
+        self.assertEqual((self.root / ".mcp.json").read_bytes(), mcp_before)
+        self.assertFalse((self.root / brief.PATH).exists())
+        self.assertEqual((self.connected, self.openalex.calls), ([], []))
 
     def test_a_body_that_is_not_json_is_an_empty_request(self) -> None:
         response = self.client.post("/api/idea/experience", content=b"not json",

@@ -7,11 +7,14 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
+import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from skills._core.idea import brief, idea_cli
+from skills._core.idea import bank, brief, idea_cli, profile, topics
 
 SCHEMA_KEYS = {"schema", "updated_at", "bank", "profile", "experience", "interests", "topics", "chosen", "draft",
                "history"}
@@ -73,6 +76,43 @@ class BriefTests(unittest.TestCase):
             brief.record(self.root, "interests", {"keywords": "eeg"})
         self.assertEqual(ctx.exception.code, "BRIEF_UNREADABLE")
         self.assertEqual(target.read_text(encoding="utf-8"), "{not json")
+
+    def test_brief_save_keeps_file_mode(self) -> None:
+        target = brief.path(self.root)
+        brief.record(self.root, "interests", {"keywords": "eeg"})
+        for mode in (0o644, 0o640, 0o600):
+            with self.subTest(mode=oct(mode)):
+                os.chmod(target, mode)
+                brief.record(self.root, "interests", {"domain": "neurology"})
+                self.assertEqual(stat.S_IMODE(target.stat().st_mode), mode)
+        for mask, expected in ((0o022, 0o644), (0o027, 0o640)):
+            with self.subTest(umask=oct(mask)):
+                target.unlink()
+                old = os.umask(mask)
+                try:
+                    brief.save(self.root, brief.empty())
+                finally:
+                    os.umask(old)
+                self.assertEqual(stat.S_IMODE(target.stat().st_mode), expected)
+        self.assertEqual(sorted(p.name for p in target.parent.iterdir()), ["idea_brief.json"])
+
+    def test_corrupt_brief_refused_by_record_choose_propose(self) -> None:
+        target = brief.path(self.root)
+        raw = b'{"schema": 1, "bank": '
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError("nothing is contacted for a corrupt brief")
+
+        for label, call in (("record", lambda: brief.record(self.root, "experience", {"level": "student"})),
+                            ("choose", lambda: bank.choose(self.root, "none")),
+                            ("propose", lambda: topics.propose(self.root))):
+            with self.subTest(call=label):
+                target.write_bytes(raw)
+                with mock.patch.object(bank, "CONNECT", forbidden), mock.patch.object(profile, "FETCH", forbidden), \
+                        self.assertRaises(brief.IdeaError) as ctx:
+                    call()
+                self.assertEqual(ctx.exception.code, "BRIEF_UNREADABLE")
+                self.assertEqual(target.read_bytes(), raw)
 
     def test_experience_and_interests_verbs_record_their_steps(self) -> None:
         code, body = cli("experience", str(self.root), "--level", "student", "--methods", "EEG, SVM",

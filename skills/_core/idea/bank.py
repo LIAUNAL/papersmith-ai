@@ -25,7 +25,6 @@ import json
 import os
 import re
 import shlex
-import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -98,9 +97,17 @@ def choices(root: Path | str) -> dict[str, Any]:
 def add_server(root: Path | str, name: str, command: str | None = None, url: str | None = None,
                args: list[str] | None = None) -> dict[str, Any]:
     """Add a bank server to ``.mcp.json`` (stdio ``command`` or HTTP ``url``),
-    keeping every other server and key in their order. Refuses a managed
-    name, an existing one, or neither/both of command and url."""
-    name = str(name or "").strip()
+    keeping every other server and key in their order and the file's mode.
+    Refuses a non-text field (``FIELD_TYPE``), a managed name, an existing
+    one, neither/both of command and url, and a ``.mcp.json`` that is a
+    symbolic link (``MCP_CONFIG_SYMLINK``: like ``smith init``'s
+    ``ensure_mcp_servers``, smith never rewrites a linked config)."""
+    for field, value in (("name", name), ("command", command), ("url", url)):
+        if value is not None and not isinstance(value, str):
+            raise _brief.IdeaError("FIELD_TYPE", f"the server {field} must be text")
+    if args is not None and not (isinstance(args, list) and all(isinstance(a, str) for a in args)):
+        raise _brief.IdeaError("FIELD_TYPE", "the server args must be a list of texts")
+    name = (name or "").strip()
     if not _NAME_RE.match(name):
         raise _brief.IdeaError("SERVER_NAME_INVALID",
                                "a server name is 1 to 64 letters, digits, '.', '_' or '-'")
@@ -121,6 +128,11 @@ def add_server(root: Path | str, name: str, command: str | None = None, url: str
         if not argv:
             raise _brief.IdeaError("SERVER_SPEC", "the command is empty")
         entry = {"type": "stdio", "command": argv[0], "args": argv[1:]}
+    target = Path(root) / MCP_FILE
+    if target.is_symlink():
+        raise _brief.IdeaError("MCP_CONFIG_SYMLINK",
+                               f"{MCP_FILE} is a symbolic link; smith does not rewrite a linked {MCP_FILE}; "
+                               "edit its target")
     config = _read_config(root)
     servers = config.get("mcpServers")
     if servers is None:
@@ -130,19 +142,7 @@ def add_server(root: Path | str, name: str, command: str | None = None, url: str
     if name in servers:
         raise _brief.IdeaError("SERVER_EXISTS", f"{MCP_FILE} already has a server named {name}")
     servers[name] = entry
-    target = Path(root) / MCP_FILE
-    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=target.name, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(config, handle, indent=2, ensure_ascii=False)
-            handle.write("\n")
-        os.replace(tmp, target)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    _brief.write_json(target, config)
     return _describe(name, entry)
 
 

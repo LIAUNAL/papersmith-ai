@@ -23,7 +23,8 @@ Schema 1 (every key always present after :func:`load`)::
 one lookup, proposal or composition); ``experience``, ``interests`` and
 ``chosen`` merge the fields given into the ones recorded, so answering one
 question keeps the others. Writes are atomic (a temporary file in the same
-folder, then ``os.replace``). A refusal raises :class:`IdeaError` with a code.
+folder, then ``os.replace``) and keep the file's mode (a new file gets the
+usual one, ``0o666`` less the umask). A refusal raises :class:`IdeaError` with a code.
 """
 
 from __future__ import annotations
@@ -31,7 +32,8 @@ from __future__ import annotations
 import copy
 import json
 import os
-import tempfile
+import secrets
+import stat
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -119,14 +121,29 @@ def load(root: Path | str) -> dict[str, Any]:
     return _complete(data)
 
 
-def save(root: Path | str, brief: dict[str, Any]) -> dict[str, Any]:
-    """Write ``brief`` atomically and return it."""
-    target = path(root)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=target.name, suffix=".tmp")
+def write_json(target: Path, data: Any) -> None:
+    """Write ``data`` to ``target`` as indented JSON, atomically: a temporary
+    file beside it, then ``os.replace``. The file keeps its mode; a new one is
+    created ``0o666`` less the umask (the kernel applies it), never the private
+    ``0o600`` of a ``mkstemp`` file. Nothing is left behind on failure."""
+    try:
+        mode: int | None = stat.S_IMODE(os.stat(target).st_mode)
+    except FileNotFoundError:
+        mode = None
+    for _ in range(100):
+        tmp = target.parent / f".{target.name}.{secrets.token_hex(6)}.tmp"
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+            break
+        except FileExistsError:
+            continue
+    else:  # pragma: no cover - 100 collisions of 48 random bits
+        raise FileExistsError(f"cannot create a temporary file beside {target}")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(brief, handle, indent=2, ensure_ascii=False)
+            if mode is not None:
+                os.fchmod(handle.fileno(), mode)
+            json.dump(data, handle, indent=2, ensure_ascii=False)
             handle.write("\n")
         os.replace(tmp, target)
     except BaseException:
@@ -135,6 +152,13 @@ def save(root: Path | str, brief: dict[str, Any]) -> dict[str, Any]:
         except OSError:
             pass
         raise
+
+
+def save(root: Path | str, brief: dict[str, Any]) -> dict[str, Any]:
+    """Write ``brief`` atomically (keeping the file's mode) and return it."""
+    target = path(root)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    write_json(target, brief)
     return brief
 
 
@@ -224,4 +248,4 @@ def record(root: Path | str, step: str, data: Any) -> dict[str, Any]:
 
 
 __all__ = ["EMPTY", "IdeaError", "LEVELS", "PATH", "SCHEMA", "STEPS", "empty", "load", "now", "path",
-           "record", "save", "text_or_none", "words"]
+           "record", "save", "text_or_none", "words", "write_json"]

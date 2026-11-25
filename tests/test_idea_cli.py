@@ -214,6 +214,20 @@ class StartTests(SmithIdeaCase):
         recorded = brief.load(self.root)["draft"]
         self.assertEqual((recorded["text"], recorded["approved"]), ("EEG is hard.", False))
 
+    def test_start_bank_none_spawns_no_process(self) -> None:
+        def spawn(*args, **kwargs):
+            raise AssertionError(f"a process was started although the bank is none: {args!r}")
+
+        (self.root / ".mcp.json").write_text(json.dumps({"mcpServers": {
+            "labbank": {"command": "python", "args": ["labbank.py"]}}}), encoding="utf-8")
+        with mock.patch.object(bank, "CONNECT", bank.connect), mock.patch("subprocess.Popen", spawn):
+            code, out, _ = self.smith("start", str(self.root), "--bank", "none", "--answers",
+                                      str(self.answers()), "--yes", "--json")
+        self.assertEqual(code, 0, out)
+        recorded = brief.load(self.root)
+        self.assertEqual(recorded["bank"]["choice"], "none")
+        self.assertTrue(recorded["draft"]["approved"])
+
     def test_unreadable_answers_are_refused(self) -> None:
         code, body = self.json("start", "--answers", str(self.scratch / "missing.json"))
         self.assertEqual((code, body["error"]), (1, "ANSWERS_UNREADABLE"))

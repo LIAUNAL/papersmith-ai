@@ -12,7 +12,10 @@ whole state, :func:`view`, plus the step's own ``result``:
   ``choose``, ``draft`` and ``approve``: one step each, recorded in
   ``.papersmith/idea_brief.json``.
 
-A refusal of the engine raises :class:`IdeaError` (``code``, ``message``);
+Every field the operator sends is type-checked first: text where text is
+expected, text or a list of texts for the list fields; anything else refuses
+``FIELD_TYPE`` and nothing is written (a number or an object is never
+coerced into text). A refusal of the engine raises :class:`IdeaError` (``code``, ``message``);
 :func:`status_of` maps it to the HTTP status the server answers. An
 unreachable bank or OpenAlex is not a refusal: the engine answers it in the
 step's data (``available: False`` / ``source: "none"`` with the reason), and
@@ -47,6 +50,22 @@ def _payload(payload: Any) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _typed(data: dict[str, Any], texts: tuple[str, ...] = (), lists: tuple[str, ...] = ()) -> dict[str, Any]:
+    """``data`` after checking that each of ``texts`` is text (or null) and each
+    of ``lists`` is text or a list of texts (or null); refuses ``FIELD_TYPE``."""
+    for key in texts:
+        value = data.get(key)
+        if value is not None and not isinstance(value, str):
+            raise IdeaError("FIELD_TYPE", f"{key} must be text")
+    for key in lists:
+        value = data.get(key)
+        if value is None or isinstance(value, str):
+            continue
+        if not isinstance(value, list) or not all(isinstance(entry, str) for entry in value):
+            raise IdeaError("FIELD_TYPE", f"{key} must be text or a list of texts")
+    return data
+
+
 def _text(value: Any) -> str | None:
     clean = " ".join(str(value).split()) if value is not None else ""
     return clean or None
@@ -75,8 +94,8 @@ def bank_step(root: Path, payload: Any) -> dict[str, Any]:
     ``probe`` checks a server without recording it; ``choose`` records the
     choice (probing a bank); ``add`` writes a new server to ``.mcp.json`` and
     chooses it; ``search`` queries the chosen compatible bank."""
-    data = _payload(payload)
-    action = str(data.get("action") or "list")
+    data = _typed(_payload(payload), ("action", "server", "choice", "name", "command", "url", "query"))
+    action = data.get("action") or "list"
     if action not in BANK_ACTIONS:
         raise IdeaError("ACTION_UNKNOWN", f"unknown bank action {action!r}; expected one of "
                                           f"{', '.join(BANK_ACTIONS)}")
@@ -89,9 +108,9 @@ def bank_step(root: Path, payload: Any) -> dict[str, Any]:
             raise IdeaError("SERVER_MISSING", "name the server to probe")
         result = {"server": server, **bank.probe(root, server)}
     elif action == "choose":
-        result = bank.choose(root, str(data.get("choice") or ""), _text(data.get("server")))
+        result = bank.choose(root, data.get("choice") or "", _text(data.get("server")))
     elif action == "add":
-        added = bank.add_server(root, str(data.get("name") or ""), command=_text(data.get("command")),
+        added = bank.add_server(root, data.get("name") or "", command=_text(data.get("command")),
                                 url=_text(data.get("url")))
         result = {"added": added, "bank": bank.choose(root, "other", added["server"])}
     else:
@@ -110,7 +129,7 @@ def profile_step(root: Path, payload: Any) -> dict[str, Any]:
     ``profile.identify``), or the explicit ``orcid`` / ``openalex_author`` /
     ``scholar_url`` / ``name`` fields. A Scholar link without a name in it
     takes the ``name`` given beside it. Offline answers the reason."""
-    data = _payload(payload)
+    data = _typed(_payload(payload), ("text", "orcid", "openalex_author", "scholar_url", "name"))
     ids: dict[str, Any] = dict(profile.identify(data.get("text"))) if _text(data.get("text")) else {}
     for key in ("orcid", "openalex_author", "scholar_url", "name"):
         if _text(data.get(key)) and key not in ids:
@@ -130,7 +149,8 @@ def _fields(data: dict[str, Any], names: tuple[str, ...]) -> dict[str, Any]:
 
 
 def experience_step(root: Path, payload: Any) -> dict[str, Any]:
-    fields = _fields(_payload(payload), ("level", "methods", "resources", "time"))
+    fields = _fields(_typed(_payload(payload), ("level", "time"), ("methods", "resources")),
+                     ("level", "methods", "resources", "time"))
     if "level" in fields and not _text(fields["level"]):
         fields["level"] = None
     b = brief.record(root, "experience", fields) if fields else brief.load(root)
@@ -138,7 +158,8 @@ def experience_step(root: Path, payload: Any) -> dict[str, Any]:
 
 
 def interests_step(root: Path, payload: Any) -> dict[str, Any]:
-    fields = _fields(_payload(payload), ("keywords", "domain", "admired_paper"))
+    fields = _fields(_typed(_payload(payload), ("domain", "admired_paper"), ("keywords",)),
+                     ("keywords", "domain", "admired_paper"))
     b = brief.record(root, "interests", fields) if fields else brief.load(root)
     return view(root, b["interests"])
 
@@ -156,7 +177,7 @@ def propose(root: Path, payload: Any) -> dict[str, Any]:
 
 
 def choose(root: Path, payload: Any) -> dict[str, Any]:
-    data = _payload(payload)
+    data = _typed(_payload(payload), ("note",), ("topic_ids",))
     return view(root, topics.choose(root, data.get("topic_ids"), _text(data.get("note"))))
 
 
@@ -167,15 +188,15 @@ def draft_step(root: Path, payload: Any) -> dict[str, Any]:
     """``{"action": "compose"}`` composes and records a draft; ``{"action":
     "text", "text"}`` records the operator's text; ``{"action": "check",
     "text"}`` only scores the text (or the recorded draft) with the prompt gate."""
-    data = _payload(payload)
-    action = str(data.get("action") or "compose")
+    data = _typed(_payload(payload), ("action", "text"))
+    action = data.get("action") or "compose"
     if action not in DRAFT_ACTIONS:
         raise IdeaError("ACTION_UNKNOWN", f"unknown draft action {action!r}; expected one of "
                                           f"{', '.join(DRAFT_ACTIONS)}")
     if action == "compose":
         result: Any = draft.compose(root)
     elif action == "text":
-        result = draft.store(root, str(data.get("text") or ""))
+        result = draft.store(root, data.get("text") or "")
     else:
         text = data["text"] if "text" in data else brief.load(root)["draft"].get("text", "")
         result = {"text": " ".join(str(text or "").split()), "gate": draft.check(str(text or ""))}

@@ -9,6 +9,7 @@ import contextlib
 import io
 import json
 import os
+import stat
 import sys
 import tempfile
 import textwrap
@@ -221,6 +222,154 @@ class AddServerTests(BankCase):
     def test_command_without_add_is_a_usage_error(self) -> None:
         code, body = self.cli("bank", "--command", "uvx x")
         self.assertEqual((code, body["error"]), (2, "USAGE"))
+
+
+class _Umask:
+    """Run a block under a known umask (restored afterwards)."""
+
+    def __init__(self, mask: int) -> None:
+        self.mask = mask
+
+    def __enter__(self) -> None:
+        self.old = os.umask(self.mask)
+
+    def __exit__(self, *exc) -> None:
+        os.umask(self.old)
+
+
+def _mode(path: Path) -> int:
+    return stat.S_IMODE(path.stat().st_mode)
+
+
+class AddServerSafetyTests(BankCase):
+    """``add_server`` keeps the file's mode, refuses a linked or malformed
+    config and every bad name without touching the file, and writes atomically."""
+
+    URL = "https://bank.example/mcp"
+
+    def config(self) -> Path:
+        return self.root / ".mcp.json"
+
+    def snapshot(self) -> bytes:
+        return self.config().read_bytes()
+
+    def test_add_server_keeps_file_mode(self) -> None:
+        self.mcp({"mine": {"command": "node"}})
+        for index, mode in enumerate((0o644, 0o640, 0o600)):
+            with self.subTest(mode=oct(mode)):
+                os.chmod(self.config(), mode)
+                bank.add_server(self.root, f"bank{index}", url=self.URL)
+                self.assertEqual(_mode(self.config()), mode)
+        self.config().unlink()
+        for mask, expected in ((0o022, 0o644), (0o027, 0o640)):
+            with self.subTest(umask=oct(mask)):
+                if self.config().exists():
+                    self.config().unlink()
+                with _Umask(mask):
+                    bank.add_server(self.root, "fresh", url=self.URL)
+                self.assertEqual(_mode(self.config()), expected)
+        self.assertEqual([p.name for p in self.root.iterdir() if p.name.endswith(".tmp")], [])
+
+    def test_add_server_refuses_symlinked_config_unchanged(self) -> None:
+        real = self.scratch / "shared-mcp.json"
+        real.write_text(json.dumps({"mcpServers": {"mine": {"command": "node"}}}), encoding="utf-8")
+        before = real.read_bytes()
+        self.config().symlink_to(real)
+        with self.assertRaises(brief.IdeaError) as ctx:
+            bank.add_server(self.root, "labbank", url=self.URL)
+        self.assertEqual(ctx.exception.code, "MCP_CONFIG_SYMLINK")
+        self.assertIn("edit its target", ctx.exception.message)
+        code, body = self.cli("bank", "--add", "labbank", "--url", self.URL)
+        self.assertEqual((code, body["error"]), (1, "MCP_CONFIG_SYMLINK"))
+        self.assertTrue(self.config().is_symlink())
+        self.assertEqual(os.readlink(self.config()), str(real))
+        self.assertEqual(real.read_bytes(), before)
+
+    def test_add_server_preserves_unmanaged_servers_and_key_order(self) -> None:
+        original = {"z-note": "first", "mcpServers": {
+            "zeta": {"command": "z", "args": ["1"], "env": {"K": "v"}},
+            "banco-lia": {"command": "uvx", "args": ["banco-lia-mcp"]},
+            "alpha": {"type": "http", "url": "https://a.example/mcp", "headers": {"h": "${H:-x}"}},
+            "kaggle": {"command": "kaggle-mcp"}}, "a-last": {"nested": [1, {"b": 2}]}}
+        self.config().write_text(json.dumps(original, indent=2), encoding="utf-8")
+        bank.add_server(self.root, "labbank", command="uvx lab-bank", args=["--index", "main"])
+        written = json.loads(self.config().read_text(encoding="utf-8"))
+        self.assertEqual(list(written), ["z-note", "mcpServers", "a-last"])
+        self.assertEqual(list(written["mcpServers"]), ["zeta", "banco-lia", "alpha", "kaggle", "labbank"])
+        for name, entry in original["mcpServers"].items():
+            self.assertEqual(written["mcpServers"][name], entry)
+            self.assertEqual(list(written["mcpServers"][name]), list(entry))
+        self.assertEqual(written["a-last"], original["a-last"])
+        self.assertEqual(written["mcpServers"]["labbank"],
+                         {"type": "stdio", "command": "uvx", "args": ["lab-bank", "--index", "main"]})
+
+    def test_add_server_atomic_on_replace_and_dump_failure(self) -> None:
+        self.mcp({"mine": {"command": "node"}})
+        before = self.snapshot()
+
+        def broken_replace(*args, **kwargs):
+            raise OSError("disk full")
+
+        def broken_dump(*args, **kwargs):
+            raise ValueError("cannot serialise")
+
+        for label, patcher in (("replace", mock.patch.object(bank.os, "replace", broken_replace)),
+                               ("dump", mock.patch.object(bank.json, "dump", broken_dump))):
+            with self.subTest(seam=label), patcher, self.assertRaises((OSError, ValueError)):
+                bank.add_server(self.root, "labbank", url=self.URL)
+            self.assertEqual(self.snapshot(), before)
+            self.assertEqual(sorted(p.name for p in self.root.iterdir()), [".mcp.json", ".papersmith"])
+
+    def test_add_server_refuses_malformed_config_unchanged(self) -> None:
+        variants = {"not json": b"{not json", "a list": b"[1, 2]", "a string": b'"servers"',
+                    "servers a list": b'{"mcpServers": []}', "servers a string": b'{"mcpServers": "x"}',
+                    "empty": b"", "not utf-8": b'{"mcpServers": {"caf\xe9": {}}}'}
+        for label, raw in variants.items():
+            with self.subTest(variant=label):
+                self.config().write_bytes(raw)
+                with self.assertRaises(brief.IdeaError) as ctx:
+                    bank.add_server(self.root, "labbank", url=self.URL)
+                self.assertEqual(ctx.exception.code, "MCP_CONFIG_UNREADABLE")
+                self.assertEqual(self.config().read_bytes(), raw)
+                self.assertEqual(sorted(p.name for p in self.root.iterdir()), [".mcp.json", ".papersmith"])
+
+    def test_add_server_refuses_managed_and_existing_names_unchanged(self) -> None:
+        self.mcp({"labbank": {"command": "node"}})
+        before = self.snapshot()
+        for name, code in (("banco-lia", "SERVER_MANAGED"), ("kaggle", "SERVER_MANAGED"),
+                           ("colab", "SERVER_MANAGED"), ("asta", "SERVER_MANAGED"),
+                           ("labbank", "SERVER_EXISTS"), ("../evil", "SERVER_NAME_INVALID"),
+                           ("a/b", "SERVER_NAME_INVALID")):
+            with self.subTest(name=name):
+                with self.assertRaises(brief.IdeaError) as ctx:
+                    bank.add_server(self.root, name, url=self.URL)
+                self.assertEqual(ctx.exception.code, code)
+                self.assertEqual(self.snapshot(), before)
+        self.assertFalse((self.root.parent / "evil").exists())
+
+    def test_add_server_refuses_non_string_fields(self) -> None:
+        self.mcp({"mine": {"command": "node"}})
+        before = self.snapshot()
+        for kwargs in ({"name": 123, "url": self.URL}, {"name": "x", "command": ["a"]},
+                       {"name": "x", "url": {"u": 1}}, {"name": "x", "command": "a", "args": "b"},
+                       {"name": "x", "command": "a", "args": [1]}, {"name": True, "command": "a"}):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaises(brief.IdeaError) as ctx:
+                    bank.add_server(self.root, **kwargs)
+                self.assertEqual(ctx.exception.code, "FIELD_TYPE")
+                self.assertEqual(self.snapshot(), before)
+
+    def test_ensure_mcp_servers_keeps_idea_added_server(self) -> None:
+        from papersmith import generators
+        self.mcp({"mine": {"command": "node"}})
+        bank.add_server(self.root, "labbank", command="uvx lab-bank")
+        added = json.loads(self.snapshot())["mcpServers"]["labbank"]
+        generators.ensure_mcp_servers(self.root, ["claude"])
+        servers = json.loads(self.snapshot())["mcpServers"]
+        self.assertEqual(servers["labbank"], added)
+        self.assertEqual(servers["mine"], {"command": "node"})
+        self.assertIn("banco-lia", servers)
+        self.assertEqual([o["server"] for o in bank.choices(self.root)["others"]], ["mine", "labbank"])
 
 
 class _McpHttp(BaseHTTPRequestHandler):
