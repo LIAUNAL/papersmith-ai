@@ -15,6 +15,11 @@ always terminated.
 * ``PAPERSMITH_BANCO_LIA_TIMEOUT`` — seconds for the whole exchange (the first
   ``uvx`` run downloads the server); default 90.
 
+The same client opens any stdio server of the workspace's ``.mcp.json`` by
+name (:func:`open_session`, :func:`server_launch`): the idea-shaping phase
+(``skills/_core/idea/bank.py``) probes another bank with ``tools/list`` and
+queries it like banco-lia when it exposes ``search_bank``.
+
 ``suggest`` refuses bad keywords with ``KeywordsInvalid`` (code
 ``KEYWORDS_INVALID``) and never raises for anything else: a missing command,
 a timeout or a protocol error answers ``{"available": False, "reason": ...}``.
@@ -42,6 +47,8 @@ from . import localize
 DEFAULT_COMMAND: list[str] = [
     "uvx", "--from", "git+https://github.com/LIAUNAL/bancoProyectosPapersLIA", "banco-lia-mcp"]
 DEFAULT_TIMEOUT = 90.0
+#: The managed bank's server name in ``.mcp.json``.
+SERVER = "banco-lia"
 #: Seconds a child gets between SIGTERM and SIGKILL.
 TERMINATE_GRACE = 2.0
 COMMAND_ENV = "PAPERSMITH_BANCO_LIA_COMMAND"
@@ -114,18 +121,53 @@ def _launch(root: Path | str | None) -> tuple[list[str], dict[str, str]]:
         if not (isinstance(argv, list) and argv and all(isinstance(a, str) and a for a in argv)):
             raise _Unavailable(f"{COMMAND_ENV} must be a JSON list of strings, e.g. [\"uvx\", \"banco-lia-mcp\"]")
         return argv, {}
-    if root is not None:
+    entry = server_entry(root, SERVER)
+    if entry is not None:
         try:
-            entry = json.loads((Path(root) / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["banco-lia"]
-            command, args = entry["command"], entry.get("args", [])
-            if isinstance(command, str) and command and isinstance(args, list) \
-                    and all(isinstance(a, str) for a in args):
-                env = entry.get("env")
-                extra = {k: v for k, v in env.items() if isinstance(v, str)} if isinstance(env, dict) else {}
-                return [command, *args], extra
-        except (OSError, ValueError, KeyError, TypeError, AttributeError):
-            pass
+            return _entry_launch(entry, SERVER)
+        except _Unavailable:
+            pass  # a damaged entry falls back to the default, as before
     return list(DEFAULT_COMMAND), {}
+
+
+def _entry_launch(entry: Any, name: str) -> tuple[list[str], dict[str, str]]:
+    """The argv and extra environment of a stdio ``.mcp.json`` entry."""
+    if not isinstance(entry, dict):
+        raise _Unavailable(f"the .mcp.json entry of {name} is not an object")
+    command, args = entry.get("command"), entry.get("args", [])
+    if not (isinstance(command, str) and command):
+        if entry.get("url"):
+            raise _Unavailable(f"{name} is an HTTP server, not a stdio one")
+        raise _Unavailable(f"the .mcp.json entry of {name} names no command")
+    if not (isinstance(args, list) and all(isinstance(a, str) for a in args)):
+        raise _Unavailable(f"the .mcp.json entry of {name} has args that are not a list of strings")
+    env = entry.get("env")
+    extra = {k: v for k, v in env.items() if isinstance(v, str)} if isinstance(env, dict) else {}
+    return [command, *args], extra
+
+
+def server_entry(root: Path | str | None, name: str) -> dict[str, Any] | None:
+    """The ``.mcp.json`` ``mcpServers[name]`` entry of the workspace, or ``None``."""
+    if root is None:
+        return None
+    try:
+        entry = json.loads((Path(root) / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"][name]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return entry if isinstance(entry, dict) else None
+
+
+def server_launch(root: Path | str | None, name: str) -> tuple[list[str], dict[str, str]]:
+    """The argv (and extra environment) that starts the stdio server ``name``:
+    banco-lia resolves exactly as :func:`resolve_command` does (env override,
+    ``.mcp.json``, default); any other server needs its ``.mcp.json`` entry.
+    Raises the module's unavailability error with a one-line reason."""
+    if name == SERVER:
+        return _launch(root)
+    entry = server_entry(root, name)
+    if entry is None:
+        raise _Unavailable(f"no server named {name} in .mcp.json")
+    return _entry_launch(entry, name)
 
 
 def resolve_command(root: Path | str | None = None) -> list[str]:
@@ -150,7 +192,9 @@ def _reason(text: str) -> str:
 
 
 class _Session:
-    def __init__(self, argv: list[str], extra_env: dict[str, str], timeout: float) -> None:
+    def __init__(self, argv: list[str], extra_env: dict[str, str], timeout: float,
+                 label: str = SERVER) -> None:
+        self.label = label
         self.deadline = time.monotonic() + timeout
         self.timeout = timeout
         self.next_id = 0
@@ -177,7 +221,7 @@ class _Session:
             self.proc.stdin.write(json.dumps(message) + "\n")  # type: ignore[union-attr]
             self.proc.stdin.flush()  # type: ignore[union-attr]
         except (OSError, ValueError) as exc:
-            raise _Unavailable("banco-lia server closed the connection") from exc
+            raise _Unavailable(f"{self.label} server closed the connection") from exc
 
     def notify(self, method: str, params: dict[str, Any] | None = None) -> None:
         self._send({"jsonrpc": "2.0", "method": method, **({"params": params} if params else {})})
@@ -190,25 +234,25 @@ class _Session:
             try:
                 line = self.lines.get(timeout=max(0.0, self.deadline - time.monotonic()))
             except queue.Empty:
-                raise _Unavailable(f"timed out after {self.timeout:g} s waiting for banco-lia") from None
+                raise _Unavailable(f"timed out after {self.timeout:g} s waiting for {self.label}") from None
             if line is None:
-                raise _Unavailable("banco-lia server closed the connection")
+                raise _Unavailable(f"{self.label} server closed the connection")
             if not line.strip():
                 continue
             try:
                 message = json.loads(line)
             except ValueError:
-                raise _Unavailable("banco-lia sent a malformed JSON-RPC message") from None
+                raise _Unavailable(f"{self.label} sent a malformed JSON-RPC message") from None
             if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
-                raise _Unavailable("banco-lia sent a malformed JSON-RPC message")
+                raise _Unavailable(f"{self.label} sent a malformed JSON-RPC message")
             if message.get("id") != ident:
                 continue  # a notification or a server request: not ours to answer
             if "error" in message:
                 error = message["error"]
-                raise _Unavailable(f"banco-lia refused {method}: "
+                raise _Unavailable(f"{self.label} refused {method}: "
                                    f"{_reason(error.get('message') if isinstance(error, dict) else error)}")
             if "result" not in message:
-                raise _Unavailable("banco-lia sent a malformed JSON-RPC message")
+                raise _Unavailable(f"{self.label} sent a malformed JSON-RPC message")
             return message["result"]
 
     def start(self) -> None:
@@ -218,7 +262,15 @@ class _Session:
         self.notify("notifications/initialized")
 
     def call(self, name: str, arguments: dict[str, Any]) -> Any:
-        return _tool_payload(self.request("tools/call", {"name": name, "arguments": arguments}))
+        return _tool_payload(self.request("tools/call", {"name": name, "arguments": arguments}), self.label)
+
+    def tools(self) -> list[str]:
+        """The tool names the server lists (``tools/list``)."""
+        result = self.request("tools/list")
+        tools = result.get("tools") if isinstance(result, dict) else None
+        if not isinstance(tools, list):
+            raise _Unavailable(f"{self.label} sent a malformed tools/list result")
+        return [str(t["name"]) for t in tools if isinstance(t, dict) and isinstance(t.get("name"), str)]
 
     def close(self) -> None:
         """Always leave no child behind: EOF on stdin, then SIGTERM, then SIGKILL."""
@@ -251,15 +303,15 @@ class _Session:
             pass
 
 
-def _tool_payload(result: Any) -> Any:
+def _tool_payload(result: Any, label: str = SERVER) -> Any:
     """The value a ``tools/call`` result carries: ``structuredContent`` (a
     ``{"result": [...]}`` wrapper unwrapped) or the JSON of its text blocks."""
     if not isinstance(result, dict):
-        raise _Unavailable("banco-lia sent a malformed tool result")
+        raise _Unavailable(f"{label} sent a malformed tool result")
     blocks = [b for b in (result.get("content") or []) if isinstance(b, dict)]
     if result.get("isError"):
         text = " ".join(str(b.get("text", "")) for b in blocks)
-        raise _ToolError(f"banco-lia tool error: {_reason(text)}")
+        raise _ToolError(f"{label} tool error: {_reason(text)}")
     structured = result.get("structuredContent")
     if isinstance(structured, dict):
         return structured["result"] if set(structured) == {"result"} else structured
@@ -269,8 +321,28 @@ def _tool_payload(result: Any) -> Any:
             try:
                 values.append(json.loads(block.get("text", "")))
             except ValueError:
-                raise _Unavailable("banco-lia sent a malformed tool result") from None
+                raise _Unavailable(f"{label} sent a malformed tool result") from None
     return values[0] if len(values) == 1 else values
+
+
+#: The public name of the unavailability error (a missing command, a timeout,
+#: a protocol error): its message is the one-line reason.
+Unavailable = _Unavailable
+ToolError = _ToolError
+
+
+def open_session(root: Path | str | None, name: str = SERVER, timeout: float | None = None) -> _Session:
+    """A started session (``initialize`` done) with the stdio server ``name``
+    of the workspace's ``.mcp.json``; the caller must ``close()`` it. Raises
+    :data:`Unavailable` with the reason when it cannot start or answer."""
+    argv, extra_env = server_launch(root, name)
+    session = _Session(argv, extra_env, timeout if timeout is not None else timeout_seconds(), name)
+    try:
+        session.start()
+    except BaseException:
+        session.close()
+        raise
+    return session
 
 
 # --------------------------------------------------------------------------
@@ -295,6 +367,21 @@ def _item(hit: dict[str, Any]) -> dict[str, Any]:
         "cluster": str(hit.get("cluster") or ""), "doi": str(hit.get("doi") or ""),
         "score": score, "snippet": " ".join(str(hit.get("snippet") or "").split())[:SNIPPET_CHARS],
     }
+
+
+def parse_items(payload: Any) -> list[dict[str, Any]]:
+    """The ``search_bank`` hits of a tool payload as ranked items (best first)."""
+    return sorted((_item(h) for h in _hits(payload)), key=lambda i: -i["score"])
+
+
+def taxonomy_names(session: _Session) -> dict[str, str]:
+    """Cluster id -> name from the server's ``taxonomy`` tool ({} when it fails)."""
+    return _taxonomy_names(session)
+
+
+def cluster_topics(items: list[dict[str, Any]], names: dict[str, str]) -> list[dict[str, Any]]:
+    """The clusters of ``items`` as topics ``{"id", "name", "count"}``, most items first."""
+    return _topics(items, names)
 
 
 def _taxonomy_names(session: _Session) -> dict[str, str]:

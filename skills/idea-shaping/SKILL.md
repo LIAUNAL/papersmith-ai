@@ -72,14 +72,16 @@ continue without a profile. The operator may also skip this step.
 
 Ask, one at a time: the research level (`student`, `early-career`,
 `experienced`, `senior`), the methods they master, the data, equipment or
-compute they can access, and the time they have. Record the answers with
-`smith idea experience`.
+compute they can access, and the time they have. Record each answer as it
+comes with `smith idea experience --level LEVEL`, `--methods LIST`,
+`--resources LIST` or `--time TEXT` (lists are comma-separated; one answer
+never erases the others).
 
 ## Step 4 — interests
 
 Ask for 3 to 5 keywords, the application domain, and one paper they admire
 (title or DOI), one question at a time. Record them with `smith idea
-interests`.
+interests --keywords LIST`, `--domain TEXT` and `--admired TEXT`.
 
 ## Step 5 — candidate topics
 

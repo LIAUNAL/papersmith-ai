@@ -20,6 +20,7 @@ from .core import doctor as doctor_command
 from .core import env as env_command
 from .core import executor as executor_command
 from .core import gpu as gpu_command
+from .core import idea as idea_command
 from .core import init as init_command
 from .core import ingest as ingest_command
 from .core import kind as kind_command
@@ -64,6 +65,7 @@ _REGISTRY: list = [
     doctor_command.register,
     gpu_command.register,
     novelty_command.register,
+    idea_command.register,
     ui_command.register,
     atlas_command.register,
     paper_qa_command.register,
