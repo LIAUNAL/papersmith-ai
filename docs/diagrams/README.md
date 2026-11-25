@@ -6,9 +6,16 @@ shows under *Pipeline y Avance* (`phase_actions.STAGES`), from `1 · Harness` to
 `11 · Audit (transversal)`, and a lettered lane is a sub-lane of the phase whose
 number it carries:
 
-- `2a`: the optional thematic help before `/plausibility` (keywords typed in the
-  phase-2 box, the `banco-lia` MCP's `search_bank`, and the operator's approval
-  of the proposed prompt, launched as `/plausibility <draft>`);
+- `2a`: the optional idea shaping before `/plausibility` (`/idea-shaping`,
+  `smith idea` in a terminal, or the dashboard's *Idea* tab): the operator's
+  choice of sources (`banco-lia`, another bank MCP, or none), recorded with the
+  profile, experience, interests, topics and draft in
+  `.papersmith/idea_brief.json`; the read-only `idea-guide` agent, which reads
+  that brief and proposes three topics and a draft; and the operator's approval
+  of the draft once it passes the plausibility prompt gate, launched as
+  `/plausibility <draft>`. It absorbed the earlier thematic help (the phase-2
+  keyword box and the `banco-lia` MCP's `search_bank`), which is now step 4 of
+  the *Idea* tab;
 - `3`: ingestion, and below `guidance/` the `/pixelrag` skill, which turns an
   extracted figure into evidence bound to the image's sha256 (keyless, local);
 - `4a`: the proposal's ordered steps on the *Mapa Conceptual* tab — the central
@@ -85,8 +92,8 @@ credentials, remote run), in the same order. `tests/test_command_center_state.py
 holds the transcription and `tests/test_flow_consistency.py` holds the lane
 numbering against the eleven phases, so the drawing and the board cannot drift
 apart without a failing test. The human stops are drawn inline and are not
-verdict gates on the board: the approval of the thematic-help draft, the
-plausibility report's acceptance, the two deliberation acceptances, the
+verdict gates on the board: the operator's choice of idea-shaping sources and
+the approval of its draft, the plausibility report's acceptance, the two deliberation acceptances, the
 proof-of-concept verification, the launch authorization and `G-NOVELTY`. An
 acceptance is the operator's decision, not a verdict computed from artifacts —
 `G-EXP-POC` and `G-NOVELTY` do record theirs in `novelty_gate.json` — so
@@ -161,7 +168,7 @@ gate's: Archify's grid search, which routes an edge around nodes it has no
 relationship with, gives up on a scene of more than 80 obstacles
 (`maximumObstacleCount`), and an authored `via` cannot replace it, because only
 two automatic routes may cross (with a halo) -- an authored crossing is a
-showcase error. The flow is at 128 components, so every edge has to be routable
+showcase error. The flow is at 130 components, so every edge has to be routable
 without the grid: between row neighbours, straight down a column, or through
 the corridor between two rows. That is why the dashed `replication` ->
 `expBuild` arrow is gone (its relation lives in the `expBuild` tag and in the
@@ -174,7 +181,7 @@ Any new edge that only the grid can route fails at the current size.
 The page draws at whatever width the viewport gives it, so the frame is a
 capture decision rather than part of the artifact. The committed PNG is 1400px
 wide at **device pixel ratio 1**, captured full-page with `?embed=1` (which is
-what drops the viewer's own chrome); it is 1400x5214 for the current drawing. A browser driver needs those three
+what drops the viewer's own chrome); it is 1400x5364 for the current drawing. A browser driver needs those three
 parameters; the ratio is the one that is easy to get wrong, because the default
 capture comes out at 2× and a 2800px file is four times the bytes for a drawing
 nobody reads at that size.
