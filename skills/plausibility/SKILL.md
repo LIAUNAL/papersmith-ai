@@ -295,8 +295,13 @@ operator has to be able to say no and have that change what happens next.
 **After acceptance: the paper type.** Once the operator accepts, hand over to
 `/paper-type` (`skills/paper-type/SKILL.md`): it records the accepted idea in
 `.papersmith/plausibility.json`, scores it against smith's paper types and
-discusses with the operator which kind of paper to build. The phases that
-follow do not change: a workspace with no agreed type stays on its line.
+discusses with the operator which kind of paper to build. A workspace with no
+agreed type stays on its line, and an agreed applied-AI type keeps the
+experimental phases; another agreed type moves the workspace with `smith kind
+set <type> --by <name>` to its own line's flow (`smith init --kind` takes
+`experimental`, `review`, `observational-measurement`, `hardware`,
+`lab-simulation`, `data-resource`, `experiment-intervention` or
+`qualitative-participatory`).
 
 ## Decision gates
 

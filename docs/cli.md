@@ -11,6 +11,7 @@ to the current directory and has to point at an initialized workspace, except fo
 |---------|----------|
 | `init` | Creates a standalone research workspace |
 | `upgrade` | Syncs the framework's scaffolding while preserving the research |
+| `kind` | Moves a workspace to the line of the paper type agreed after plausibility (`kind set <type> --by <name>`) |
 | `status` | Reports workspace health, proposals, runs and inbox |
 | `ingest` | Ingests a literature PDF or URL into Markdown |
 | `deliberate` | Talks to the `proposal-deliberation` engine |
@@ -46,7 +47,7 @@ smith init ~/papers/sparse-ae \
 | `--topic TEXT` | Research topic |
 | `--tools TEXT` | Runtimes to provision, comma-separated |
 | `--remote {kaggle,local,slurm}` | Default compute target (default: `kaggle`) |
-| `--kind {experimental,review,observational-measurement,hardware,lab-simulation,data-resource,experiment-intervention,qualitative-participatory}` | The paper line (default: `experimental`). `review` creates a PRISMA 2020 systematic review workspace with no experiments: the review section contracts in `sections/`, a `review/` folder for the protocol, searches, screening and synthesis records of `/systematic-review`, the review flow in every harness entrypoint, and `paper_kind: "review"` in `.papersmith/config.json`, which `smith upgrade` keeps. `observational-measurement` creates an observational, diagnostic-validation or measurement-instrument study workspace: the study section contracts in `sections/`, the `protocol/`, `study/`, `analysis/` and `datasets/` folders of the shared empirical tools, the `/observational-measurement` skill, the line's flow in every harness entrypoint and `paper_kind: "observational-measurement"`. `hardware` creates an open hardware or instrument workspace with the same folders: the HardwareX section contracts in `sections/` (specifications table, hardware in context, hardware description, design files, bill of materials, build and operation instructions, validation and characterization), the measurement core's records under `study/`, the `/hardware` skill and its flow. `lab-simulation` creates a laboratory or simulation study workspace with the same folders and the measurement core. `data-resource` creates a data resource workspace (a corpus, dataset or benchmark released as the contribution) with the same folders: the data descriptor section contracts in `sections/` (background and summary, methods, data records, technical validation, usage notes, code availability), the `/data-resource` skill and its flow. `experiment-intervention` creates a trial with people or a field, crop or animal experiment workspace with the same folders: the CONSORT 2025-shaped section contracts in `sections/` (trial design, randomisation from the operator's allocation record, blinding, participant flow, harms, with optional field-experiment blocks for plots, blocks and experimental units, mixed models and animal husbandry), the `/experiment-intervention` skill and its flow. `qualitative-participatory` creates a qualitative or mixed-methods study, expert consensus or foresight study, or experience report workspace with the same folders: the SRQR-shaped section contracts in `sections/` (approach and paradigm, reflexivity, sampling and its sufficiency, data processing from the operator's transcript register, the analysis from the codebook versions and the theme sign-off, participant quotes checked verbatim, with optional consensus blocks for the panel, the pre-specified threshold, the rounds and the MICMAC map, and optional experience-report blocks), the `/qualitative-participatory` skill and its flow. A workspace never receives another line's files. See [The review line](../README.md#the-review-line-systematic-reviews), [The observational and measurement line](../README.md#the-observational-and-measurement-line), [The hardware line](../README.md#the-hardware-line), [The data-resource line](../README.md#the-data-resource-line), [The experiment-intervention line](../README.md#the-experiment-intervention-line) and [The qualitative-participatory line](../README.md#the-qualitative-participatory-line) |
+| `--kind {experimental,review,observational-measurement,hardware,lab-simulation,data-resource,experiment-intervention,qualitative-participatory}` | The paper line (default: `experimental`). `review` creates a PRISMA 2020 systematic review workspace with no experiments: the review section contracts in `sections/`, a `review/` folder for the protocol, searches, screening and synthesis records of `/systematic-review`, the review flow in every harness entrypoint, and `paper_kind: "review"` in `.papersmith/config.json`, which `smith upgrade` keeps. `observational-measurement` creates an observational, diagnostic-validation or measurement-instrument study workspace: the study section contracts in `sections/`, the `protocol/`, `study/`, `analysis/` and `datasets/` folders of the shared empirical tools, the `/observational-measurement` skill, the line's flow in every harness entrypoint and `paper_kind: "observational-measurement"`. `hardware` creates an open hardware or instrument workspace with the same folders: the HardwareX section contracts in `sections/` (specifications table, hardware in context, hardware description, design files, bill of materials, build and operation instructions, validation and characterization), the measurement core's records under `study/`, the `/hardware` skill and its flow. `lab-simulation` creates a laboratory or simulation study workspace with the same folders and the measurement core. `data-resource` creates a data resource workspace (a corpus, dataset or benchmark released as the contribution) with the same folders: the data descriptor section contracts in `sections/` (background and summary, methods, data records, technical validation, usage notes, code availability), the `/data-resource` skill and its flow. `experiment-intervention` creates a trial with people or a field, crop or animal experiment workspace with the same folders: the CONSORT 2025-shaped section contracts in `sections/` (trial design, randomisation from the operator's allocation record, blinding, participant flow, harms, with optional field-experiment blocks for plots, blocks and experimental units, mixed models and animal husbandry), the `/experiment-intervention` skill and its flow. `qualitative-participatory` creates a qualitative or mixed-methods study, expert consensus or foresight study, or experience report workspace with the same folders: the SRQR-shaped section contracts in `sections/` (approach and paradigm, reflexivity, sampling and its sufficiency, data processing from the operator's transcript register, the analysis from the codebook versions and the theme sign-off, participant quotes checked verbatim, with optional consensus blocks for the panel, the pre-specified threshold, the rounds and the MICMAC map, and optional experience-report blocks), the `/qualitative-participatory` skill and its flow. A workspace never receives another line's files. See [The review line](../README.md#the-review-line-systematic-reviews), [The observational and measurement line](../README.md#the-observational-and-measurement-line), [The hardware line](../README.md#the-hardware-line), [The lab-simulation line](../README.md#the-lab-simulation-line), [The data-resource line](../README.md#the-data-resource-line), [The experiment-intervention line](../README.md#the-experiment-intervention-line) and [The qualitative-participatory line](../README.md#the-qualitative-participatory-line) |
 | `<dir>` | Where the workspace goes; omitted, it is the current directory (`smith init` alone sets up the folder you are in, on every operating system) |
 | `--import-existing` | Explicitly initialize a nonempty directory while preserving existing files: keeps its `README.md`, merges papersmith's block into its `.gitignore`, and refuses any other file or symlink collision before copying |
 | `--no-npm` | Skips the best-effort `npm install` (offline/hermetic use) |
@@ -746,13 +747,38 @@ python -m skills._core.command_center.server --port 8080
 
 **The tabs.** The dashboard opens on *Flujo Archify* (the interactive flow diagram,
 served at `/api/flow`, and the table of the workspace's agents from `/api/agents`).
-The rest, in order: *Pipeline y Avance*, *Mapa Conceptual & Modelo*, *Experimentos*,
+The rest, in order: *Pipeline y Avance*, *Tipo de paper*, *Mapa Conceptual & Modelo*, *Experimentos*,
 *Novedad & Hallazgos*, *Secciones del Paper*, *Atlas de Grafos*, *Previsualización
 PDF*, *Artefactos*, *Historia con IA*, *Telemetría y Costos* and *Smith Doctor* (the
 table `smith doctor` prints). The English catalogue calls them Archify Flow,
-Pipeline and Progress, Concept Map & Model, Experiments, Novelty & Findings, Paper
+Pipeline and Progress, Paper Type, Concept Map & Model, Experiments, Novelty & Findings, Paper
 Sections, Graph Atlas, PDF Preview, Artifacts, AI History, Telemetry and Costs, and
 Smith Doctor.
+
+**The Paper type tab.** *Tipo de paper* (*Paper Type* in English) shows every
+type of the paper-type catalogue as a card: its score for the accepted idea,
+a short description, its reporting guideline, why it fits the idea or not,
+and the suggested and agreed types highlighted. Phase 2 carries the same state
+as its advisory sub-step 2.5 *Paper Type* (`PASS` once a type is agreed for
+the current idea; it locks nothing). Its routes:
+
+- `GET /api/paper-type` returns `{catalogue, plausibility, decision, line,
+  subphase, error}`: the catalogue, the accepted idea
+  (`.papersmith/plausibility.json`), the scores and agreement
+  (`.papersmith/paper_type.json`), the workspace's current line and the
+  sub-step; an unreadable record or catalogue is named in `error`.
+- `POST /api/paper-type/score` (same origin only, else `403`) scores the
+  accepted idea again, since the SOTA pool may have changed: `200` with
+  `{"ok": true, "decision": ...}`, or `422` with `IDEA_ABSENT` (no accepted
+  idea yet) or `RECORD_UNREADABLE`.
+- `POST /api/paper-type/agree` (same origin only, else `403`) records the
+  operator's agreement from a JSON body `{type, variant, by, rationale}`:
+  `200` with the record plus `line` and `layout` (`current`,
+  `switch:<line>` or `planned`, as in `paper_type_cli.py agree`), or `422`
+  with `OPERATOR_ABSENT`, `SCORES_ABSENT`, `SCORES_STALE`, `TYPE_UNKNOWN`,
+  `VARIANT_UNKNOWN` or `RECORD_UNREADABLE`. It never moves the workspace: for
+  `switch:<line>` the tab names the `smith kind set` command
+  ([`smith kind set`](#smith-kind-set-type-dir)).
 
 **The Review tab (review workspaces only).** A workspace whose `paper_kind` is
 `review` shows a *Review* tab (*Revisión* in Spanish) right after *Pipeline and
@@ -1283,7 +1309,7 @@ Node.js and Tectonic are downloaded outside the editor's lock, so turning the
 editor off or stopping `smith ui` never waits for a download; a failed download
 is retried after five minutes, and a cached tool is checked once per run
 against the SHA-256 recorded when it was installed. Without Caztor or Node the tab falls back to the viewer above and
-says why. Add `.caztor/` to the workspace's `.gitignore`.
+says why. The workspace `.gitignore` ignores `.caztor/`.
 
 Inside the dashboard Caztor shows no top bar of its own and takes the dashboard's
 light or dark theme, when it loads and on every toggle (`caztor:ready` and

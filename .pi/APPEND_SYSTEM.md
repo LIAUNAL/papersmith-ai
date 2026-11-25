@@ -65,9 +65,11 @@ skill refuses when its input is missing. Each `smith ui` start regenerates the
 board's derived artifacts (the SOTA atlas page, the manuscript graph, the
 novelty graph, the wiring health; `--no-refresh` skips it), and the topbar's
 "Update board" button does it again and reports the current phase, the steps
-it still owes and the open or failed gates. A review workspace (`smith init
---kind review`) follows the systematic-review flow (`/systematic-review`)
-instead of these phases.
+it still owes and the open or failed gates. These phases are the experimental
+(applied-AI) line. A workspace created with another `smith init --kind` (review,
+observational-measurement, hardware, lab-simulation, data-resource,
+experiment-intervention, qualitative-participatory) follows its own line's flow
+instead.
 
 1. **Harness**: `smith status .` and `smith audit . --check-drift`;
    `/upgrade-project` when the workspace runs an older release.
@@ -76,7 +78,9 @@ instead of these phases.
    claims. Nothing is ingested until the operator accepts the report.
    On acceptance, `/paper-type` scores the idea against smith's paper types,
    discusses the suggestion and records the type the operator agrees in
-   `.papersmith/paper_type.json`; the phases below do not change.
+   `.papersmith/paper_type.json`. An agreed applied-AI type keeps these
+   phases; another type moves the workspace with `smith kind set <type> --by
+   <name>` to its line's own flow.
 3. **Ingestion**: `/paper-ingestion <PDF or URL>` (or `smith ingest`)
    turns the accepted top 5 into Markdown under `guidance/`, with equations
    as LaTeX.

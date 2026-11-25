@@ -879,7 +879,7 @@ date. Drift is Flow B's fourth step, not a reason to start over.
    are written rather than copied, and the `.gitignore` is merged into
    whatever the repository already has instead of written over it.
    `src/<Package>_Benchmark/__init__.py` is **not** among these destinations —
-   see [`nextStep: "declare-first"`](#nextstep-declare-first--the-benchmark-package-exists-and-says-nothing-yet).
+   see [`nextStep: "declare-first"`](references/next-step-declare-first.md#nextstep-declare-first--the-benchmark-package-exists-and-says-nothing-yet).
 
    | Gap `plan` and `verify` report | Written from |
    | --- | --- |
@@ -1587,7 +1587,7 @@ and nothing else. It is a **harness** destination, not a scaffold one: the
 kit ships it with all five top-level blocks present and empty
 (`assets/kit/src_benchmark/__init__.py`), but `materialize --stage harness`
 writes it only once a comparison has been accepted (see
-[`nextStep: "benchmark"`](#nextstep-benchmark--propose-the-wiring-then-train-both-and-measure)) —
+[`nextStep: "benchmark"`](references/next-step-benchmark.md#nextstep-benchmark--propose-the-wiring-then-train-both-and-measure)) —
 never at scaffold time, and never for a target whose comparison was declined
 or whose acid test was run instead. Before acceptance there is no file at
 all; once it is materialized, what it does not yet have is anything written
@@ -2486,7 +2486,7 @@ is a fact nobody reads:
 | `search` | Whether a declared search chose anything, and what a full run would cost | Yes — a record absent from disk, or its `scaleSatisfied` short of `true`, is `search-first` |
 | `toDiscuss` | The question-shaped half of `resolve`, as a list: one directly runnable, `shlex.quote`-escaped `discuss` command for every `nextStep` whose next act is a decision, naming the target/name pair and — for `piloted` and `search-first` — the DECLARED (never the achieved) scale. Empty for the two terminal steps and for `env-first`, whose exit is a command nobody has to decide about | **Never** — a published action naming an already-computed undecided thing, not a verdict (see "Neither half proves who answered," above) |
 | `unreachedModules` | Arms declaring mathematics they never call | Yes — that is `wiring-first` |
-| `validation` | The acid-test draft, present at the one answer `PROBE_NEXT_STEPS` marks as carrying it: `validate`, the offer to run the method alone against its own declared prediction. `null` at every other answer, the identical shape `wiring` keeps. See [`nextStep: "validate"`](#nextstep-validate) | Reported whatever it says |
+| `validation` | The acid-test draft, present at the one answer `PROBE_NEXT_STEPS` marks as carrying it: `validate`, the offer to run the method alone against its own declared prediction. `null` at every other answer, the identical shape `wiring` keeps. See [`nextStep: "validate"`](references/next-step-validate.md#nextstep-validate--run-the-acid-test-the-method-alone-against-its-own-claim) | Reported whatever it says |
 | `wiring` | The proposed wiring, present at the two answers `PROBE_NEXT_STEPS` marks as carrying it: `benchmark`, the offer to run, and `wiring-first`, where an arm declares mathematics it never calls. It used to be guarded on `benchmark` alone, so the one answer that named missing wiring withheld the draft of how to wire it | Reported whatever it says |
 
 Column one is read by the suite against `probe`'s own return, exactly as the
