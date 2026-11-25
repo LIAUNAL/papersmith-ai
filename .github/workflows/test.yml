@@ -70,14 +70,27 @@ jobs:
           # "workspace node dependencies are missing".
           node-version: 24.x
           cache: "npm"
-      - name: Provision the forge environment (micromamba)
+      - name: Cache micromamba's packages
+        # The environment is built from env/*.conda-lock.yml (issue #58), so the
+        # same lock always needs the same packages; a lock refresh changes the key.
+        # setup_env.py drops the tarballs and keeps the extracted packages, which
+        # is what a locked `create` links from.
+        uses: actions/cache@v4
+        with:
+          path: .micromamba/pkgs
+          key: micromamba-pkgs-${{ runner.os }}-${{ hashFiles('env/*.conda-lock.yml') }}
+          restore-keys: |
+            micromamba-pkgs-${{ runner.os }}-
+      - name: Provision the forge environment (micromamba, from the cpu lock)
         # The gate names `.micromamba/envs/papersmith/bin/pytest` -- package.json
         # `test:py`, enforced by tests/test_forge_gate.py -- so CI must
         # provision THAT environment, not a `.venv` no script in this
-        # repository creates. `.venv` is linked to it because the skill-audit
-        # self-guarded-facts probe runs `<repo>/.venv/bin/python` directly, and
-        # `--no-ingestion` skips only `PIP_PACKAGES` (`docling`, `mlx-vlm`), which the
-        # gate's own derivation declares skippable.
+        # repository creates. `install` builds it from env/cpu.conda-lock.yml
+        # (no GPU on the runner), never a live solve. `.venv` is linked to it
+        # because the skill-audit self-guarded-facts probe runs
+        # `<repo>/.venv/bin/python` directly, and `--no-ingestion` skips only
+        # env/ingestion.txt (`docling`, `mlx-vlm`), which the gate's own
+        # derivation declares skippable.
         run: |
           python3 scripts/setup_env.py install --no-ingestion
           ln -s .micromamba/envs/papersmith .venv

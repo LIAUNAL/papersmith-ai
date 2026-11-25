@@ -420,7 +420,7 @@ smith upgrade ~/papers/sparse-ae                    # syncs the files and migrat
 smith status ~/papers/sparse-ae                     # drift and pending migrations
 
 # 2–3. Only inside a repository clone, for framework development:
-# Isolated ingestion runtime (micromamba: Python 3.12, PyTorch, Surya OCR, llama-server)
+# Isolated runtime from the locked env/ specification (micromamba: Python 3.12, PyTorch, llama-server, docling)
 python3 scripts/setup_env.py install
 # Node dependencies and projection of skills to the harnesses
 npm ci
@@ -483,10 +483,21 @@ The two `upgrade`s are separate: neither one touches the other.
 `smith upgrade` refuses to take a workspace to a version older than the one
 it records, unless `--allow-downgrade` is passed.
 
-`scripts/setup_env.py install` provisions **the whole** ingestion stack in a
-separate micromamba environment (CPU or CUDA, depending on what it detects),
-including the `llama-server` binary that the OCR needs — it is **not** Ollama
-nor a Homebrew installation. The micromamba it bootstraps is a pinned release
+`scripts/setup_env.py install` provisions **the whole** forge and ingestion
+stack in a separate micromamba environment, including the `llama-server` binary
+that the OCR needs — it is **not** Ollama nor a Homebrew installation. It builds
+that environment from a lock: `env/environment.yml` is the one dependency
+source, and `env/cpu.conda-lock.yml`, `env/cuda.conda-lock.yml` and
+`env/rocm.conda-lock.yml` are conda-lock's solution of it for linux-64, osx-64,
+osx-arm64 and win-64 (CUDA: linux-64 and win-64; ROCm: linux-64), so every
+machine of a platform gets the same packages. It picks the CPU, CUDA or ROCm
+lock from the hardware it detects; on ROCm it then adds AMD's pinned torch
+wheels, and without `--no-ingestion` the pinned pip layer in
+`env/ingestion.txt` (docling). A platform no lock covers (linux-aarch64,
+win-arm64) is solved live from the same files, with a warning.
+`requirements.txt` is generated from the same source and installs nothing;
+refreshing the locks is in [`docs/releasing.md`](docs/releasing.md#refreshing-the-dependency-locks).
+The micromamba it bootstraps is a pinned release
 whose SHA-256 is checked before it runs; the comment above `MICROMAMBA_VERSION`
 in `scripts/setup_env.py` is the procedure for moving the pin.
 The locally verified Node/npm pair (26.13.0/12.2.2) is a workstation setup,

@@ -271,6 +271,53 @@ release cleans up. The known one: 0.8.0 moved Antigravity off
 `.antigravity/rules.md` and `.antigravity/skills`, and `upgrade` does not
 retire those paths.
 
+## Refreshing the dependency locks
+
+`env/environment.yml` is the one source of the provisioned environment's
+dependencies; `env/torch-cpu.yml` and `env/torch-cuda.yml` add each torch build.
+`scripts/setup_env.py install`, CI and every workspace build the environment
+from the locks conda-lock solved from them, `env/cpu.conda-lock.yml`,
+`env/cuda.conda-lock.yml` and `env/rocm.conda-lock.yml`, never from a live
+solve. `env/locks.json` records each lock's platforms and the sha256 of the
+sources it was solved from.
+
+**When.** After any edit to `env/*.yml`, and periodically (before a release,
+say) to take conda-forge's fixes inside the declared bounds. The suite fails
+while a lock is older than its sources (`tests/test_env_locks.py` runs
+`python3 scripts/lock-env.py check`), so an edit without a refresh cannot merge.
+
+**How.** conda-lock is a maintainer tool, never a workspace dependency: install
+it in an environment of its own, then lock, regenerate and check:
+
+```bash
+.micromamba/bin/micromamba create -y -p ~/.cache/papersmith/lock-tools -c conda-forge conda-lock
+python3 scripts/lock-env.py lock \
+  --conda-lock ~/.cache/papersmith/lock-tools/bin/conda-lock \
+  --micromamba .micromamba/bin/micromamba           # every variant; --variant cpu|cuda|rocm for one
+python3 scripts/lock-env.py requirements            # requirements.txt from the sources
+python3 scripts/lock-env.py check                   # "locks: current"
+```
+
+A failed solve keeps the previous lock. The cuda variant is solved for CUDA
+12.8 (any NVIDIA driver from the 570 series on). Commit the sources, the locks,
+`env/locks.json` and `requirements.txt` together. `requirements.txt` is
+generated and installs nothing; `check` also fails while it is not what
+`requirements` writes.
+
+**What is not locked, and why.**
+
+- `env/ingestion.txt` (docling, mlx-vlm on Apple Silicon): pinned but not
+  locked. docling has no win-64 build on conda-forge, conda-forge's
+  docling-parse lags what docling needs on some platforms, and conda-lock's pip
+  solver does not map conda's torch onto docling's `torch` requirement, so its
+  transitive pip dependencies resolve at install time against the locked
+  environment.
+- AMD's ROCm torch wheels: they come from AMD's index, pinned in
+  `skills/_core/gpu/gpu_probe.py`; the rocm lock holds everything else.
+- Unlocked platforms (linux-aarch64, win-arm64, and CUDA on macOS):
+  `setup_env.py install` solves the sources live there and warns that the
+  environment is not reproducible.
+
 ## What has no automation, and the history behind it
 
 Nothing creates a tag or a release. There is no CI job for either, so the four

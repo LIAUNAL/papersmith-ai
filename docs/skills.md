@@ -313,7 +313,7 @@ PDF becomes loose again for the next run.
 |---------|---------------------------|
 | `SKILL.md` | The behavioral contract: run `--list` first, ask for approval per paper, how to handle an unfiled PDF. The script says none of this — it only returns exit codes. |
 | `setup.sh` | Environment provisioning, idempotent: a thin wrapper over `scripts/setup_env.py`. |
-| `requirements.txt` | Pins `docling==2.141.0` and `mlx-vlm==0.7.10` (Apple Silicon), and lists each engine's license. Without the pin, a new version could change the converter API and break extraction silently. |
+| `env/ingestion.txt` (repository root) | Pins `docling==2.141.0` and `mlx-vlm==0.7.10` (Apple Silicon), the pip layer `scripts/setup_env.py install` adds after the locked environment unless `--no-ingestion`. Without the pin, a new version could change the converter API and break extraction silently. Every default engine is license-unrestricted: pypdfium2 Apache-2.0 / BSD-3-Clause, docling MIT (its models Apache-2.0 or CDLA-Permissive-2.0), mlx-vlm MIT. |
 | `scripts/extract_pdf.py` | The orchestration: config validation, discovery, listing, filing, engine selection, transactional conversion, reference stripping and capture, figure writing, the `.json` page map, and the exit-code contract. |
 | `scripts/pdf_pipeline.py` | The page probe and router, the pypdfium2 fast path, the Docling adapter (page ranges, formula model by hardware, OCR only for scans) and the verified per-page cache. |
 | `scripts/pdf_fragment.py` | One page, heading section, equation or search hit of an ingested paper, never the whole document; also the MCP tool `papersmith.ingest_fragment`. |

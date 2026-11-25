@@ -1,0 +1,8 @@
+# The CPU torch build, locked with environment.yml for every platform.
+name: papersmith
+category: main
+channels:
+  - conda-forge
+dependencies:
+  - pytorch-cpu
+  - torchvision

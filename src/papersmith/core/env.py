@@ -54,6 +54,8 @@ def register(subparsers) -> None:
         "--no-ingestion", action="store_true",
         help="skip docling and heavy ingestion packages; fast pypdfium2 stays",
     )
+    install.add_argument("--rebuild", action="store_true",
+                         help="rebuild the environment even when it already matches its lock")
     install.add_argument("directory", nargs="?", default=".", metavar="<dir>")
     install.set_defaults(handler=run_cli)
 
@@ -80,6 +82,8 @@ def run_cli(args: argparse.Namespace) -> int:
             extra.append("--rocm")
         if getattr(args, "no_ingestion", False):
             extra.append("--no-ingestion")
+        if getattr(args, "rebuild", False):
+            extra.append("--rebuild")
     elif cmd == "clean":
         if getattr(args, "full", False):
             extra.append("--full")
