@@ -1,0 +1,8 @@
+# Installed into the TARGET repository's own .venv — never the forge's.
+#   <target>/.venv/bin/pip install -r <this file>
+# Printed by experimental-implementation's `env` nextCommand; the requirement
+# lines match proposal-implementation/assets/requirements-dev.txt.
+pytest>=7.0
+numpy>=1.24
+ipykernel>=6.29
+nbconvert>=7.16

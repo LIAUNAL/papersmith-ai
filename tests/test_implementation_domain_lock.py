@@ -789,8 +789,9 @@ class KitAgreementLockTests(unittest.TestCase):
             "every assertion below would pass vacuously")
 
     def test_this_skill_is_recorded_kitless(self):
-        """Task 4.4: this skill ships no `assets/kit/` at all (M3) and is
-        therefore correctly absent from `kit_shipping_profiles()`."""
+        """Task 4.4: this skill ships no scaffold kit (M3) -- its `assets/kit/`
+        holds only the figure helper `ps_figures.py` -- and is therefore
+        correctly absent from `kit_shipping_profiles()`."""
         shipping_names = {name for name, _ in kit_shipping_profiles()}
         self.assertNotIn("experimental-implementation", shipping_names)
         this_skill_root = SKILLS_DIR / "experimental-implementation"
@@ -798,6 +799,23 @@ class KitAgreementLockTests(unittest.TestCase):
             (this_skill_root / "assets" / "kit" / "src" / "module.py").is_file(),
             "experimental-implementation ships assets/kit/src/module.py -- "
             "it is no longer kitless and kit_shipping_profiles() must find it")
+        kit_files = sorted(
+            path.relative_to(this_skill_root / "assets" / "kit").as_posix()
+            for path in (this_skill_root / "assets" / "kit").rglob("*")
+            if path.is_file() and "__pycache__" not in path.parts)
+        self.assertEqual(
+            kit_files, ["ps_figures.py"],
+            "assets/kit/ must hold only the figure helper; anything else "
+            "makes the SKILL.md statement below false")
+        skill_md = (this_skill_root / "SKILL.md").read_text(encoding="utf-8")
+        self.assertNotIn(
+            "ships no `assets/kit/`", skill_md,
+            "SKILL.md claims the domain ships no assets/kit/, but it ships "
+            "assets/kit/ps_figures.py")
+        self.assertIn(
+            "This domain ships no scaffold kit: its `assets/kit/` holds only "
+            "the figure helper `ps_figures.py`", " ".join(skill_md.split()))
+        self.assertIn("`materialize --stage scaffold`", skill_md)
 
     def test_module_py_declares_the_agreed_provenance_keys(self):
         checked = set()

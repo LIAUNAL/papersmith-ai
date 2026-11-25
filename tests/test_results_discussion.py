@@ -799,6 +799,35 @@ SPANISH_PROTOCOL = """<!-- proposal-workspace:artifact:v1 -->
 """
 
 
+#: experimental-deliberation's canonical form: a bold label at the start of a paragraph
+#: line, not a list bullet (skills/experimental-deliberation/SKILL.md, "Preservation").
+PARAGRAPH_PROTOCOL = """<!-- proposal-workspace:artifact:v1 -->
+# A Title
+
+## Experiment [exp:E1] — Station forecast
+
+**Hypothesis:** The hybrid model beats persistence.
+
+**Success criterion:** RMSE below 1.2 on the held-out year.
+
+**Success criterion:** a second declaration is ignored
+
+### Expected Report: Experiment E1
+
+**Hypothesis:** must be ignored inside an expected report
+
+| Model | RMSE |
+| :--- | :--- |
+| Hybrid | |
+
+## Experiment [exp:E2] — Ablation
+
+**Hipótesis:** La entrada horaria ayuda.
+
+- **Success criterion:** Bullet form still read.
+"""
+
+
 class CliScaffoldLanguageTest(CliCase):
     """Issue #184 item 2: a protocol written in Spanish still yields its hypotheses,
     and a field the scaffold cannot read is named, never left silently empty."""
@@ -832,6 +861,18 @@ class CliScaffoldLanguageTest(CliCase):
         unread = [w for w in out["warnings"] if "could not read" in w]
         self.assertEqual(unread, [f"experiment E2: could not read its Success criterion from "
                                   f"experiments/experiments-demo-v01.md; fill it by hand"])
+
+
+    def test_paragraph_labels_are_read(self) -> None:
+        exit_code, out, written = self.scaffold_with(PARAGRAPH_PROTOCOL)
+        self.assertEqual((exit_code, out["ok"], out["hypotheses"]), (0, True, 2))
+        first, second = written["hypotheses"]
+        self.assertEqual(first["statement"], "The hybrid model beats persistence.")
+        self.assertEqual(first["criterion"], "RMSE below 1.2 on the held-out year.")
+        self.assertEqual(second["statement"], "La entrada horaria ayuda.")
+        self.assertEqual(second["criterion"], "Bullet form still read.")
+        unread = [w for w in out["warnings"] if "could not read" in w]
+        self.assertEqual(unread, [], out["warnings"])
 
 
 class CliCheckTest(CliCase):

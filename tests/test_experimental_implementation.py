@@ -590,6 +590,40 @@ class LauncherByteEqualityTests(unittest.TestCase):
             "resolves to THIS skill's own profile")
 
 
+class EnvRequirementsFileTests(unittest.TestCase):
+    """`env` prints `pip install -r <kit.root>/assets/requirements-dev.txt`
+    (the shared engine's `SKILL_ROOT`, which is this profile's `kit.root`).
+    A launcher that names a file this skill does not ship prints a command
+    that fails with "Could not open requirements file"."""
+
+    ENGINE = FORGE / "skills/_core/implementation/engine/implementation_engine.py"
+
+    @staticmethod
+    def _requirement_lines(path: Path) -> list[str]:
+        return [line.strip() for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip() and not line.lstrip().startswith("#")]
+
+    def test_every_requirements_file_env_names_exists(self):
+        engine = self.ENGINE.read_text(encoding="utf-8")
+        named = re.findall(
+            r'SKILL_ROOT\s*/\s*"assets"\s*/\s*"(requirements[^"]*\.txt)"', engine)
+        self.assertTrue(named, "env names no requirements file -- this test would be vacuous")
+        kit_root = Path(_real_profile()["kit"]["root"])
+        self.assertEqual(kit_root.resolve(), SKILL_DIR.resolve())
+        for name in sorted(set(named)):
+            with self.subTest(file=name):
+                self.assertTrue(
+                    (kit_root / "assets" / name).is_file(),
+                    f"env prints `pip install -r {kit_root / 'assets' / name}`, "
+                    "which this skill does not ship")
+
+    def test_the_dev_requirements_match_the_siblings(self):
+        sibling = FORGE / "skills/proposal-implementation/assets/requirements-dev.txt"
+        mine = Path(_real_profile()["kit"]["root"]) / "assets" / "requirements-dev.txt"
+        self.assertTrue(mine.is_file(), f"{mine} is missing")
+        self.assertEqual(self._requirement_lines(mine), self._requirement_lines(sibling))
+
+
 class PublishedCommandsRunVerbatimTests(unittest.TestCase):
     """Task 3.7 (design.md D8): every command string this skill's OWN
     `SKILL.md` publishes must run verbatim through THIS skill's own

@@ -72,7 +72,10 @@ _EXPERIMENT_RE = re.compile(r"^#{1,6}\s+.*?\[exp:([^\]]+)\]")
 #: (English, Spanish, Portuguese, French); matched without accents or case.
 _REPORT_RE = re.compile(r"^###\s+(?:expected report|reporte esperado|informe esperado|"
                         r"relatorio esperado|rapport attendu):?\s*(.*)$", re.IGNORECASE)
-_BULLET_RE = re.compile(r"^-\s+\*\*([^*]+?):?\*\*:?\s*(.*)$")
+#: A labelled field: ``- **Label:** text`` on a list bullet, or ``**Label:** text`` at the
+#: start of a paragraph line, which is experimental-deliberation's canonical form
+#: (skills/experimental-deliberation/SKILL.md, "Preservation").
+_BULLET_RE = re.compile(r"^(?:-\s+)?\*\*([^*]+?):?\*\*:?\s*(.*)$")
 #: The bullet labels the scaffold copies, keyed by their accent-folded, lower-case
 #: form: English first, then the Spanish, Portuguese and French equivalents, so a
 #: protocol written in its declared language still yields its hypotheses (#184).
@@ -596,7 +599,7 @@ def unread_fields(data: dict) -> list[str]:
 
 
 def _protocol_experiments(path: Path) -> list[dict[str, str]]:
-    """Each experiment heading carrying ``[exp:<id>]`` (any level) with its first ``Hypothesis`` and ``Success criterion`` bullets, verbatim."""
+    """Each experiment heading carrying ``[exp:<id>]`` (any level) with its first ``Hypothesis`` and ``Success criterion`` (bullet or paragraph line), verbatim."""
     try:
         with open(path, "rb") as handle:
             text = handle.read(MAX_PROTOCOL_BYTES).decode("utf-8", errors="replace")

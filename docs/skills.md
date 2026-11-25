@@ -1576,8 +1576,8 @@ It routes the same way as the sibling: by **existence**, not by fidelity. If `sr
 implementation, Flow A; if it already has one, Flow B, which now measures drift against **both**
 documents before deciding anything.
 
-*Flow A — first pass.* This skill ships no `assets/kit/`: `materialize --stage
-scaffold` is unavailable, so the target's scaffold is written by hand. The rest
+*Flow A — first pass.* This skill ships no scaffold kit (its `assets/kit/` holds
+only the figure helper `ps_figures.py`): `materialize --stage scaffold` is unavailable, so the target's scaffold is written by hand. The rest
 follows the sibling's shape: clone, `env`, ask for the name, authorization gate,
 present the object-to-module map **for both documents** —which module implements which
 experiment section and which module implements which equation of the proposal that
