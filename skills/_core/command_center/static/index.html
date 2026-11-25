@@ -1138,10 +1138,49 @@
     .pdf-workspace-layout {
       display: flex;
       gap: 1.25rem;
-      min-height: 880px;
       align-items: flex-start;
       width: 100%;
     }
+    /* The height the editor or the viewer fits in: the window under the sticky header and the tab's
+       toolbar. The script measures both (--topbar-h, --pdf-toolbar-h, --pdf-viewer-topbar-h). */
+    #pane-preview {
+      --pdf-fit-h: calc(100vh - var(--topbar-h, 72px) - var(--pdf-toolbar-h, 46px) - 1.5rem);
+    }
+
+    /* The PDF tab's toolbar, the same in the editor and the viewer */
+    .pdf-tab-toolbar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem 0.85rem;
+      padding: 0.4rem 0.75rem;
+      margin-bottom: 0.75rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.8rem;
+    }
+    .pdf-tab-toolbar__title {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      color: var(--teal);
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: help;
+    }
+    .pdf-tab-toolbar__info { color: var(--text-dim); font-weight: 400; }
+    .pdf-tab-toolbar__actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-left: auto;
+    }
+    .pdf-tab-toolbar .btn { white-space: nowrap; font-size: 0.74rem; }
+    .pdf-tab-toolbar__changes[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+    .pdf-tab-toolbar__changes .badge { font-size: 0.68rem; padding: 0.05rem 0.4rem; }
+    #btnBackToEditor[hidden] { display: none; }
 
     /* Main PDF column */
     .pdf-main-column {
@@ -1163,8 +1202,9 @@
     .caztor-notice[hidden] { display: none; }
     .caztor-frame {
       width: 100%;
-      height: calc(100vh - 150px);
-      min-height: 720px;
+      height: var(--pdf-fit-h);
+      min-height: 520px;
+      display: block;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: var(--surface);
@@ -1243,6 +1283,8 @@
       color: var(--text-muted);
       margin: 0 0 0.5rem;
     }
+    .caztor-notice .btn { margin-left: 0.35rem; }
+    #pdfTabToolbar, #legacyPdfViewer { scroll-margin-top: calc(var(--topbar-h, 72px) + 0.5rem); }
 
     /* PDF viewer top bar */
     .pdf-viewer-topbar {
@@ -1327,6 +1369,13 @@
       max-height: 940px;
       position: relative;
       scroll-behavior: smooth;
+    }
+    /* In the PDF tab the viewer fits the window under its own top bar. */
+    #pane-preview .pdf-viewport-container {
+      max-height: max(420px, calc(var(--pdf-fit-h) - var(--pdf-viewer-topbar-h, 64px) - 0.75rem));
+    }
+    #pane-preview #pdfNativeIframe {
+      height: max(400px, calc(var(--pdf-fit-h) - var(--pdf-viewer-topbar-h, 64px) - 3.75rem));
     }
     .pdf-loading-overlay {
       position: absolute;
@@ -1490,12 +1539,59 @@
       display: flex;
       flex-direction: column;
       gap: 1rem;
-      max-height: 940px;
+      /* Under the sticky header, and clear of the CLI assistant's button in the corner. */
+      max-height: calc(100vh - var(--topbar-h, 72px) - var(--fab-size, 58px) - var(--fab-offset, 24px) - 1.5rem);
       overflow-y: auto;
       position: sticky;
-      top: 75px;
+      top: calc(var(--topbar-h, 72px) + 0.75rem);
       box-shadow: 0 4px 24px rgba(0,0,0,0.22);
     }
+    /* Collapsed, the panel keeps a narrow handle with the pending marks. */
+    .control-panel__handle { display: none; }
+    .pdf-control-panel.is-collapsed {
+      width: 46px;
+      padding: 0.5rem 0.2rem;
+      gap: 0;
+      overflow: visible;
+    }
+    .pdf-control-panel.is-collapsed > :not(.control-panel__handle) { display: none; }
+    .pdf-control-panel.is-collapsed .control-panel__handle {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.55rem;
+      width: 100%;
+      padding: 0.45rem 0;
+      background: none;
+      border: 0;
+      color: var(--text);
+      cursor: pointer;
+      font: inherit;
+    }
+    .control-panel__handle:focus-visible,
+    .control-panel__collapse:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
+    .control-panel__handle-icon { font-size: 1rem; color: var(--accent); }
+    .control-panel__handle-label {
+      writing-mode: vertical-rl;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: var(--text-muted);
+    }
+    .control-panel__handle-count { font-size: 0.68rem; padding: 0.05rem 0.35rem; }
+    .control-panel__handle.has-selection .control-panel__handle-icon { color: var(--warn); }
+    .control-panel__collapse {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.9rem;
+      line-height: 1;
+      padding: 0.2rem 0.45rem;
+      margin-left: 0.4rem;
+    }
+    .control-panel__collapse:hover, .control-panel__handle:hover .control-panel__handle-label { color: var(--accent); }
 
     .control-panel__header {
       display: flex;
@@ -2798,6 +2894,13 @@
     .board-status__close { margin-left: auto; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.9rem; }
     .board-status__lines, .board-status__missing { margin: 0.4rem 0 0; padding-left: 1.2rem; line-height: 1.45; }
     .board-status__sub { margin: 0.5rem 0 0; font-weight: 600; }
+    /* Collapsed, the report keeps its title line; the toggle shows the rest. */
+    .board-status__toggle { margin-left: auto; background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); cursor: pointer; font-size: 0.74rem; padding: 0.1rem 0.5rem; }
+    .board-status__toggle:hover { color: var(--accent); border-color: var(--accent); }
+    .board-status__toggle + .board-status__close { margin-left: 0.25rem; }
+    .board-status.is-collapsed .board-status__lines,
+    .board-status.is-collapsed .board-status__sub,
+    .board-status.is-collapsed .board-status__missing { display: none; }
     .phase-action__agent { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.9rem; font-size: 0.8rem; color: var(--text-muted); }
     .phase-action__agent label { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
     .phase-action__agent select { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 0.2rem 0.4rem; font: inherit; }
@@ -3181,7 +3284,11 @@
     @media (max-width: 900px) {
       .split-layout { grid-template-columns: minmax(0, 1fr); }
       .pdf-workspace-layout { flex-direction: column; }
-      .pdf-control-panel { width: 100%; max-width: 100%; }
+      .pdf-control-panel { width: 100%; max-width: 100%; position: static; max-height: none; }
+      .pdf-control-panel.is-collapsed { width: 100%; padding: 0.35rem 0.75rem; }
+      .pdf-control-panel.is-collapsed .control-panel__handle { flex-direction: row; justify-content: flex-start; }
+      .control-panel__handle-label { writing-mode: horizontal-tb; }
+      .pdf-tab-toolbar__actions { margin-left: 0; }
     }
   
   .office-card { background: #111827; border: 1px solid #374151; border-radius: 10px;
@@ -3886,23 +3993,31 @@
     </div>
 
     <!-- TAB 7: PDF VIEWER WITH A SIDE CHANGE-CONTROL PANEL -->
-    <div id="pane-preview" class="tab-pane">
+    <div id="pane-preview" class="tab-pane" data-pdf-mode="editor">
+      <!-- One toolbar for both modes (LaTeX editor and PDF viewer) -->
+      <div class="pdf-tab-toolbar" id="pdfTabToolbar" role="toolbar" aria-label="PDF tab tools" data-i18n-attr="aria-label:pdf.toolbarLabel">
+        <span class="pdf-tab-toolbar__title" tabindex="0" title="Journal article compiled from the LaTeX scaffolding and the canonical blocks in sections/ and paper/main.tex." data-i18n-attr="title:pdf.manuscriptHint">
+          <span data-i18n="pdf.manuscriptShort">🔬 Manuscript</span>
+          <span class="pdf-tab-toolbar__info" aria-hidden="true">ⓘ</span>
+        </span>
+        <label class="caztor-toggle" data-i18n-attr="title:caztor.toggleHint" title="Show Caztor (files, LaTeX source, PDF and assistant chat) in this tab; off shows the PDF viewer and stops Caztor.">
+          <input type="checkbox" id="caztorToggle" role="switch" checked onchange="setCaztorEnabled(this.checked)">
+          <span data-i18n="caztor.toggle">LaTeX editor</span>
+        </label>
+        <button type="button" class="btn btn--sm btn--primary" id="btnBackToEditor" onclick="backToCaztorEditor()" hidden title="The viewer is shown for a journal version, a translation or a page jump; Caztor keeps running behind it." data-i18n-attr="title:caztor.backToEditorHint" data-i18n="caztor.backToEditor">← Back to the LaTeX editor</button>
+        <div class="pdf-tab-toolbar__actions">
+          <button class="btn btn--sm" id="btnAuditAi" onclick="openStyleRedundancyPanel()" title="Score the writing style and redundancy of the manuscript, 0 to 100, by section" data-i18n-attr="title:pdf.auditAiTitle" data-i18n="pdf.auditAi">✍️ Style &amp; redundancy</button>
+          <a id="linkPdfDirect" href="/api/pdf" target="_blank" class="btn btn--sm" data-i18n="pdf.openNewTab">Open the PDF in a new tab ↗</a>
+          <button type="button" class="btn btn--sm pdf-tab-toolbar__changes" id="btnToggleChangeControl" onclick="toggleChangeControl()" aria-controls="pdfControlPanel" aria-expanded="true" title="Show or hide the Change Control panel" data-i18n-attr="title:changes.toggleHint">
+            <span data-i18n="changes.toggleButton">✎ Change Control</span>
+            <span class="badge badge--info" id="toolbarMarksCount" title="Pending Marks" data-i18n-attr="title:changes.pending">0</span>
+          </button>
+        </div>
+      </div>
       <div class="pdf-workspace-layout">
         <!-- Left column: PDF viewer with navigation controls -->
         <div class="pdf-main-column">
-          <div style="background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.25); border-radius: var(--radius-sm); padding: 0.55rem 0.85rem; margin-bottom: 0.65rem; font-size: 0.8rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;">
-            <div>
-              <span style="color: var(--teal); font-weight: 600;" data-i18n="pdf.manuscript">🔬 Scientific Manuscript:</span>
-              <span style="color: var(--text-secondary); margin-left: 0.3rem;" data-i18n-html="pdf.manuscriptHtml">Journal article compiled from the LaTeX scaffolding and the canonical blocks in <code>sections/</code> and <code>paper/main.tex</code>.</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 0.75rem;">
-              <label class="caztor-toggle" data-i18n-attr="title:caztor.toggleHint" title="Show Caztor (files, LaTeX source, PDF and assistant chat) in this tab; off shows the PDF viewer and stops Caztor.">
-                <input type="checkbox" id="caztorToggle" role="switch" checked onchange="setCaztorEnabled(this.checked)">
-                <span data-i18n="caztor.toggle">LaTeX editor</span>
-              </label>
-              <a id="linkPdfDirect" href="/api/pdf" target="_blank" class="btn btn--sm" style="white-space: nowrap; font-size: 0.74rem;" data-i18n="pdf.openNewTab">Open the PDF in a new tab ↗</a>
-            </div>
-          </div>
+          <p class="caztor-notice" id="caztorNotice" role="status" hidden></p>
 
           <!-- Caztor: files, LaTeX editor, PDF and chat; the change-control panel stays to the right of its chat -->
           <div class="caztor-host" id="caztorHost" hidden>
@@ -3912,7 +4027,6 @@
               <span data-i18n="caztor.loading">Loading the LaTeX editor…</span>
             </div>
           </div>
-          <p class="caztor-notice" id="caztorNotice" role="status" hidden></p>
 
           <!-- The PDF viewer, in Caztor's place when the LaTeX editor is off or cannot run -->
           <div id="legacyPdfViewer">
@@ -3974,7 +4088,6 @@
                 </div>
               </div>
 
-              <button class="btn btn--sm" id="btnAuditAi" onclick="openStyleRedundancyPanel()" title="Score the writing style and redundancy of the manuscript, 0 to 100, by section" data-i18n-attr="title:pdf.auditAiTitle" data-i18n="pdf.auditAi">✍️ Style &amp; redundancy</button>
               <button class="btn btn--sm" onclick="toggleNativeViewer()" id="btnToggleNative" title="Switch between PDF.js and the browser's native viewer" data-i18n-attr="title:pdf.toggleViewerTitle">Native Viewer</button>
               <a href="/api/pdf" download class="btn btn--sm" title="Download the compiled main.pdf" data-i18n-attr="title:pdf.downloadTitle" data-i18n="pdf.download">⬇ Download</a>
             </div>
@@ -3989,7 +4102,7 @@
             <div id="pdfPagesStack" class="pdf-pages-stack">
               <!-- Continuous vertical multi-page rendering -->
             </div>
-            <iframe id="pdfNativeIframe" class="iframe-viewer" src="about:blank" style="display: none; height: 850px; width: 100%;"></iframe>
+            <iframe id="pdfNativeIframe" class="iframe-viewer" src="about:blank" style="display: none; width: 100%;"></iframe>
           </div>
           </div>
 
@@ -4018,6 +4131,12 @@
 
         <!-- Right column: unified change-control panel -->
         <aside class="pdf-control-panel" id="pdfControlPanel" aria-label="Change control panel" data-i18n-attr="aria-label:changes.panelLabel">
+          <!-- Collapsed, the panel is this handle: it opens the panel and keeps the pending marks in view -->
+          <button type="button" class="control-panel__handle" id="changeControlHandle" onclick="setChangeControlOpen(true)" aria-controls="pdfControlPanel" aria-expanded="false" title="Open the Change Control panel" data-i18n-attr="title:changes.expand">
+            <span class="control-panel__handle-icon" aria-hidden="true">✎</span>
+            <span class="control-panel__handle-label" data-i18n="changes.title">Change Control</span>
+            <span class="badge badge--info control-panel__handle-count" id="changeControlHandleCount" title="Pending Marks" data-i18n-attr="title:changes.pending">0</span>
+          </button>
           <div class="control-panel__header">
             <div class="control-panel__title">
               <div>
@@ -4026,6 +4145,7 @@
               </div>
             </div>
             <span class="badge badge--ok" id="panelStatusBadge" data-i18n="changes.active">ACTIVE</span>
+            <button type="button" class="control-panel__collapse" onclick="setChangeControlOpen(false)" aria-controls="pdfControlPanel" title="Collapse the Change Control panel" data-i18n-attr="title:changes.collapse">⟩</button>
           </div>
 
           <!-- 1. Editorial action buttons -->
@@ -4361,6 +4481,94 @@
       <span id="footerVenueInfo">Smith · Command Center</span>
     </div>
   </footer>
+
+  <!-- The PDF tab's decisions, free of the DOM (tests/command-center-pdf-tab.test.mjs runs this block in node). -->
+  <script id="pdfTabLogic">
+    window.pdfTabLogic = (function () {
+      'use strict';
+      // The Change Control panel's state per mode, kept in this browser: 'open' or 'collapsed'.
+      const PANEL_KEY = 'papersmith.changeControl.';
+      // The board report's details, kept in this browser: 'open' or 'collapsed' (the default).
+      const BOARD_KEY = 'papersmith.boardStatus';
+      // A ready Caztor frame is not asked for again on a tab visit sooner than this.
+      const CAZTOR_RECHECK_MS = 60000;
+
+      function read(store, key) {
+        try { return store ? store.getItem(key) : null; } catch (_) { return null; }
+      }
+      function write(store, key, value) {
+        try { if (store) store.setItem(key, value); } catch (_) { /* storage blocked: this visit only */ }
+      }
+
+      // Collapsed by default in the editor (its marks act on the viewer's PDF), open in the viewer.
+      function panelOpen(store, mode) {
+        const saved = read(store, PANEL_KEY + mode);
+        if (saved === 'open') return true;
+        if (saved === 'collapsed') return false;
+        return mode !== 'editor';
+      }
+      function rememberPanel(store, mode, open) {
+        write(store, PANEL_KEY + mode, open ? 'open' : 'collapsed');
+      }
+
+      function boardOpen(store) {
+        return read(store, BOARD_KEY) === 'open';
+      }
+      function rememberBoard(store, open) {
+        write(store, BOARD_KEY, open ? 'open' : 'collapsed');
+      }
+
+      // The frame's address: Caztor's page with the per-launch key when the dashboard has one.
+      function caztorFrameUrl(state) {
+        const url = String((state && state.url) || '');
+        if (!state || !state.key) return url;
+        return `${url.replace(/\/+$/, '')}/?k=${encodeURIComponent(state.key)}`;
+      }
+
+      // Caztor's routes sit under /api/terminal, the path the terminal login cookie is scoped to.
+      const CAZTOR_API = '/api/terminal/caztor';
+      const CAZTOR_STOP_API = '/api/terminal/caztor/stop';
+
+      // The answer of POST /api/terminal/caztor as a state: TERMINAL_LOGIN_REQUIRED (403) is a page the
+      // terminal access link has not opened yet; anything else that is not an object is a failure.
+      function caztorReply(status, body) {
+        if (body && body.error === 'TERMINAL_LOGIN_REQUIRED') {
+          return { available: false, locked: true, reason: String(body.reason || '') };
+        }
+        if (!body || typeof body !== 'object') return { available: false, reason: `HTTP ${status}` };
+        return body;
+      }
+
+      // Whether a visit to the tab asks for Caztor again: always when forced (a page load, the switch
+      // turned on, an activation), when no instance runs in the frame, and otherwise once per period,
+      // so a Caztor that died is still restarted.
+      function shouldAskCaztor(opts) {
+        const o = opts || {};
+        if (o.force || !o.active || !o.frameInstance) return true;
+        return (o.now || 0) - (o.askedAt || 0) >= (o.recheckMs || CAZTOR_RECHECK_MS);
+      }
+
+      // The 5 s fallback poll of /api/status: never while the page is hidden; otherwise while the
+      // live channel is down, or after 30 s without a status.
+      function statusPollDue(opts) {
+        const o = opts || {};
+        if (o.hidden) return false;
+        return !o.connected || (o.now || 0) - (o.lastStatusAt || 0) > 30000;
+      }
+
+      // The frame's watch and the reachability probe run only for a visible page and a frame not ready.
+      function caztorTimersMayRun(opts) {
+        const o = opts || {};
+        return !o.hidden && !o.ready && Boolean(o.wanted);
+      }
+
+      return {
+        PANEL_KEY, BOARD_KEY, CAZTOR_RECHECK_MS, CAZTOR_API, CAZTOR_STOP_API,
+        panelOpen, rememberPanel, boardOpen, rememberBoard,
+        caztorFrameUrl, caztorReply, shouldAskCaztor, statusPollDue, caztorTimersMayRun,
+      };
+    })();
+  </script>
 
   <script>
     // Shown only until /api/status answers; built on demand so it follows the language.
@@ -5053,6 +5261,8 @@
     async function jumpToPdfPage(pageNum) {
       closeDrawer();
       navigateTab('preview');
+      // A page jump needs the viewer: it covers the LaTeX editor, with a way back.
+      peekPdfViewer();
       await ensurePdfLoaded();
       setTimeout(() => {
         scrollToPdfPage(pageNum || 1);
@@ -6199,6 +6409,8 @@
       const native = document.getElementById('pdfNativeIframe');
       if (native && isNativePdfViewer) native.src = pdfUrl(`t=${Date.now()}`);
       if (pdfDoc) initPdfViewer(true);
+      // Only the viewer shows a journal version: it covers the LaTeX editor, with a way back.
+      if (pdfVenueSlug) showViewerOverEditor();
     }
     window.setPdfVenue = setPdfVenue;
     function setPdfTranslation(lang) {
@@ -6212,8 +6424,14 @@
       const native = document.getElementById('pdfNativeIframe');
       if (native && isNativePdfViewer) native.src = pdfUrl(`t=${Date.now()}`);
       if (pdfDoc) initPdfViewer(true);
+      // Only the viewer shows a translation: it covers the LaTeX editor, with a way back.
+      if (pdfTranslation) showViewerOverEditor();
     }
     window.setPdfTranslation = setPdfTranslation;
+    // Brings the viewer into sight when it just replaced the LaTeX editor (the panel asking sits below).
+    function showViewerOverEditor() {
+      if (peekPdfViewer()) document.getElementById('pdfTabToolbar')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
 
     let currentSelectedText = '';
     let currentSelectedPage = 1;
@@ -6265,8 +6483,8 @@
       if (previous === null) { loadedPdfToken = token; return; }
       // The token follows the canonical build; the venue and translation views reload when toggled.
       if (pdfVenueSlug || pdfTranslation) return;
-      // Caztor shows the PDF it compiles itself.
-      if (caztorActive()) return;
+      // Caztor shows the PDF it compiles itself (the viewer shown over it reloads as usual).
+      if (caztorShown()) return;
       if (!token || token === loadedPdfToken) return;
       const native = document.getElementById('pdfNativeIframe');
       if (native && isNativePdfViewer) native.src = `/api/pdf?v=${token}`;
@@ -6668,6 +6886,9 @@
 
     // The selection card of the side change-control panel.
     function showSelectionCard(text, page) {
+        // A selection made while the panel is collapsed shows on its handle.
+        const handle = document.getElementById('changeControlHandle');
+        if (handle && document.getElementById('pdfControlPanel')?.classList.contains('is-collapsed')) handle.classList.add('has-selection');
         const emptyState = document.getElementById('selectionEmptyState');
         const activeState = document.getElementById('selectionActiveState');
         const quoteEl = document.getElementById('selectedQuoteText');
@@ -6706,6 +6927,7 @@
         if (riskBadge) riskBadge.style.display = 'none';
         const clichesEl = document.getElementById('selectionAiCliches');
         if (clichesEl) clichesEl.style.display = 'none';
+        document.getElementById('changeControlHandle')?.classList.remove('has-selection');
       }
     }
 
@@ -6762,6 +6984,11 @@
     }
 
     function renderStyleRedundancy(data) {
+      // A manuscript with no written blocks has no score: say so instead of printing "undefined".
+      if (!Number.isFinite(data.score)) {
+        return `<p class="exp-empty">${t('styleRedundancy.noScore', { blocks: data.blocks_analyzed || 0 })}</p>
+          <p style="font-size: 0.78rem; color: var(--text-dim);">${t('styleRedundancy.scale')}</p>`;
+      }
       const band = styleBand(data.score);
       const sections = (data.sections || []).map(s => `
         <li style="margin-bottom: 0.55rem;">
@@ -6784,7 +7011,7 @@
         </div>
         ${styleBar(data.score)}
         <p style="font-size: 0.78rem; color: var(--text-dim);">${t('styleRedundancy.scale')}</p>
-        <p style="font-size: 0.8rem; color: var(--text-secondary);">${t('styleRedundancy.summary', { blocks: data.blocks_analyzed, redundancy: data.redundancy_count })}</p>
+        <p style="font-size: 0.8rem; color: var(--text-secondary);">${t('styleRedundancy.summary', { blocks: data.blocks_analyzed || 0, redundancy: data.redundancy_count || 0 })}</p>
         <h4 style="margin: 0.8rem 0 0.4rem; font-size: 0.9rem; color: var(--accent);">${t('styleRedundancy.sections')}</h4>
         <ul style="list-style: none; padding: 0; margin: 0;">${sections || `<li class="exp-empty">${t('styleRedundancy.noSections')}</li>`}</ul>
         <h4 style="margin: 0.8rem 0 0.4rem; font-size: 0.9rem; color: var(--accent);">${t('styleRedundancy.findings')}</h4>
@@ -6894,7 +7121,7 @@
 
     // Keyboard shortcuts for instant page navigation
     document.addEventListener('keydown', (e) => {
-      if (activeTab !== 'preview' || caztorActive()) return;
+      if (activeTab !== 'preview' || caztorShown()) return;
       const tag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
       if (tag === 'input' || tag === 'textarea') return;
 
@@ -7284,6 +7511,11 @@
       if (sidebarBadge) sidebarBadge.textContent = count;
       const btnBadge = document.getElementById('sidebarBtnCount');
       if (btnBadge) btnBadge.textContent = count;
+      // The pending marks stay in view with the Change Control panel collapsed.
+      ['toolbarMarksCount', 'changeControlHandleCount'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = count;
+      });
 
       updateUnmarkControlsUI();
 
@@ -7453,6 +7685,13 @@
     let caztorState = null;
     let caztorOrigin = null;
     let caztorRequest = null;
+    // When the dashboard last asked for Caztor (POST /api/terminal/caztor): see pdfTabLogic.shouldAskCaztor.
+    let caztorAskedAt = 0;
+    // The frame key the frame was loaded with: a new key (or instance) loads the frame again.
+    let caztorFrameKey = '';
+    // The viewer shown over a running Caztor (a journal version, a translation, a page jump); the
+    // toolbar's "Back to the LaTeX editor" returns to it.
+    let pdfViewerPeek = false;
     // The frame's watch: Caztor says `caztor:ready` once its page loads. A frame that stays silent (the server
     // died, the port was not reachable yet, or Caztor refused this origin) asks for Caztor again and reloads.
     const CAZTOR_READY_SECONDS = 12;
@@ -7460,14 +7699,36 @@
     let caztorReady = false;
     let caztorRetries = 0;
     let caztorWatch = null;
+    // A watch that came due while the page was hidden starts again when the page is shown.
+    let caztorWatchPaused = false;
+
+    function whenVisible() {
+      if (!document.hidden) return Promise.resolve();
+      return new Promise((resolve) => {
+        const shown = () => {
+          if (document.hidden) return;
+          document.removeEventListener('visibilitychange', shown);
+          resolve();
+        };
+        document.addEventListener('visibilitychange', shown);
+      });
+    }
 
     // A server just started can take a moment to be reachable from this browser (an SSH tunnel or the WSL
     // relay notices a new port late): the frame loads once a request reaches it, so the browser never shows
     // its "refused to connect" page. A tunnel that never reaches it still loads the frame, and the watch retries.
+    // The probe stops once the frame no longer wants this address (`still`), and waits while the page is hidden.
     const CAZTOR_PROBE_SECONDS = 20;
-    async function waitUntilReachable(url) {
-      const deadline = Date.now() + CAZTOR_PROBE_SECONDS * 1000;
+    async function waitUntilReachable(url, still) {
+      let deadline = Date.now() + CAZTOR_PROBE_SECONDS * 1000;
       while (Date.now() < deadline) {
+        if (still && !still()) return false;
+        if (document.hidden) {
+          const left = deadline - Date.now();
+          await whenVisible();
+          deadline = Date.now() + left;
+          continue;
+        }
         try {
           await fetch(url, { mode: 'no-cors', cache: 'no-store' });
           return true;
@@ -7483,32 +7744,74 @@
       if (loading) loading.hidden = !shown;
     }
 
+    // The notice under the toolbar; `activate` adds the CLI assistant's Activate button (terminal access).
+    function showCaztorNotice(text, options) {
+      const notice = document.getElementById('caztorNotice');
+      if (!notice) return;
+      notice.textContent = text;
+      notice.hidden = false;
+      if (!(options && options.activate) || typeof window.smithTerminalActivate !== 'function') return;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn--xs';
+      button.textContent = t('cli.activateButton');
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+          const info = await window.smithTerminalActivate();
+          if (info && info.authorized) await openPdfWorkspace({ force: true });
+        } catch (_) { /* the CLI assistant says why in its own status line */ }
+        button.disabled = false;
+      });
+      notice.append(' ', button);
+    }
+
     function watchCaztorFrame() {
       clearTimeout(caztorWatch);
       caztorReady = false;
+      caztorWatchPaused = false;
       caztorWatch = setTimeout(() => {
-        const host = document.getElementById('caztorHost');
-        if (caztorReady || !caztorEnabled() || !host || host.hidden) return;
+        caztorWatch = null;
+        if (caztorReady || !caztorEnabled() || !caztorActive()) return;
+        // A browser may hold back a hidden page's frame: its silence counts once the page is shown again.
+        if (!pdfTabLogic.caztorTimersMayRun({ hidden: document.hidden, ready: caztorReady, wanted: true })) {
+          caztorWatchPaused = true;
+          return;
+        }
         if (caztorRetries >= CAZTOR_RETRIES) {
           showCaztorLoading(false);
-          const notice = document.getElementById('caztorNotice');
-          notice.hidden = false;
-          notice.textContent = t('caztor.noAnswer');
+          showCaztorNotice(t('caztor.noAnswer'));
           return;
         }
         caztorRetries += 1;
         document.getElementById('caztorFrame').dataset.instance = '';
-        openPdfWorkspace();
+        openPdfWorkspace({ force: true });
       }, CAZTOR_READY_SECONDS * 1000);
     }
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || !caztorWatchPaused) return;
+      caztorWatchPaused = false;
+      if (!caztorReady && caztorEnabled() && caztorActive()) watchCaztorFrame();
+    });
 
     function caztorActive() {
       return !!(caztorState && caztorState.available && caztorOrigin);
     }
+    // Caztor on screen: running, and not covered by the viewer.
+    function caztorShown() {
+      return caztorActive() && !pdfViewerPeek;
+    }
+    // The tab's mode, also while Caztor is being asked for: the editor unless it is off, refused or covered.
+    function pdfTabMode() {
+      if (!caztorEnabled() || pdfViewerPeek) return 'viewer';
+      if (caztorState && !caztorActive()) return 'viewer';
+      return 'editor';
+    }
 
-    // Shows Caztor when it runs, otherwise the PDF viewer with the reason. Asked on
-    // every visit: the server restarts a Caztor that died, and one that was
-    // installed or built meanwhile is picked up.
+    // Shows Caztor when it runs, otherwise the PDF viewer with the reason. Asked on a page load and when
+    // the switch is turned on; on a later visit only when no Caztor runs in the frame, or once a minute
+    // (pdfTabLogic.shouldAskCaztor): the server restarts a Caztor that died, and one that was installed
+    // or built meanwhile is picked up.
     // The operator's choice of the LaTeX editor, kept in this browser; on unless turned off.
     const CAZTOR_ENABLED_KEY = 'papersmith.caztorEnabled';
     function caztorEnabled() {
@@ -7521,40 +7824,113 @@
       const toggle = document.getElementById('caztorToggle');
       if (toggle) toggle.checked = enabled;
       if (enabled) {
-        await openPdfWorkspace();
+        pdfViewerPeek = false;
+        await openPdfWorkspace({ force: true });
         return;
       }
       showPdfViewer();
       try {
-        await fetch('/api/caztor/stop', { method: 'POST' });
+        await fetch(pdfTabLogic.CAZTOR_STOP_API, { method: 'POST' });
       } catch (_) { /* a dashboard that is gone has no Caztor left to stop */ }
     }
     window.setCaztorEnabled = setCaztorEnabled;
     { const toggle = document.getElementById('caztorToggle'); if (toggle) toggle.checked = caztorEnabled(); }
 
+    // The editor or the viewer, as the state says, and the Change Control panel as the mode remembers it.
+    function applyPdfWorkspaceMode() {
+      const editor = caztorShown();
+      const host = document.getElementById('caztorHost');
+      const legacy = document.getElementById('legacyPdfViewer');
+      const back = document.getElementById('btnBackToEditor');
+      if (host) host.hidden = !editor;
+      if (legacy) legacy.hidden = editor;
+      if (back) back.hidden = !(pdfViewerPeek && caztorActive());
+      const pane = document.getElementById('pane-preview');
+      const mode = pdfTabMode();
+      if (pane && pane.dataset.pdfMode !== mode) {
+        pane.dataset.pdfMode = mode;
+        applyChangeControlState();
+      }
+    }
+
+    // The viewer over Caztor for what only the viewer shows (a journal version, a translation, a page
+    // jump); Caztor keeps running behind it. True when the editor was on screen.
+    function peekPdfViewer() {
+      if (!caztorEnabled()) return false;
+      const wasEditor = caztorShown();
+      pdfViewerPeek = true;
+      applyPdfWorkspaceMode();
+      ensurePdfLoaded();
+      return wasEditor;
+    }
+    function backToCaztorEditor() {
+      pdfViewerPeek = false;
+      applyPdfWorkspaceMode();
+      if (!caztorActive()) openPdfWorkspace({ force: true });
+    }
+    window.backToCaztorEditor = backToCaztorEditor;
+
+    // ---- the Change Control panel: collapsible, its state remembered per mode in this browser ----
+    function changeControlStore() {
+      try { return window.localStorage; } catch (_) { return null; }
+    }
+    function applyChangeControlState() {
+      const panel = document.getElementById('pdfControlPanel');
+      if (!panel) return;
+      const open = pdfTabLogic.panelOpen(changeControlStore(), pdfTabMode());
+      panel.classList.toggle('is-collapsed', !open);
+      document.getElementById('btnToggleChangeControl')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) document.getElementById('changeControlHandle')?.classList.remove('has-selection');
+    }
+    function setChangeControlOpen(open) {
+      pdfTabLogic.rememberPanel(changeControlStore(), pdfTabMode(), open);
+      applyChangeControlState();
+      if (open) document.querySelector('#pdfControlPanel .control-panel__collapse')?.focus();
+      else document.getElementById('changeControlHandle')?.focus();
+    }
+    function toggleChangeControl() {
+      const panel = document.getElementById('pdfControlPanel');
+      setChangeControlOpen(Boolean(panel && panel.classList.contains('is-collapsed')));
+    }
+    window.setChangeControlOpen = setChangeControlOpen;
+    window.toggleChangeControl = toggleChangeControl;
+
     // The PDF viewer in place of Caztor, whose frame is emptied so a stopped server is not left on screen.
     function showPdfViewer() {
       clearTimeout(caztorWatch);
+      caztorWatchPaused = false;
       showCaztorLoading(false);
       caztorRetries = 0;
+      caztorReady = false;
       caztorState = null;
       caztorOrigin = null;
+      caztorAskedAt = 0;
+      caztorFrameKey = '';
+      pdfViewerPeek = false;
       const frame = document.getElementById('caztorFrame');
       if (frame) {
         frame.dataset.instance = '';
         frame.src = 'about:blank';
       }
-      document.getElementById('caztorHost').hidden = true;
       document.getElementById('caztorNotice').hidden = true;
-      document.getElementById('legacyPdfViewer').hidden = false;
+      applyPdfWorkspaceMode();
       ensurePdfLoaded();
     }
 
-    async function openPdfWorkspace() {
+    // options.force asks even when the frame already runs Caztor (page load, switch on, activation, retry).
+    async function openPdfWorkspace(options) {
       const toggle = document.getElementById('caztorToggle');
       if (toggle) toggle.checked = caztorEnabled();
       if (!caztorEnabled()) {
         showPdfViewer();
+        return;
+      }
+      const frame = document.getElementById('caztorFrame');
+      if (!pdfTabLogic.shouldAskCaztor({
+        force: Boolean(options && options.force), active: caztorActive(),
+        frameInstance: frame ? frame.dataset.instance : '', askedAt: caztorAskedAt, now: Date.now(),
+      })) {
+        applyPdfWorkspaceMode();
         return;
       }
       if (!caztorRequest) caztorRequest = requestCaztor().finally(() => { caztorRequest = null; });
@@ -7564,57 +7940,132 @@
 
     async function requestCaztor() {
       let state;
-      const pending = document.getElementById('caztorNotice');
       // The first start on a machine may download Caztor's programs: say so while the request runs.
-      if (pending && document.getElementById('caztorHost')?.hidden) {
-        pending.hidden = false;
-        pending.textContent = t('caztor.preparing');
-      }
+      if (document.getElementById('caztorHost')?.hidden && !pdfViewerPeek) showCaztorNotice(t('caztor.preparing'));
+      caztorAskedAt = Date.now();
       try {
-        const response = await fetch('/api/caztor', { method: 'POST' });
-        state = await response.json();
+        const response = await fetch(pdfTabLogic.CAZTOR_API, { method: 'POST' });
+        let body = null;
+        try { body = await response.json(); } catch (_) { body = null; }
+        state = pdfTabLogic.caztorReply(response.status, body);
       } catch (err) {
         state = { available: false, reason: err.message };
       }
       // Turned off while it was starting: the viewer stays, and the server just started is stopped.
       if (!caztorEnabled()) {
-        fetch('/api/caztor/stop', { method: 'POST' }).catch(() => {});
+        fetch(pdfTabLogic.CAZTOR_STOP_API, { method: 'POST' }).catch(() => {});
         return { available: false, reason: 'off' };
       }
       caztorState = state;
-      const host = document.getElementById('caztorHost');
-      const legacy = document.getElementById('legacyPdfViewer');
       const notice = document.getElementById('caztorNotice');
       const frame = document.getElementById('caztorFrame');
       if (state.available && state.url) {
         caztorOrigin = new URL(state.url).origin;
-        // A new instance has a new launch token, so the frame loads again even at the same address.
+        // A new instance has a new launch token (and a new frame key), so the frame loads again even at
+        // the same address.
         const instance = `${state.url}#${state.instance ?? ''}`;
-        if (frame.dataset.instance !== instance) {
+        const key = String(state.key || '');
+        if (frame.dataset.instance !== instance || caztorFrameKey !== key) {
           frame.dataset.instance = instance;
+          caztorFrameKey = key;
           frame.src = 'about:blank';
+          caztorReady = false;
           showCaztorLoading(true);
-          host.hidden = false;
-          legacy.hidden = true;
           notice.hidden = true;
-          await waitUntilReachable(state.url);
+          applyPdfWorkspaceMode();
+          const wanted = () => caztorEnabled() && frame.dataset.instance === instance && caztorFrameKey === key;
+          // Probe the address the frame will load: without the key Caztor answers 401, which the console logs.
+          await waitUntilReachable(pdfTabLogic.caztorFrameUrl(state), wanted);
           // Turned off, or another instance asked for, while waiting.
-          if (!caztorEnabled() || frame.dataset.instance !== instance) return state;
-          frame.src = state.url;
+          if (!wanted()) return state;
+          // With a frame key (a dashboard whose terminal is enabled), only this frame gets Caztor's page token.
+          frame.src = pdfTabLogic.caztorFrameUrl(state);
           watchCaztorFrame();
         }
-        host.hidden = false;
-        legacy.hidden = true;
         notice.hidden = true;
+        applyPdfWorkspaceMode();
       } else {
         caztorOrigin = null;
-        host.hidden = true;
-        legacy.hidden = false;
-        notice.hidden = false;
-        notice.textContent = t('caztor.unavailable', { reason: state.reason || '' });
+        pdfViewerPeek = false;
+        applyPdfWorkspaceMode();
+        if (state.locked) {
+          // The terminal access link was not opened in this browser: the same hint as the CLI assistant.
+          const reason = String(state.reason).replace(/[.\s]+$/, '');
+          showCaztorNotice(`${t('caztor.locked', { reason })} ${t('cli.activateBanner')}`, { activate: true });
+        } else {
+          showCaztorNotice(t('caztor.unavailable', { reason: state.reason || '' }));
+        }
       }
       return state;
     }
+
+    // The Change Control panel as the tab's starting mode remembers it (the editor, unless switched off).
+    applyChangeControlState();
+
+    // The heights the PDF tab's CSS fits the editor and the viewer in: the sticky header (none when it
+    // scrolls away, on a phone), the tab's toolbar and the viewer's top bar.
+    (function trackPdfTabHeights() {
+      const root = document.documentElement;
+      const topbar = document.querySelector('header.topbar');
+      const toolbar = document.getElementById('pdfTabToolbar');
+      const viewerBar = document.querySelector('#legacyPdfViewer .pdf-viewer-topbar');
+      const measure = () => {
+        if (topbar) {
+          const sticky = getComputedStyle(topbar).position === 'sticky';
+          root.style.setProperty('--topbar-h', `${sticky ? Math.ceil(topbar.getBoundingClientRect().height) : 0}px`);
+        }
+        // A hidden element measures 0: its last height stays.
+        [[toolbar, '--pdf-toolbar-h'], [viewerBar, '--pdf-viewer-topbar-h']].forEach(([el, name]) => {
+          const height = el ? Math.ceil(el.getBoundingClientRect().height) : 0;
+          if (height > 0) root.style.setProperty(name, `${height}px`);
+        });
+      };
+      measure();
+      if (typeof ResizeObserver === 'function') {
+        const observer = new ResizeObserver(measure);
+        [topbar, toolbar, viewerBar].forEach((el) => { if (el) observer.observe(el); });
+      }
+      window.addEventListener('resize', measure);
+    })();
+
+    // The board's report (board-refresh.js draws it above the tabs) collapses to its title line; a toggle
+    // beside the close button shows the rest, and the choice is kept in this browser.
+    (function foldBoardStatus() {
+      const box = document.getElementById('boardStatus');
+      if (!box) return;
+      const store = () => { try { return window.localStorage; } catch (_) { return null; } };
+      function apply() {
+        const head = box.querySelector('.board-status__head');
+        const details = box.querySelector('.board-status__lines, .board-status__missing');
+        let toggle = box.querySelector('[data-board-toggle]');
+        if (!head || !details) {
+          if (toggle) toggle.remove();
+          box.classList.remove('is-collapsed');
+          return;
+        }
+        const open = pdfTabLogic.boardOpen(store());
+        if (!toggle) {
+          toggle = document.createElement('button');
+          toggle.type = 'button';
+          toggle.className = 'board-status__toggle';
+          toggle.setAttribute('data-board-toggle', '');
+          head.insertBefore(toggle, head.querySelector('.board-status__close'));
+        }
+        const key = open ? 'board.collapse' : 'board.expand';
+        box.classList.toggle('is-collapsed', !open);
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        toggle.setAttribute('data-i18n', key);
+        toggle.textContent = t(key);
+      }
+      // board-refresh.js replaces the report's children on every report.
+      if (typeof MutationObserver === 'function') new MutationObserver(apply).observe(box, { childList: true });
+      box.addEventListener('click', (event) => {
+        if (!event.target.closest || !event.target.closest('[data-board-toggle]')) return;
+        pdfTabLogic.rememberBoard(store(), box.classList.contains('is-collapsed'));
+        apply();
+      });
+      apply();
+    })();
 
     // A selection in Caztor's PDF fills the change-control panel, as a selection in the viewer does.
     window.addEventListener('message', (event) => {
@@ -7624,10 +8075,13 @@
       const data = event.data;
       // Caztor listens now: give it the dashboard's theme.
       if (data && data.type === 'caztor:ready') {
+        // Ready: the watch and its retries stop until another instance loads.
         caztorReady = true;
         caztorRetries = 0;
+        caztorWatchPaused = false;
         showCaztorLoading(false);
         clearTimeout(caztorWatch);
+        caztorWatch = null;
         document.getElementById('caztorNotice').hidden = true;
         sendThemeToCaztor(document.documentElement.getAttribute('data-theme') || 'dark');
         return;
@@ -7741,8 +8195,12 @@
       // view refresh by themselves. Polling stays as the fallback: every 5 s
       // while the channel is down, every 30 s while it is up.
       startLiveChannel();
+      // A hidden page does not poll; the visibilitychange handler refreshes it when shown.
       setInterval(() => {
-        if (!liveChannel.connected || Date.now() - liveChannel.lastStatusAt > 30000) loadStatus();
+        if (pdfTabLogic.statusPollDue({
+          hidden: document.hidden, connected: liveChannel.connected,
+          lastStatusAt: liveChannel.lastStatusAt, now: Date.now(),
+        })) loadStatus();
       }, 5000);
     });
 

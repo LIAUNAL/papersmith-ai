@@ -134,6 +134,24 @@ describe("Dialog", () => {
     expect(screen.getByRole("dialog")).toContainElement(document.activeElement as HTMLElement);
   });
 
+  it("does not take the keyboard back while its window does not have focus (the dashboard framing Caztor took it)", async () => {
+    render(<Harness />);
+    await openDialog();
+    expect(screen.getByRole("dialog")).toContainElement(document.activeElement as HTMLElement);
+    const hasFocus = document.hasFocus;
+    try {
+      await act(async () => {
+        // The parent page gives the keyboard to its own terminal: this window loses focus and its control blurs.
+        document.hasFocus = () => false;
+        (document.activeElement as HTMLElement).blur();
+        await nextFrame();
+      });
+      expect(document.activeElement).toBe(document.body);
+    } finally {
+      document.hasFocus = hasFocus;
+    }
+  });
+
   it("does not pull focus back while a native Tab is between blur and focus (real browsers leave the body focused for a moment)", async () => {
     render(<Harness />);
     await openDialog();

@@ -78,6 +78,9 @@ export function Dialog({ title, children, actions, onDismiss }: DialogProps) {
   function keepFocusInside(): void {
     const current = panel.current;
     if (current === null || current.contains(document.activeElement)) return;
+    // A window without the keyboard does not take it back: framed by the dashboard, the parent page gave it to
+    // its own terminal, and a dialog in here pulling focus would steal every keystroke typed there.
+    if (!document.hasFocus()) return;
     const target = current.querySelector<HTMLElement>(`.dialog__actions ${FOCUSABLE_ACTION}`) ?? current;
     target.focus();
   }
