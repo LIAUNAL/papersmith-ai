@@ -24,6 +24,22 @@ export default defineConfig({
     sourcemap: false,
     // Fonts stay files: the server's CSP has no font-src, so a font inlined as data: would be blocked.
     assetsInlineLimit: (file: string) => (/\.(woff2?|ttf|otf|eot)$/.test(file) ? false : undefined),
+    // Every npm package the app bundles, with its licence text; PaperSmith ships it in its wheel.
+    license: { fileName: "THIRD_PARTY_NOTICES.md" },
+    rolldownOptions: {
+      output: {
+        // The libraries the editor loads up front, each in its own chunk instead of one 1 MB entry: the same code,
+        // loaded at the same time, but in files the browser caches apart from the app's. pdf.js already loads
+        // on demand (src/preview/engine-pdfjs.ts) and stays in its own chunk.
+        codeSplitting: {
+          groups: [
+            { name: "react", test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            { name: "codemirror", test: /node_modules[\\/](@codemirror|@lezer|@marijn|crelt|style-mod|w3c-keyname)[\\/]/ },
+            { name: "katex", test: /node_modules[\\/]katex[\\/]/ },
+          ],
+        },
+      },
+    },
   },
   server: { proxy: { "/api": { target: `http://127.0.0.1:${DEV_PORT}`, changeOrigin: true } } },
 });

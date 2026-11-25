@@ -49,8 +49,10 @@ jobs:
 
       # Caztor, the PDF tab's LaTeX editor, ships prebuilt in src/papersmith/_caztor/
       # (gitignored, like the kit): its server bundled into one file and its web
-      # app, so an install needs node and nothing from npm. --require: a release
-      # without it would silently lose the editor.
+      # app, each with the THIRD_PARTY_NOTICES.md of the npm packages it bundles,
+      # so an install needs node and nothing from npm. setup.py does not build it,
+      # so this step is the only one that does. --require: a release without it
+      # would silently lose the editor, and Node.js older than 26 fails it.
       - uses: actions/setup-node@v4
         with:
           node-version: 26.x
@@ -85,6 +87,8 @@ jobs:
           test -d /tmp/probe-ws/skills/upgrade-project
           test -f /tmp/probe-ws/.claude/commands/upgrade-project.md
           test -f /tmp/probe/lib/python3.12/site-packages/papersmith/_caztor/apps/server-local/dist/main.mjs
+          test -f /tmp/probe/lib/python3.12/site-packages/papersmith/_caztor/apps/server-local/dist/THIRD_PARTY_NOTICES.md
+          test -f /tmp/probe/lib/python3.12/site-packages/papersmith/_caztor/apps/web/dist/THIRD_PARTY_NOTICES.md
           echo "a wheel-installed CLI produced a complete workspace"
 
       - uses: actions/upload-artifact@v4

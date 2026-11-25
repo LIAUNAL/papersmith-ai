@@ -5,13 +5,17 @@ Caztor, the LaTeX editor of the dashboard's PDF tab, is a Node.js application
 kept in ``caztor/``. An install from PyPI has no checkout, so the wheel carries
 what Caztor needs at run time, laid out as in the repository: its server built
 into one file (``apps/server-local/dist/main.mjs``), its built web app, its
-agent definitions, its guides and its licenses. Running it needs ``node`` only;
-no ``npm install`` on the user's machine.
+agent definitions, its guides, its licenses and the third-party notices of the
+npm packages both bundles include (``THIRD_PARTY_NOTICES.md`` beside each).
+Running it needs ``node`` only; no ``npm install`` on the user's machine.
 
-Building needs ``npm``: it installs ``caztor/``'s dependencies when they are
-absent, builds the web app and bundles the server. Without ``npm`` it keeps an
-existing ``_caztor`` and otherwise skips with a warning, unless ``--require``
-is given (the publishing workflow), which makes any failure fatal.
+Building needs Node.js 26 or newer and ``npm``: it installs ``caztor/``'s
+dependencies when they are absent, builds the web app and bundles the server.
+An ordinary ``pip install .`` does not run it (setup.py builds the kit only):
+run it before building a wheel from a checkout. Without a suitable ``node`` and
+``npm`` it keeps an existing ``_caztor`` and otherwise skips, saying why on
+stdout and stderr, unless ``--require`` is given (the publishing workflow),
+which makes any failure fatal.
 
 Stdlib only.
 """
@@ -19,6 +23,7 @@ Stdlib only.
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import subprocess
 import sys
@@ -31,9 +36,31 @@ TARGET = ROOT / "src" / "papersmith" / "_caztor"
 #: The run-time files, relative to ``caztor/``: a folder is copied whole.
 SERVER_BUNDLE = Path("apps") / "server-local" / "dist" / "main.mjs"
 WEB_APP = Path("apps") / "web" / "dist"
-SHIPPED = (SERVER_BUNDLE, WEB_APP, Path("LICENSES"), Path("NOTICE.md"), Path("README.md"))
+#: The licences of the npm packages each bundle includes, written by the server bundler and by Vite.
+SERVER_NOTICES = SERVER_BUNDLE.parent / "THIRD_PARTY_NOTICES.md"
+WEB_NOTICES = WEB_APP / "THIRD_PARTY_NOTICES.md"
+SHIPPED = (SERVER_BUNDLE, SERVER_NOTICES, WEB_APP, Path("LICENSES"), Path("NOTICE.md"), Path("README.md"))
+#: Files that must exist inside a shipped folder (``WEB_APP`` is copied whole).
+REQUIRED_INSIDE = (WEB_NOTICES,)
+#: Caztor's server runs TypeScript and uses APIs of Node.js 26.
+MIN_NODE_MAJOR = 26
 #: Folders whose Markdown is shipped, and nothing else (their tests stay behind).
 MARKDOWN_ONLY = (Path("agents"), Path("guides"))
+
+
+def node_major(version_line: str) -> int | None:
+    """The major version in ``node --version``'s output (``v26.13.1`` -> 26), or None."""
+    match = re.match(r"v(\d+)\.", version_line.strip())
+    return int(match.group(1)) if match else None
+
+
+def node_version() -> str:
+    """What ``node --version`` prints, or why it could not be read."""
+    try:
+        result = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"no version ({exc})"
+    return result.stdout.strip() or result.stderr.strip() or "no version"
 
 
 def _npm(*args: str) -> None:
@@ -51,7 +78,7 @@ def build() -> None:
 
 def assemble() -> None:
     """Copy the run-time files into ``_caztor``, replacing what was there."""
-    for relpath in (*SHIPPED, *MARKDOWN_ONLY):
+    for relpath in (*SHIPPED, *REQUIRED_INSIDE, *MARKDOWN_ONLY):
         if not (CAZTOR / relpath).exists():
             raise SystemExit(f"caztor/{relpath} is missing; nothing was packaged")
     if TARGET.exists():
@@ -82,14 +109,22 @@ def main(argv: list[str] | None = None) -> int:
             print(f"build-caztor: {reason}", file=sys.stderr)
             return 1
         kept = " The existing package is kept." if TARGET.is_dir() else ""
-        print(f"build-caztor: skipped, {reason}.{kept} The PDF tab falls back to "
-              "its read-only viewer without Caztor.", file=sys.stderr)
+        message = (f"build-caztor: skipped, {reason}.{kept} The PDF tab falls back to "
+                   "its read-only viewer without Caztor.")
+        # Both streams, --quiet or not: a skipped editor must not go unnoticed in a build log.
+        print(message)
+        print(message, file=sys.stderr)
         return 0
 
     if not (CAZTOR / "package.json").is_file():
         return skip("there is no caztor/ folder here")
     if shutil.which("npm") is None or shutil.which("node") is None:
         return skip("node and npm are needed to build Caztor")
+    version = node_version()
+    major = node_major(version)
+    if major is None or major < MIN_NODE_MAJOR:
+        return skip(f"Node.js {MIN_NODE_MAJOR} or newer is needed to build Caztor, and "
+                    f"{shutil.which('node')} reports {version}")
     try:
         build()
     except (OSError, subprocess.CalledProcessError) as exc:

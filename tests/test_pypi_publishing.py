@@ -219,6 +219,10 @@ class BuiltArtifactsCarryTheKitTests(unittest.TestCase):
                          "papersmith/_caztor/guides/INDEX.md",
                          "papersmith/_caztor/LICENSES/Apache-2.0.txt"):
             self.assertIn(sentinel, names, f"the wheel has no {sentinel}: the PDF tab would lose its editor")
+        # The npm packages bundled into the server and the web app ship their licences beside them.
+        for notices in ("papersmith/_caztor/apps/server-local/dist/THIRD_PARTY_NOTICES.md",
+                        "papersmith/_caztor/apps/web/dist/THIRD_PARTY_NOTICES.md"):
+            self.assertIn(notices, names, f"the wheel has no {notices}: its bundled dependencies ship unattributed")
 
     def test_the_sdist_carries_the_generated_kit(self) -> None:
         with tarfile.open(self.sdist) as archive:
@@ -250,8 +254,35 @@ class CaztorPublishingTests(unittest.TestCase):
         build_at = min(text.index(token) for token in ("python -m build", "python3 -m build") if token in text)
         self.assertLess(text.index("scripts/build-caztor.py"), build_at)
 
+    def test_the_workflow_builds_caztor_with_node_26(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        before = text[:text.index("scripts/build-caztor.py --require")]
+        self.assertIn("node-version: 26", before.rsplit("actions/setup-node", 1)[-1])
+
+    def test_an_install_from_a_checkout_does_not_build_caztor(self) -> None:
+        """setup.py's build_py refreshes the kit only: Caztor is built on demand
+        (`npm run setup:caztor`, scripts/build-caztor.py) and by the publishing
+        workflow, never by an ordinary `pip install .`."""
+        command = _build_py_command()
+        with mock.patch("subprocess.run") as run, \
+                mock.patch("setuptools.command.build_py.build_py.run") as parent_run:
+            command.run(command.__new__(command))
+        scripts = [" ".join(map(str, call.args[0])) for call in run.call_args_list]
+        self.assertTrue(any("build-kit.py" in script for script in scripts), scripts)
+        self.assertFalse(any("build-caztor" in script for script in scripts), scripts)
+        parent_run.assert_called_once()
+
     def test_the_package_declares_caztor_as_data(self) -> None:
         self.assertIn('"_caztor/**/*"', (REPO / "pyproject.toml").read_text(encoding="utf-8"))
+
+
+def _build_py_command():
+    """The build_py command class setup.py registers, read from its setup() call."""
+    with mock.patch("setuptools.setup") as setup:
+        source = (REPO / "setup.py").read_text(encoding="utf-8")
+        exec(compile(source, str(REPO / "setup.py"), "exec"),
+             {"__file__": str(REPO / "setup.py"), "__name__": "setup_under_test"})
+    return setup.call_args.kwargs["cmdclass"]["build_py"]
 
 
 class PublishingWorkflowTests(unittest.TestCase):
