@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "variants": {
+    "cpu": {
+      "cuda": null,
+      "inputs": {
+        "environment.yml": "9007f296f520ed149870a9f2829dc60b53b2552e538b4c0ec070d51d7ec0d1b5",
+        "torch-cpu.yml": "9d333ff92664c995b48407c9e50b57818c566a6665e36327d50a316f5ea8f5bb"
+      },
+      "lockfile": "cpu.conda-lock.yml",
+      "platforms": [
+        "linux-64",
+        "osx-64",
+        "osx-arm64",
+        "win-64"
+      ]
+    },
+    "cuda": {
+      "cuda": "12.8",
+      "inputs": {
+        "environment.yml": "9007f296f520ed149870a9f2829dc60b53b2552e538b4c0ec070d51d7ec0d1b5",
+        "torch-cuda.yml": "cc3006d9bcb1041eafe4939b0ac0dd6d218938827c6f9fcb599ebbf93e406ec1"
+      },
+      "lockfile": "cuda.conda-lock.yml",
+      "platforms": [
+        "linux-64",
+        "win-64"
+      ]
+    },
+    "rocm": {
+      "cuda": null,
+      "inputs": {
+        "environment.yml": "9007f296f520ed149870a9f2829dc60b53b2552e538b4c0ec070d51d7ec0d1b5"
+      },
+      "lockfile": "rocm.conda-lock.yml",
+      "platforms": [
+        "linux-64"
+      ]
+    }
+  }
+}

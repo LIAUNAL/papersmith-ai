@@ -863,6 +863,8 @@ class WorkspaceSetupEnvTests(unittest.TestCase):
         dest = root / "scripts" / "setup_env.py"
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(self.REAL_SCRIPT, dest)
+        # The kit ships the dependency source and its locks beside the script.
+        shutil.copytree(self.REAL_SCRIPT.parent.parent / "env", root / "env")
         spec = importlib.util.spec_from_file_location("_setup_env_under_test", dest)
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
@@ -875,6 +877,7 @@ class WorkspaceSetupEnvTests(unittest.TestCase):
         module.find_micromamba = lambda: Path("/fake/mm")
         module.env_exists = lambda name: False
         module.detect_cuda = lambda: False
+        module.platform_asset = lambda: "linux-64"
         module.run = lambda mm, args, env: calls.append(list(args))
         args = argparse.Namespace(name="papersmith", cpu=True, cuda=False,
                                   no_ingestion=no_ingestion)
@@ -887,16 +890,21 @@ class WorkspaceSetupEnvTests(unittest.TestCase):
         return root
 
     def test_workspace_without_python_project_skips_editable_install(self) -> None:
-        calls = self.install_calls(self.new_bare_root())
+        root = self.new_bare_root()
+        calls = self.install_calls(root)
         assert not any("-e" in call for call in calls), calls
-        assert any("docling==2.141.0" in call for call in calls), calls
+        assert any(str(root / "env" / "ingestion.txt") in call for call in calls), calls
+        assert "docling==2.141.0" in (root / "env" / "ingestion.txt").read_text(encoding="utf-8")
 
     def test_build_cli_is_provisioned_even_without_ingestion(self) -> None:
-        calls = self.install_calls(self.new_bare_root(), no_ingestion=True)
+        root = self.new_bare_root()
+        calls = self.install_calls(root, no_ingestion=True)
         conda = [call for call in calls if call[0] in ("create", "install")]
         assert len(conda) == 1, calls
-        assert "python-build" in conda[0], calls
-        assert not any("docling==2.141.0" in call for call in calls), calls
+        lock = root / "env" / "cpu.conda-lock.yml"
+        assert str(lock) in conda[0], calls
+        assert "- name: python-build\n" in lock.read_text(encoding="utf-8"), lock
+        assert not any(str(root / "env" / "ingestion.txt") in call for call in calls), calls
 
     def test_checkout_with_pyproject_keeps_editable_install(self) -> None:
         root = self.new_bare_root()

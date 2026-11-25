@@ -64,6 +64,18 @@ class EnvCliTests(unittest.TestCase):
         self.assertIn("--cuda", cmd)
         self.assertIn("--no-ingestion", cmd)
 
+    def test_env_install_passes_rebuild_through(self) -> None:
+        self.seed_script(self.tmp)
+        captured = []
+
+        def fake_run(args, cwd, check=False):
+            captured.append(args)
+            return subprocess.CompletedProcess(args=args, returncode=0)
+
+        with mock.patch("subprocess.run", side_effect=fake_run):
+            self.assertEqual(main(["env", "install", "--rebuild", str(self.tmp)]), SUCCESS)
+        self.assertIn("--rebuild", captured[0])
+
     def test_env_install_passes_rocm_through(self) -> None:
         self.seed_script(self.tmp)
         captured = []
