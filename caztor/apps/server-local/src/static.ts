@@ -11,6 +11,8 @@ export interface StaticOptions {
    * host, a session's own token for a collaborator, null for anyone else, who gets a page without app or token.
    */
   token: string | ((c: Context) => Promise<string | null>);
+  /** The page served when `token` gives null. Defaults to the collaborator sign-in page. */
+  noSessionPage?: string;
 }
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -54,6 +56,7 @@ function extensionOf(name: string): string {
  */
 export function registerStatic(app: Hono, options: StaticOptions): void {
   const { webRoot, fs, token } = options;
+  const noSessionPage = options.noSessionPage ?? NO_SESSION_PAGE;
 
   app.get("*", async (c: Context) => {
     if (c.req.path === "/api" || c.req.path.startsWith("/api/")) return c.json({ error: "not_found" }, 404);
@@ -69,7 +72,7 @@ export function registerStatic(app: Hono, options: StaticOptions): void {
     const type = CONTENT_TYPES[extensionOf(name)] ?? "application/octet-stream";
     if (name === INDEX) {
       const pageToken = typeof token === "string" ? token : await token(c);
-      if (pageToken === null) return c.body(NO_SESSION_PAGE, 401, { "content-type": type, "cache-control": "no-store" });
+      if (pageToken === null) return c.body(noSessionPage, 401, { "content-type": type, "cache-control": "no-store" });
       const page = injectToken(new TextDecoder().decode(bytes), pageToken);
       return c.body(page, 200, { "content-type": type, "cache-control": "no-store" });
     }

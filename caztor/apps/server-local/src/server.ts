@@ -55,6 +55,7 @@ import { createAgentServices } from "./agents.ts";
 import { createCredentialStores, createPeople, createTurnOwners } from "./people.ts";
 import { bindWithFallback, DEFAULT_PORT, LOOPBACK, type ListenFn } from "./listen.ts";
 import { registerStatic } from "./static.ts";
+import { EMBED_NO_KEY_PAGE } from "./html.ts";
 
 export interface ServerOptions {
   /** The project folder, as given on the command line. */
@@ -84,11 +85,30 @@ export interface ServerOptions {
   /** The clock for invite expiry and rate limits. Tests replace it. */
   now?: () => number;
   /**
-   * The origin of the page that shows Caztor in a frame (a PaperSmith dashboard). Only that origin may frame the pages,
-   * and the server stays on its one project: the navigator is hidden and switching or creating projects is refused.
+   * The origin of the page that shows Caztor in a frame (a PaperSmith dashboard), or several names of that same page
+   * (its `127.0.0.1` and `localhost` addresses). Only those origins may frame the pages, and the server stays on its
+   * one project: the navigator is hidden and switching or creating projects is refused.
    */
-  embedOrigin?: string;
+  embedOrigin?: string | readonly string[];
+  /**
+   * Embedded only: the frame key, a per-launch secret the dashboard gives its own frame. The page, and with it the
+   * launch token, is served only to a request whose `k` query parameter is this key. Never logged.
+   */
+  embedKey?: string;
 }
+
+/** The embedding origins, first the one the session names, or undefined when not embedded. */
+function embedOriginsOf(options: ServerOptions): readonly string[] | undefined {
+  const { embedOrigin } = options;
+  if (embedOrigin === undefined) return undefined;
+  return typeof embedOrigin === "string" ? [embedOrigin] : [...new Set(embedOrigin)];
+}
+
+/** Shortest accepted frame key; the dashboard's has 43 characters. */
+const MIN_EMBED_KEY_LENGTH = 16;
+
+/** The query parameter of the page address that carries the frame key. */
+export const EMBED_KEY_QUERY = "k";
 
 /** An embedding origin is a plain `http(s)://host[:port]`, written exactly as browsers send it. */
 function checkEmbedOrigin(origin: string): string {
@@ -278,6 +298,7 @@ function createProjectRuntime(root: string, shared: Shared): ProjectRuntime {
     for (const provider of providers) if (agents.turns.loginOf(provider) === "unknown") agents.turns.noteLogin(provider, "signed_in");
   }, () => {});
   const projectId = randomUUID();
+  const embedOrigins = embedOriginsOf(options);
   const built = createApp(
     {
       projectName: basename(root),
@@ -292,7 +313,7 @@ function createProjectRuntime(root: string, shared: Shared): ProjectRuntime {
       compile: { coordinator, compiler },
       agents,
       // Embedded, the server stays on its one project: the project routes answer 503.
-      ...(options.embedOrigin === undefined ? { projects: shared.projects } : { embed: { origin: options.embedOrigin } }),
+      ...(embedOrigins === undefined ? { projects: shared.projects } : { embed: { origin: embedOrigins[0]! } }),
       papersmith: {
         status: async () =>
           (await shared.isWorkspace(root))
@@ -313,10 +334,15 @@ function createProjectRuntime(root: string, shared: Shared): ProjectRuntime {
       projectId,
       sessions: access.sessions,
       failedSessions: access.failedSessions,
-      ...(options.embedOrigin === undefined ? {} : { frameAncestors: [options.embedOrigin] }),
+      ...(embedOrigins === undefined ? {} : { frameAncestors: embedOrigins }),
     },
   );
-  registerStatic(built, { webRoot: options.webRoot, fs: options.fs, token: access.pageToken });
+  registerStatic(built, {
+    webRoot: options.webRoot,
+    fs: options.fs,
+    token: access.pageToken,
+    ...(options.embedKey === undefined ? {} : { noSessionPage: EMBED_NO_KEY_PAGE }),
+  });
   // Changes made outside the editor (an agent, another program) reach the browser as `file_changed` events.
   const stopWatching = store.watch((change) => void events.publish("file_changed", change));
 
@@ -426,6 +452,12 @@ function createAccess(options: {
       },
     },
     async pageToken(c) {
+      // Embedded with a frame key, only the dashboard's own frame gets the page: the key is its `k` parameter.
+      const embedKey = options.serverOptions.embedKey;
+      if (embedKey !== undefined) {
+        const presented = new URL(c.req.url).searchParams.get(EMBED_KEY_QUERY);
+        return presented !== null && timingSafeEqual(sha256(presented), sha256(embedKey)) ? token : null;
+      }
       const secret = sessionCookieOf(c.req.header("cookie"));
       if (secret !== null) {
         const address = (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)?.incoming?.socket?.remoteAddress ?? "unknown";
@@ -442,7 +474,16 @@ function createAccess(options: {
 /** Starts the local server: loopback unless exposed, one project at a time, token kept in memory. */
 export async function startServer(options: ServerOptions): Promise<RunningServer> {
   const root = await resolveProjectRoot(options.fs, options.projectDir);
-  if (options.embedOrigin !== undefined) checkEmbedOrigin(options.embedOrigin);
+  const embedOrigins = embedOriginsOf(options);
+  if (embedOrigins !== undefined) {
+    if (embedOrigins.length === 0) throw new Error("The embedding origin list is empty.");
+    for (const origin of embedOrigins) checkEmbedOrigin(origin);
+  }
+  if (options.embedKey !== undefined) {
+    // The value is never part of a message: it is a secret.
+    if (embedOrigins === undefined) throw new Error("A frame key (CAZTOR_EMBED_KEY) is used only with --embed-origin.");
+    if (options.embedKey.length < MIN_EMBED_KEY_LENGTH) throw new Error(`The frame key (CAZTOR_EMBED_KEY) must have at least ${MIN_EMBED_KEY_LENGTH} characters.`);
+  }
   const token = resolveLaunchToken(options.env);
   const { host: bindHost, publicNames } = checkExposure(options.host ?? LOOPBACK, options.publicNames ?? []);
   const now = options.now ?? Date.now;

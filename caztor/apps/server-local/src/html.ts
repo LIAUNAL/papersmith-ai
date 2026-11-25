@@ -22,3 +22,9 @@ export function injectToken(html: string, token: string): string {
 
 /** What a browser without a session gets when the server is exposed: no app and no token. */
 export const NO_SESSION_PAGE = plainPage("Caztor", "Ask the host for an invite link and its access key. Open the link and type the key to sign in on this browser.");
+
+/** What a request without the dashboard's frame key gets from an embedded Caztor: no app and no token. */
+export const EMBED_NO_KEY_PAGE = plainPage(
+  "Caztor",
+  "This LaTeX editor opens inside the PaperSmith dashboard. Open the dashboard's PDF tab and turn its LaTeX editor on.",
+);

@@ -2691,16 +2691,41 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 pass
         return JSONResponse({"timestamp": None, "annotations": [], "applied": {}})
 
+    def _caztor_refusal(request: Request, answer: str) -> JSONResponse | None:
+        """Why this request may not reach Caztor, or None. With the terminal on, Caztor's frame key (and so its
+        launch token) goes only to the browser holding the terminal login cookie; that cookie is scoped to
+        /api/terminal, so the page calls these routes under /api/terminal/caztor."""
+        if not origin_is_same(request):
+            return JSONResponse({answer: False, "reason": "cross-origin request rejected"}, status_code=403)
+        if enable_terminal and not terminals.authorized(request.cookies.get(TERMINAL_COOKIE)):
+            return JSONResponse({answer: False, "error": "TERMINAL_LOGIN_REQUIRED", "reason": (
+                "The LaTeX editor needs the terminal access link, the same one the CLI assistant needs: "
+                "open the dashboard from the login URL the server printed (or sign in from the CLI "
+                "assistant), then reload the PDF tab.")}, status_code=403,
+                headers={"Cache-Control": "no-store"})
+        return None
+
+    @app.post("/api/terminal/caztor")
     @app.post("/api/caztor")
     async def api_caztor(request: Request) -> JSONResponse:
-        """Caztor's address for this page, starting it on first use.
+        """Caztor's address, instance and frame key for this page, starting it on first use.
 
-        Caztor lets only the origin the page was opened at frame it, so the
-        origin comes from this request's Host (already checked against the
-        allowlist when one is configured)."""
-        if not origin_is_same(request):
-            return JSONResponse({"available": False, "reason": "cross-origin request rejected"},
-                                status_code=403)
+        Caztor lets only the origin the page was opened at (and its loopback
+        twin) frame it, so the origin comes from this request's Host (already
+        checked against the allowlist when one is configured). The page loads
+        the frame at ``<url>/?k=<key>``: Caztor hands its launch token only to
+        a request carrying that key.
+
+        With the terminal enabled, only the browser holding the terminal login
+        cookie gets the key; any other caller is refused (403,
+        ``TERMINAL_LOGIN_REQUIRED``). With the terminal disabled there is no
+        per-browser secret to tie it to: any local process that can send a
+        same-origin request to this loopback dashboard learns the key, and with
+        it Caztor's launch token, as any local process could open the dashboard
+        itself."""
+        refused = _caztor_refusal(request, "available")
+        if refused is not None:
+            return refused
         host = request.headers.get("host", "")
         # Only a dashboard opened on this machine: a page that reached it under
         # another name (DNS rebinding) must not become Caztor's framing origin.
@@ -2710,14 +2735,16 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "The LaTeX editor runs only for a dashboard opened on a loopback address "
                 "(127.0.0.1 or localhost).")})
         result = await asyncio.to_thread(app.state.caztor.ensure, f"http://{host}")
-        return JSONResponse(result)
+        return JSONResponse(result, headers={"Cache-Control": "no-store"})
 
+    @app.post("/api/terminal/caztor/stop")
     @app.post("/api/caztor/stop")
     async def api_caztor_stop(request: Request) -> JSONResponse:
-        """Stop Caztor when the operator turns the PDF tab's LaTeX editor off; the next visit with it on starts it again."""
-        if not origin_is_same(request):
-            return JSONResponse({"stopped": False, "reason": "cross-origin request rejected"},
-                                status_code=403)
+        """Stop Caztor when the operator turns the PDF tab's LaTeX editor off; the next visit with it on starts it
+        again. Gated like `api_caztor`; it never waits for a download in progress."""
+        refused = _caztor_refusal(request, "stopped")
+        if refused is not None:
+            return refused
         await asyncio.to_thread(app.state.caztor.stop)
         return JSONResponse({"stopped": True})
 

@@ -9,6 +9,13 @@ under ``~/.cache/papersmith/tools/``. A program already on the ``PATH`` is used
 as it is (``node`` only when it is version 26 or newer). Only the executable is
 taken from each archive.
 
+The SHA-256 of the extracted executable is recorded beside its folder when it
+is installed, and a cached program is checked against that record once per
+process before its first use: one that changed, or has no record, is deleted
+and fetched again. This catches a damaged or swapped file in the cache; it is
+not a defence against someone who can write to the cache folder, who could
+rewrite the record as well.
+
 ``PAPERSMITH_NO_TOOL_DOWNLOAD=1`` turns the download off; the PDF tab then says
 which program to install.
 
@@ -28,6 +35,7 @@ import stat
 import subprocess
 import tarfile
 import tempfile
+import threading
 import urllib.request
 import zipfile
 from dataclasses import dataclass, field
@@ -103,6 +111,25 @@ INSTALL_HINT = {
 
 class ToolError(Exception):
     """A program could not be found or fetched; the message says what to do."""
+
+
+#: Cached programs already checked against their recorded digest in this process.
+_VERIFIED: set[Path] = set()
+_VERIFIED_LOCK = threading.Lock()
+
+
+def forget_verified() -> None:
+    """Check every cached program again before its next use, as a new process does."""
+    with _VERIFIED_LOCK:
+        _VERIFIED.clear()
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def platform_key(system: str | None = None, machine: str | None = None) -> str | None:
@@ -188,6 +215,33 @@ class Tools:
         exe = Path(RELEASES[name][self.platform].member).name if self.platform in RELEASES[name] else name
         return self.cache_dir / f"{name}-{VERSIONS[name]}-{self.platform}" / exe
 
+    def digest_record(self, name: str) -> Path:
+        """Where the SHA-256 of the fetched program is kept: beside its folder, so the folder holds only the program."""
+        folder = self.cached(name).parent
+        return folder.with_name(folder.name + ".sha256")
+
+    def _cached_and_intact(self, name: str) -> bool:
+        """Whether the fetched program is there and, the first time in this process, matches its recorded digest.
+        A program that does not match, or has no record, is deleted so it is fetched again."""
+        target, record = self.cached(name), self.digest_record(name)
+        if not target.is_file():
+            return False
+        with _VERIFIED_LOCK:
+            if target in _VERIFIED:
+                return True
+        try:
+            expected = record.read_text(encoding="ascii").strip()
+            intact = bool(re.fullmatch(r"[0-9a-f]{64}", expected)) and _sha256_file(target) == expected
+        except OSError:
+            intact = False
+        if not intact:
+            target.unlink(missing_ok=True)
+            record.unlink(missing_ok=True)
+            return False
+        with _VERIFIED_LOCK:
+            _VERIFIED.add(target)
+        return True
+
     def find(self, name: str) -> str:
         """The program to run: on the PATH, else already fetched, else fetched now."""
         found = self._on_path(name)
@@ -197,7 +251,7 @@ class Tools:
         if release is None:
             raise ToolError(f"{INSTALL_HINT[name]}: there is no {name} release pinned for this platform.")
         target = self.cached(name)
-        if target.is_file():
+        if self._cached_and_intact(name):
             return str(target)
         if self.env.get(NO_DOWNLOAD_ENV, "").strip().lower() in ("1", "true", "yes", "on"):
             raise ToolError(f"{INSTALL_HINT[name]}; {NO_DOWNLOAD_ENV} keeps it from being downloaded.")
@@ -222,4 +276,8 @@ class Tools:
         except BaseException:
             Path(partial).unlink(missing_ok=True)
             raise
+        # Recorded after the program is in place: a missing record only means one more download.
+        self.digest_record(name).write_text(hashlib.sha256(program).hexdigest() + "\n", encoding="ascii")
+        with _VERIFIED_LOCK:
+            _VERIFIED.add(target)
         return str(target)

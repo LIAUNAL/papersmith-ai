@@ -41,11 +41,27 @@ describe("parseCommand", () => {
   });
 
   it("reads --embed-origin, in either form, or CAZTOR_EMBED_ORIGIN, only when serving", () => {
-    expect(parseCommand(argv("/p", "--embed-origin", "http://127.0.0.1:8765"), {})).toEqual({ ok: true, command: "serve", projectDir: "/p", exposure: local, embedOrigin: "http://127.0.0.1:8765" });
-    expect(parseCommand(argv("--embed-origin=http://localhost:9000", "/p"), {})).toMatchObject({ embedOrigin: "http://localhost:9000" });
-    expect(parseCommand(argv("/p"), { CAZTOR_EMBED_ORIGIN: "http://127.0.0.1:1" })).toMatchObject({ embedOrigin: "http://127.0.0.1:1" });
+    expect(parseCommand(argv("/p", "--embed-origin", "http://127.0.0.1:8765"), {})).toEqual({ ok: true, command: "serve", projectDir: "/p", exposure: local, embedOrigins: ["http://127.0.0.1:8765"] });
+    expect(parseCommand(argv("--embed-origin=http://localhost:9000", "/p"), {})).toMatchObject({ embedOrigins: ["http://localhost:9000"] });
+    expect(parseCommand(argv("/p"), { CAZTOR_EMBED_ORIGIN: "http://127.0.0.1:1" })).toMatchObject({ embedOrigins: ["http://127.0.0.1:1"] });
     expect(parseCommand(argv("/p", "--embed-origin"), {})).toMatchObject({ ok: false });
     expect(parseCommand(argv("users", "--embed-origin", "http://x"), {})).toMatchObject({ ok: false });
+  });
+
+  it("takes several embedding origins, repeated or comma separated, once each", () => {
+    const both = ["http://127.0.0.1:8765", "http://localhost:8765"];
+    expect(parseCommand(argv("/p", "--embed-origin", both[0]!, "--embed-origin", both[1]!), {})).toMatchObject({ embedOrigins: both });
+    expect(parseCommand(argv("/p", `--embed-origin=${both.join(",")}`, "--embed-origin", both[0]!), {})).toMatchObject({ embedOrigins: both });
+    expect(parseCommand(argv("/p"), { CAZTOR_EMBED_ORIGIN: ` ${both.join(" , ")} ` })).toMatchObject({ embedOrigins: both });
+  });
+
+  it("reads the frame key from CAZTOR_EMBED_KEY only when embedded", () => {
+    const key = "k".repeat(43);
+    expect(parseCommand(argv("/p", "--embed-origin", "http://127.0.0.1:8765"), { CAZTOR_EMBED_KEY: key })).toEqual({
+      ok: true, command: "serve", projectDir: "/p", exposure: local, embedOrigins: ["http://127.0.0.1:8765"], embedKey: key,
+    });
+    expect(parseCommand(argv("/p"), { CAZTOR_EMBED_KEY: key })).toEqual({ ok: true, command: "serve", projectDir: "/p", exposure: local });
+    expect(parseCommand(argv("/p", "--embed-origin", "http://127.0.0.1:8765"), { CAZTOR_EMBED_KEY: "" })).not.toHaveProperty("embedKey");
   });
 
   it("takes the same settings from CAZTOR_HOST, CAZTOR_PUBLIC_NAME and CAZTOR_SECURE, with options winning", () => {

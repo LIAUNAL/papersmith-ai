@@ -50,6 +50,9 @@ class ToolsTests(unittest.TestCase):
         patch.start()
         self.addCleanup(patch.stop)
         self.fetched: list[str] = []
+        # Each test is a fresh process as far as the once-per-process digest check goes.
+        caztor_tools.forget_verified()
+        self.addCleanup(caztor_tools.forget_verified)
 
     def tools(self, archive: bytes | None = None, env: dict[str, str] | None = None, node_major: int = 26,
               plat: str = "linux-x64") -> Tools:
@@ -85,6 +88,32 @@ class ToolsTests(unittest.TestCase):
         self.assertEqual(tools.find("node"), str(found))
         self.assertEqual(self.fetched, [self.release.url], "the second call reuses the fetched copy")
         self.assertEqual([p.name for p in found.parent.iterdir()], ["node"], "no partial file is left behind")
+
+    def test_a_cached_program_is_checked_against_its_recorded_digest_once_per_process(self) -> None:
+        found = Path(self.tools().find("node"))
+        self.assertEqual(self.fetched, [self.release.url])
+        found.write_bytes(b"#!/bin/sh\necho replaced\n")
+        # Already checked in this process: it is not hashed again.
+        self.assertEqual(self.tools().find("node"), str(found))
+        self.assertEqual(self.fetched, [self.release.url])
+        caztor_tools.forget_verified()  # the next process
+        self.assertEqual(self.tools().find("node"), str(found))
+        self.assertEqual(self.fetched, [self.release.url] * 2, "a changed program is deleted and fetched again")
+        self.assertEqual(found.read_bytes(), b"#!/bin/sh\necho fetched\n")
+
+    def test_a_cached_program_without_a_recorded_digest_is_fetched_again(self) -> None:
+        target = self.tools().cached("node")
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b"left by an older papersmith")
+        self.assertEqual(self.tools().find("node"), str(target))
+        self.assertEqual(self.fetched, [self.release.url])
+        self.assertEqual(target.read_bytes(), b"#!/bin/sh\necho fetched\n")
+
+    def test_a_cached_program_that_checks_out_is_not_fetched_again_in_the_next_process(self) -> None:
+        found = self.tools().find("node")
+        caztor_tools.forget_verified()
+        self.assertEqual(self.tools().find("node"), found)
+        self.assertEqual(self.fetched, [self.release.url])
 
     def test_an_archive_that_does_not_match_its_pinned_checksum_installs_nothing(self) -> None:
         with self.assertRaisesRegex(ToolError, "does not match its pinned SHA-256"):

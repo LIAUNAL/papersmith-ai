@@ -6,9 +6,21 @@ A papersmith install carries it prebuilt in ``papersmith/_caztor`` (its server
 bundled into one file, so only ``node`` is needed); a checkout whose
 ``caztor/`` is set up runs that source instead. ``smith ui`` names the copy in
 ``CAZTOR_HOME``, which an operator may also set. The dashboard starts its server on this
-workspace with ``--embed-origin <the dashboard's origin>`` and shows it in a
-frame. In that mode Caztor stays on this one workspace, hides its project
-navigator, and only the dashboard's origin may frame it.
+workspace with ``--embed-origin <the dashboard's origin>`` (and again with its loopback
+twin: ``127.0.0.1`` and ``localhost`` on the same port are the same dashboard) and shows
+it in a frame. In that mode Caztor stays on this one workspace, hides its project
+navigator, and only those origins may frame it.
+
+Each launch gets a frame key, a random secret passed in ``CAZTOR_EMBED_KEY`` (the
+environment, not the command line, which ``ps`` shows to every local user). Caztor
+hands its page, and with it its launch token, only to a request whose ``k`` query
+parameter is that key; the dashboard returns the key only to the browser that holds
+its terminal login (server.py), and the PDF tab loads ``<url>/?k=<key>``.
+
+Fetching ``node`` and ``tectonic`` the first time can take minutes, so it happens
+outside the sidecar's lock: ``stop`` (the editor switch, shutdown) never waits for a
+download or for a starting server. Concurrent requests share one download, and a
+failed one is not tried again for `FAILED_TOOL_RETRY_SECONDS`.
 
 Caztor always binds loopback here: the exposure variables of the operator's
 environment are not passed on. Nothing is started until the PDF tab asks, and
@@ -21,6 +33,7 @@ from __future__ import annotations
 
 import os
 import re
+import secrets
 import subprocess
 import threading
 import importlib.util
@@ -48,8 +61,24 @@ WEB_INDEX = Path("apps") / "web" / "dist" / "index.html"
 READY_LINE = re.compile(r"Caztor is running at (http://(?:127\.0\.0\.1|localhost|\[::1\]):\d+) for ")
 #: A browser origin as the dashboard is reached: scheme, host and optional port, nothing else.
 ORIGIN = re.compile(r"^https?://(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::\d{1,5})?$")
-#: Variables that would expose Caztor beyond loopback or move its project folder.
-DROPPED_ENV = ("CAZTOR_HOST", "CAZTOR_PUBLIC_NAME", "CAZTOR_SECURE", "CAZTOR_EMBED_ORIGIN", "INIT_CWD")
+#: The variable that carries the frame key to Caztor.
+EMBED_KEY_ENV = "CAZTOR_EMBED_KEY"
+#: Variables that would expose Caztor beyond loopback, move its project folder, or fix its frame key.
+DROPPED_ENV = ("CAZTOR_HOST", "CAZTOR_PUBLIC_NAME", "CAZTOR_SECURE", "CAZTOR_EMBED_ORIGIN", EMBED_KEY_ENV, "INIT_CWD")
+#: How long a program that could not be found or fetched is not tried again.
+FAILED_TOOL_RETRY_SECONDS = 300.0
+STOPPED_REASON = "Caztor was stopped while it started."
+_LOOPBACK_TWIN = re.compile(r"^(https?)://(127\.0\.0\.1|localhost)((?::\d{1,5})?)$")
+
+
+def origin_twins(origin: str) -> tuple[str, ...]:
+    """``origin`` and, for ``127.0.0.1`` or ``localhost``, the other name on the same scheme and port:
+    both reach the same dashboard, so one Caztor serves both."""
+    match = _LOOPBACK_TWIN.match(origin)
+    if match is None:
+        return (origin,)
+    scheme, host, port = match.groups()
+    return (origin, f"{scheme}://{'localhost' if host == '127.0.0.1' else '127.0.0.1'}{port}")
 
 
 def bundled_home() -> Path | None:
@@ -79,23 +108,48 @@ def server_entry(home: Path) -> Path | None:
     return None
 
 
+class _Lookup:
+    """One search for the programs, shared by every request that arrives while it runs."""
+
+    def __init__(self) -> None:
+        self.done = threading.Event()
+        self.result: tuple[str | None, str | None, str | None] = (None, None, "Caztor's programs were not looked up.")
+
+
 class CaztorSidecar:
-    """One Caztor server for one workspace, started on demand."""
+    """One Caztor server for one workspace, started on demand.
+
+    Three locks, never held across a download: ``_lock`` guards the process fields and is held only briefly, so
+    `stop` never waits; ``_start_lock`` lets one request start a server at a time (the others then find it
+    running); ``_tools_lock`` guards the shared program lookup and the remembered failures.
+    """
 
     def __init__(self, root: Path | str, *, env: Mapping[str, str] | None = None,
                  startup_timeout: float = 60.0,
                  bundled: Callable[[], Path | None] | None = None,
-                 tools: "caztor_tools.Tools | None" = None) -> None:
+                 tools: "caztor_tools.Tools | None" = None,
+                 clock: Callable[[], float] = time.monotonic) -> None:
         self.root = Path(root)
         self.bundled = bundled_home if bundled is None else bundled
         self.env = dict(os.environ if env is None else env)
         self.startup_timeout = startup_timeout
         self._tools = tools
+        self._clock = clock
         self._lock = threading.Lock()
+        self._start_lock = threading.Lock()
+        self._tools_lock = threading.Lock()
         self._process: subprocess.Popen[str] | None = None
-        self._origin: str | None = None
+        #: Bumped whenever the server is detached: a start that began under another generation was ended meanwhile.
+        self._generation = 0
+        #: Bumped by every `stop`: a request that began before it does not start a server after it.
+        self._stops = 0
+        self._origins: tuple[str, ...] = ()
         self._url: str | None = None
+        self._key: str | None = None
         self._tail: deque[str] = deque(maxlen=12)
+        self._lookup: _Lookup | None = None
+        #: Per program: when it last could not be found or fetched, and why.
+        self._failures: dict[str, tuple[float, str]] = {}
 
     def locate(self) -> tuple[Path | None, str | None]:
         """The Caztor copy to run, or why there is none."""
@@ -114,36 +168,100 @@ class CaztorSidecar:
         return home, None
 
     def ensure(self, origin: str) -> dict:
-        """Caztor's address for a dashboard page at ``origin``, starting or restarting it as needed."""
+        """Caztor's address, instance and frame key for a dashboard page at ``origin``, starting or restarting it
+        as needed. The loopback twin of the origin it runs for does not restart it."""
         if not ORIGIN.match(origin):
             return {"available": False, "reason": f"The dashboard origin is not a plain origin: {origin!r}."}
+        running = self._running_for(origin)
+        if running is not None:
+            return running
         with self._lock:
-            if self._alive() and self._origin == origin and self._url is not None:
-                return {"available": True, "url": self._url, "instance": self._process.pid}
-            self._stop_locked()
-            home, reason = self.locate()
-            if home is None:
-                return {"available": False, "reason": reason}
-            # The first time on a machine without them, this downloads node and tectonic (a minute at most).
-            tools = self._tools or caztor_tools.Tools(self.env)
-            try:
-                node = tools.find("node")
-            except caztor_tools.ToolError as error:
-                return {"available": False, "reason": f"Caztor needs Node.js 26: {error}"}
-            try:
-                tectonic: str | None = tools.find("tectonic")
-            except caztor_tools.ToolError:
-                tectonic = None  # Caztor still opens; its compile reports the missing engine.
+            stops = self._stops
+        home, reason = self.locate()
+        if home is None:
+            return {"available": False, "reason": reason}
+        # The first time on a machine without them, this downloads node and tectonic: outside every lock.
+        node, tectonic, reason = self._programs()
+        if node is None:
+            return {"available": False, "reason": reason}
+        with self._start_lock:
+            running = self._running_for(origin)  # another request may have started it meanwhile
+            if running is not None:
+                return running
+            with self._lock:
+                if self._stops != stops:  # the editor was turned off while the programs were looked up
+                    return {"available": False, "reason": STOPPED_REASON}
+                previous = self._detach_locked()
+            _terminate(previous)
             return self._start(node, home, origin, [node] + ([tectonic] if tectonic else []))
 
     def stop(self) -> None:
+        """Stop Caztor, also one still starting. Never waits for a download or a starting server, only for the
+        process to end (its terminate and kill budget)."""
         with self._lock:
-            self._stop_locked()
+            self._stops += 1
+            process = self._detach_locked()
+        _terminate(process)
 
     # -- internals ---------------------------------------------------------
 
     def _alive(self) -> bool:
         return self._process is not None and self._process.poll() is None
+
+    def _running_for(self, origin: str) -> dict | None:
+        with self._lock:
+            if self._alive() and self._url is not None and origin in self._origins:
+                return self._answer_locked()
+        return None
+
+    def _answer_locked(self) -> dict:
+        assert self._process is not None
+        # A restarted server has a new launch token: the page reloads its frame when the instance changes.
+        return {"available": True, "url": self._url, "instance": self._process.pid, "key": self._key}
+
+    def _programs(self) -> tuple[str | None, str | None, str | None]:
+        """``(node, tectonic, reason)``: node (or None with the reason) and tectonic (None when missing; Caztor
+        still opens and its compile reports the missing engine). One lookup at a time, shared by every request
+        that arrives while it runs."""
+        with self._tools_lock:
+            lookup, owner = self._lookup, False
+            if lookup is None:
+                lookup, owner = _Lookup(), True
+                self._lookup = lookup
+        if not owner:
+            lookup.done.wait()
+            return lookup.result
+        try:
+            lookup.result = self._find_programs()
+        finally:
+            with self._tools_lock:
+                self._lookup = None
+            lookup.done.set()
+        return lookup.result
+
+    def _find_programs(self) -> tuple[str | None, str | None, str | None]:
+        tools = self._tools or caztor_tools.Tools(self.env)
+        node, why = self._find(tools, "node")
+        if node is None:
+            return None, None, f"Caztor needs Node.js 26: {why}"
+        tectonic, _ = self._find(tools, "tectonic")
+        return node, tectonic, None
+
+    def _find(self, tools: "caztor_tools.Tools", name: str) -> tuple[str | None, str | None]:
+        """The program, or None and why; a failure is remembered and not tried again for a while."""
+        with self._tools_lock:
+            failed = self._failures.get(name)
+        if failed is not None and self._clock() - failed[0] < FAILED_TOOL_RETRY_SECONDS:
+            return None, failed[1]
+        try:
+            found = tools.find(name)
+        except caztor_tools.ToolError as error:
+            with self._tools_lock:
+                self._failures[name] = (self._clock(), str(error))
+            return None, str(error)
+        with self._tools_lock:
+            self._failures.pop(name, None)
+        return found, None
 
     def _start(self, node: str, home: Path, origin: str, programs: list[str]) -> dict:
         env = {k: v for k, v in self.env.items() if k not in DROPPED_ENV}
@@ -153,23 +271,32 @@ class CaztorSidecar:
         folders = list(dict.fromkeys(str(Path(program).parent) for program in programs
                                      if str(Path(program).parent) not in on_path))
         env["PATH"] = os.pathsep.join([*folders, *([env["PATH"]] if env.get("PATH") else [])])
-        self._tail.clear()
+        key = secrets.token_urlsafe(32)
+        env[EMBED_KEY_ENV] = key
+        origins = origin_twins(origin)
+        argv = [node, str(server_entry(home)), str(self.root)]
+        for allowed in origins:
+            argv += ["--embed-origin", allowed]
+        tail: deque[str] = deque(maxlen=12)
         ready = threading.Event()
         found: list[str] = []
-        try:
-            process = subprocess.Popen(
-                [node, str(server_entry(home)), str(self.root), "--embed-origin", origin],
-                cwd=str(home), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
-            )
-        except OSError as error:
-            return {"available": False, "reason": f"Caztor could not be started: {error}"}
+        with self._lock:
+            generation = self._generation
+            try:
+                process = subprocess.Popen(
+                    argv, cwd=str(home), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
+                )
+            except OSError as error:
+                return {"available": False, "reason": f"Caztor could not be started: {error}"}
+            # Known before it is ready, so a stop meanwhile ends it.
+            self._process, self._tail = process, tail
 
         def read() -> None:
             assert process.stdout is not None
             for line in process.stdout:
                 line = line.rstrip()
-                self._tail.append(line)
+                tail.append(line)
                 match = READY_LINE.search(line)
                 if match and not ready.is_set():
                     found.append(match.group(1))
@@ -179,25 +306,33 @@ class CaztorSidecar:
         threading.Thread(target=read, name="caztor-output", daemon=True).start()
         deadline = time.monotonic() + self.startup_timeout
         while not ready.wait(0.05):
-            if time.monotonic() > deadline:
+            if time.monotonic() > deadline or self._generation != generation:
                 break
-        if not found:
-            self._process = process
-            self._stop_locked()
-            last = " ".join(line for line in self._tail if line) or "no output"
-            return {"available": False, "reason": f"Caztor did not start: {last}"}
-        self._process, self._origin, self._url = process, origin, found[0]
-        # A restarted server has a new launch token: the page reloads its frame when the instance changes.
-        return {"available": True, "url": found[0], "instance": process.pid}
+        with self._lock:
+            if self._generation != generation:
+                return {"available": False, "reason": STOPPED_REASON}
+            if found:
+                self._origins, self._url, self._key = origins, found[0], key
+                return self._answer_locked()
+            stale = self._detach_locked()
+        _terminate(stale)
+        last = " ".join(line for line in tail if line) or "no output"
+        return {"available": False, "reason": f"Caztor did not start: {last}"}
 
-    def _stop_locked(self) -> None:
+    def _detach_locked(self) -> "subprocess.Popen[str] | None":
+        """Forget the running (or starting) server and return it, to be ended outside the lock."""
         process, self._process = self._process, None
-        self._origin = self._url = None
-        if process is None or process.poll() is not None:
-            return
-        process.terminate()
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=5)
+        self._origins, self._url, self._key = (), None, None
+        self._generation += 1
+        return process
+
+
+def _terminate(process: "subprocess.Popen[str] | None") -> None:
+    if process is None or process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)

@@ -23,7 +23,7 @@ export interface Exposure {
 }
 
 export type Command =
-  | { ok: true; command: "serve"; projectDir: string; exposure: Exposure; embedOrigin?: string }
+  | { ok: true; command: "serve"; projectDir: string; exposure: Exposure; embedOrigins?: string[]; embedKey?: string }
   | { ok: true; command: "invite"; name: string; exposure: Exposure; lifetime?: string }
   | { ok: true; command: "users" }
   | { ok: true; command: "revoke"; id: string }
@@ -36,8 +36,10 @@ const COMMAND_USAGE = [
   "       npm start -- users",
   "       npm start -- revoke <id>",
   "       npm start -- trust-build <projectDir>   (confirm the project's .caztor/build.json on this computer)",
-  "Option --embed-origin <origin>: serve inside the page of that origin (a PaperSmith dashboard) on this one project.",
-  "Environment: CAZTOR_HOST, CAZTOR_PUBLIC_NAME (comma separated), CAZTOR_SECURE=1, CAZTOR_EMBED_ORIGIN.",
+  "Option --embed-origin <origin>[,<origin>]...: serve inside the page of that origin (a PaperSmith dashboard) on this one",
+  "       project; repeat it (or separate with commas) for the same dashboard under another name, such as localhost.",
+  "Environment: CAZTOR_HOST, CAZTOR_PUBLIC_NAME (comma separated), CAZTOR_SECURE=1, CAZTOR_EMBED_ORIGIN (comma separated),",
+  "       CAZTOR_EMBED_KEY (embedded only: the page is served only to a request whose ?k= is this key).",
 ].join("\n");
 
 /**
@@ -53,7 +55,7 @@ export function parseCommand(argv: readonly string[], env: Readonly<Record<strin
   const names: string[] = [];
   let secure = false;
   let lifetime: string | undefined;
-  let embedOrigin: string | undefined;
+  const embedOrigins: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
     const [flag, inline] = arg.startsWith("--") && arg.includes("=") ? [arg.slice(0, arg.indexOf("=")), arg.slice(arg.indexOf("=") + 1)] : [arg, undefined];
@@ -63,29 +65,38 @@ export function parseCommand(argv: readonly string[], env: Readonly<Record<strin
       if (value === undefined || value === "" || value.startsWith("-")) return usage;
       if (flag === "--host") host = value;
       else if (flag === "--for") lifetime = value;
-      else if (flag === "--embed-origin") embedOrigin = value;
+      else if (flag === "--embed-origin") embedOrigins.push(...splitList(value));
       else names.push(value);
     } else if (arg.startsWith("-") || arg === "") return usage;
     else positional.push(arg);
   }
-  const fromEnv = (env["CAZTOR_PUBLIC_NAME"] ?? "").split(",").map((name) => name.trim()).filter((name) => name !== "");
+  const fromEnv = splitList(env["CAZTOR_PUBLIC_NAME"] ?? "");
   const exposure: Exposure = {
     host: host ?? (env["CAZTOR_HOST"] || "127.0.0.1"),
     publicNames: names.length > 0 ? names : fromEnv,
     secure: secure || env["CAZTOR_SECURE"] === "1",
   };
   const [first, ...rest] = positional;
-  const embedded = embedOrigin ?? (env["CAZTOR_EMBED_ORIGIN"] || undefined);
+  const embedded = embedOrigins.length > 0 ? [...new Set(embedOrigins)] : [...new Set(splitList(env["CAZTOR_EMBED_ORIGIN"] ?? ""))];
+  const flagged = embedOrigins.length > 0;
   // `--embed-origin` belongs to serving only.
-  if (embedOrigin !== undefined && (first === "invite" || first === "users" || first === "revoke")) return usage;
+  if (flagged && (first === "invite" || first === "users" || first === "revoke")) return usage;
   if (first === "invite") return rest.length > 0 ? { ok: true, command: "invite", name: rest.join(" "), exposure, ...(lifetime === undefined ? {} : { lifetime }) } : usage;
   // `--for` belongs to an invite only.
   if (lifetime !== undefined) return usage;
   if (first === "users") return rest.length === 0 ? { ok: true, command: "users" } : usage;
-  if (first === "trust-build") return rest.length === 1 && embedOrigin === undefined ? { ok: true, command: "trust-build", projectDir: rest[0]! } : usage;
+  if (first === "trust-build") return rest.length === 1 && !flagged ? { ok: true, command: "trust-build", projectDir: rest[0]! } : usage;
   if (first === "revoke") return rest.length === 1 ? { ok: true, command: "revoke", id: rest[0]! } : usage;
   if (first === undefined || rest.length > 0) return usage;
-  return { ok: true, command: "serve", projectDir: first, exposure, ...(embedded === undefined ? {} : { embedOrigin: embedded }) };
+  if (embedded.length === 0) return { ok: true, command: "serve", projectDir: first, exposure };
+  // The frame key only means something embedded; it is never printed.
+  const embedKey = env["CAZTOR_EMBED_KEY"] || undefined;
+  return { ok: true, command: "serve", projectDir: first, exposure, embedOrigins: embedded, ...(embedKey === undefined ? {} : { embedKey }) };
+}
+
+/** A comma separated list, trimmed, without empty entries. */
+function splitList(value: string): string[] {
+  return value.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "");
 }
 
 const UNIT_MINUTES = { m: 1, h: 60, d: 24 * 60 } as const;

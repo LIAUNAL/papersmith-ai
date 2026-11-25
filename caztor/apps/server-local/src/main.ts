@@ -7,6 +7,8 @@ import { startServer } from "./server.ts";
 import { runUserCommand } from "./user-commands.ts";
 
 const args = parseCommand(process.argv, process.env);
+// The frame key is read once: Caztor's agents and compiles, which inherit this environment, never see it.
+delete process.env["CAZTOR_EMBED_KEY"];
 if (!args.ok) {
   console.error(args.usage);
   process.exit(2);
@@ -34,7 +36,8 @@ try {
     host: exposure.host,
     publicNames: exposure.publicNames,
     secure: exposure.secure,
-    ...(args.embedOrigin === undefined ? {} : { embedOrigin: args.embedOrigin }),
+    ...(args.embedOrigins === undefined ? {} : { embedOrigin: args.embedOrigins }),
+    ...(args.embedKey === undefined ? {} : { embedKey: args.embedKey }),
   });
   console.log(`Caztor is running at ${server.url} for ${server.root}`);
   if (server.hostLink !== undefined) {
