@@ -26,8 +26,13 @@ COMMAND_CENTER = REPOSITORY / "skills" / "_core" / "command_center"
 
 
 def _seed_command_center(root: Path) -> None:
+    """Seed what a workspace ships: the whole `skills/_core`, not only the command
+    center. The server imports its siblings (`paper_types` and the line modules) at
+    load, so a seed of `command_center/` alone only started when the parent's
+    PYTHONPATH happened to reach this repository."""
     destination = root / ui_command.COMMAND_CENTER_ENTRY.parent
-    shutil.copytree(COMMAND_CENTER, destination)
+    shutil.copytree(COMMAND_CENTER.parent, destination.parent,
+                    ignore=shutil.ignore_patterns("__pycache__"))
 
 
 class ProvisionerAgreementTests(unittest.TestCase):
