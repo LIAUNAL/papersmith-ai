@@ -1235,20 +1235,43 @@ the executable under `~/.cache/papersmith/tools/`.
 `PAPERSMITH_NO_TOOL_DOWNLOAD=1` turns the download off. Tectonic itself fetches
 the TeX packages a document needs on its first compile. Nothing from npm is needed. Its source lives in this repository's `caztor/` folder: in a checkout,
 `npm run setup:caztor` (part of `npm run setup`) installs its dependencies and
-builds it, and smith then runs that source; `scripts/build-caztor.py` packages
-it (an install from a checkout or a git URL runs it when `npm` is present).
+builds it, and smith then runs that source. `pip install .` from a checkout does
+not build Caztor; `python3 scripts/build-caztor.py --require` packages it for a
+wheel (it needs Node.js 26 or newer and npm, and says why when it skips; the
+publish workflow runs it before `python -m build`). Each bundle ships a
+`THIRD_PARTY_NOTICES.md` with every npm package it includes, its version,
+licence and full licence text.
 `CAZTOR_HOME` names another Caztor copy. With Caztor available, the tab shows Caztor's four vertical panes
 in place of the viewer: files, LaTeX editor, the PDF it compiles with Tectonic
-(into `.caztor/build`, never `paper/main.pdf`), and the assistant chat. The
-change-control panel stays to the right of the chat: text selected in Caztor's
+(into `.caztor/build`, never `paper/main.pdf`), and the assistant chat, filling
+the window under the tab's toolbar. The toolbar serves both views: the LaTeX
+editor switch, Style & redundancy, open the PDF in a new tab, and the Change
+Control toggle with its pending count. The change-control panel folds to a
+narrow handle (folded by default with the editor, open with the viewer, the
+choice remembered per view); a venue or translation view and a jump to a page
+show the viewer over the editor with a way back. Opening the CLI assistant gives
+it the keyboard even while Caztor holds it. Unfolded, text selected in Caztor's
 PDF fills its selection card, and running the batch records it as before
 (`.papersmith/anotaciones_pdf.{json,md}`) and puts one instruction for the
-assistant in the chat box, which you review and send yourself. `POST /api/caztor`
+assistant in the chat box, which you review and send yourself. `POST /api/terminal/caztor`
 (same origin only) starts Caztor the first time the tab opens, as
-`node apps/server-local/src/main.ts <workspace> --embed-origin <the dashboard's origin>`:
-it binds loopback whatever `CAZTOR_HOST`/`CAZTOR_PUBLIC_NAME` say, only that
-origin may frame it, it cannot switch to another project, and it stops with the
-dashboard. Without Caztor or Node the tab falls back to the viewer above and
+`node apps/server-local/src/main.ts <workspace> --embed-origin <the dashboard's origin>`
+(once for each loopback twin, `127.0.0.1:<port>` and `localhost:<port>`, so a tab
+on either does not restart it): it binds loopback whatever
+`CAZTOR_HOST`/`CAZTOR_PUBLIC_NAME` say, only those origins may frame it, it
+cannot switch to another project, and it stops with the dashboard. Each start
+gets a fresh key in its environment (`CAZTOR_EMBED_KEY`, never on the command
+line, removed from Caztor's own environment once read); Caztor hands its page
+token only to a request carrying that key, and the dashboard returns the key
+only from `POST /api/terminal/caztor` to a browser holding the terminal login
+(the access link `smith ui` prints, the same one the CLI assistant needs), so
+another local user or process cannot open the editor. Without that login the
+tab says so, offers Activate and shows the viewer. With the terminal disabled
+(`--no-terminal`) the key is returned to any same-origin request, as before.
+Node.js and Tectonic are downloaded outside the editor's lock, so turning the
+editor off or stopping `smith ui` never waits for a download; a failed download
+is retried after five minutes, and a cached tool is checked once per run
+against the SHA-256 recorded when it was installed. Without Caztor or Node the tab falls back to the viewer above and
 says why. Add `.caztor/` to the workspace's `.gitignore`.
 
 Inside the dashboard Caztor shows no top bar of its own and takes the dashboard's
