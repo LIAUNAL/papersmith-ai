@@ -106,7 +106,7 @@ ACTIONS: dict[str, dict[str, Any]] = {
                 "Then it splits the hypothesis into claims and grades each one (novel / known / tension / contradicted) with verbatim quotes.",
                 "Nothing is ingested or filed: the report awaits your acceptance before the top 5 move on to ingestion.",
                 "You can adjust the idea and ask for a new screening; every pass is a new report.",
-                "No clear idea yet? Open Thematic help, give 3 to 5 keywords and the Banco LIA proposes one you can edit and approve.",
+                "No clear idea yet? Shape it first in the Idea tab: choose a knowledge bank or none, give your profile and keywords, and approve a draft that launches /plausibility.",
             ], "E.g.: Current models lose accuracy outside their training domain. I propose …",
                 min_sentences=2, keyword_help=True),
             _redirect("View the SOTA constellation", "atlas", "3D atlas of the candidate pool."),

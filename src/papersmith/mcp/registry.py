@@ -92,6 +92,7 @@ CLI_COMMANDS: tuple[str, ...] = (
     "gpu",
     "novelty",
     "keys",
+    "idea",
 )
 
 
@@ -1646,6 +1647,11 @@ CLI_DISPOSITIONS: dict[str, str] = {
     # `*_KEY` from every child anyway: the operator's act, from a terminal or
     # the dashboard's Doctor tab, never an agent's.
     "keys": "out",
+    # `idea` asks the operator, one question at a time, which knowledge bank to
+    # use, their profile, experience and interests, and records the draft they
+    # approve: the operator's own answers. An agent shaping an idea runs the
+    # /idea-shaping skill, which records each answer through this command.
+    "idea": "out",
 }
 
 PAPER_DISPOSITIONS: dict[str, str] = {

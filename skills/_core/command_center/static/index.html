@@ -29,6 +29,7 @@
   <script src="./contribution-affinity.js?v=0.83.0"></script>
   <script src="./model-panel.js?v=0.83.0"></script>
   <script src="./paper-type-panel.js?v=0.83.0"></script>
+<script src="./idea-panel.js?v=0.83.0"></script>
   <script src="./review-panel.js?v=0.83.0"></script>
   <script src="./study-panel.js?v=0.83.0"></script>
   <script type="importmap">{"imports": {"three": "./vendor/three/three.module.min.js"}}</script>
@@ -2910,27 +2911,6 @@
     .phase-action__note { flex-basis: 100%; color: var(--text-dim); font-size: 0.76rem; }
     .phase-action__error { border: 1px solid var(--bad); background: rgba(248, 113, 113, 0.12); color: var(--text); border-radius: 6px; padding: 0.5rem 0.65rem; font-size: 0.82rem; font-weight: 600; }
     .phase-action__input.is-invalid { border-color: var(--bad); box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.25); }
-    .kw-help { border: 1px dashed var(--border); border-radius: 6px; padding: 0.45rem 0.65rem; background: rgba(0,0,0,0.12); }
-    .kw-help > summary { cursor: pointer; font-size: 0.84rem; font-weight: 600; color: var(--accent); }
-    .kw-help[open] > summary { margin-bottom: 0.45rem; }
-    .kw-help__intro, .kw-help__note { margin: 0 0 0.4rem; font-size: 0.76rem; color: var(--text-dim); line-height: 1.4; }
-    .kw-help__inputs { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin-bottom: 0.45rem; }
-    .kw-help__input { flex: 1 1 8rem; min-width: 0; box-sizing: border-box; background: rgba(0,0,0,0.25); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 0.35rem 0.5rem; font: 0.82rem var(--font-sans, inherit); }
-    .kw-help__input:focus { outline: none; border-color: var(--accent); }
-    .kw-help__input[hidden], .kw-help [hidden] { display: none; }
-    .kw-help__bar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-    .kw-help__status { font-size: 0.74rem; color: var(--text-dim); }
-    .kw-help__result { margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.4rem; }
-    .kw-help__result h5 { margin: 0.2rem 0 0; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
-    .kw-help__items { margin: 0; padding-left: 1.1rem; font-size: 0.8rem; display: flex; flex-direction: column; gap: 0.3rem; }
-    .kw-help__meta { display: block; font-size: 0.72rem; color: var(--text-dim); }
-    .kw-help__meta a { color: var(--accent); }
-    .kw-help__topics { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-    .kw-help__topic { font-size: 0.74rem; border: 1px solid var(--border); border-radius: 999px; padding: 0.1rem 0.5rem; color: var(--text-muted); }
-    .kw-help__draftlabel { font-size: 0.78rem; font-weight: 600; }
-    .kw-help__actions { display: flex; gap: 0.5rem; }
-    .kw-help__unavailable { border: 1px solid var(--bad); background: rgba(248, 113, 113, 0.12); border-radius: 6px; padding: 0.5rem 0.65rem; font-size: 0.8rem; }
-    .kw-help__unavailable span { color: var(--text-dim); font-size: 0.76rem; }
     /* Paper type pane: one card per catalogue type (paper-type-panel.js). */
     .pt-head { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.8rem; }
     .pt-head p { margin: 0; }
@@ -2950,6 +2930,62 @@
     .pt-error { margin: 0; color: var(--bad); }
     .pt-notice { margin: 0 0 0.5rem; color: var(--text-muted); }
     .pt-empty { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
+    /* Idea pane: the six-step stepper of idea shaping (idea-panel.js). */
+    #ideaPanel { min-width: 0; overflow-wrap: anywhere; }
+    .idea-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.6rem; }
+    .idea-head p { margin: 0; flex: 1 1 320px; }
+    .idea-muted { color: var(--text-muted); font-size: 0.8rem; margin: 0; }
+    .idea-stepper { list-style: none; margin: 0 0 0.75rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 0.4rem; }
+    .idea-stepper__btn { width: 100%; display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.55rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 0.8rem; cursor: pointer; text-align: left; }
+    .idea-stepper__btn:hover { background: var(--surface-hover); }
+    .idea-stepper__btn.is-active { border-color: var(--accent); background: var(--accent-dim); }
+    .idea-stepper__btn.is-done .idea-stepper__n { background: var(--ok-dim); color: var(--ok); border-color: var(--ok); }
+    .idea-stepper__n { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; border: 1px solid var(--border); font-size: 0.75rem; }
+    .idea-step { display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
+    .idea-step h4 { margin: 0; font-size: 0.95rem; }
+    .idea-notice { margin: 0; color: var(--text-muted); font-size: 0.8rem; }
+    .idea-notice.is-bad { color: var(--bad); }
+    .idea-ok { margin: 0; color: var(--ok); font-size: 0.82rem; }
+    .idea-actions, .idea-nav { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+    .idea-nav { justify-content: space-between; border-top: 1px solid var(--border-subtle); padding-top: 0.6rem; }
+    .idea-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.6rem; }
+    .idea-field { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+    .idea-field label { font-size: 0.78rem; font-weight: 600; }
+    .idea-row { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+    .idea-row > input, .idea-row > select { flex: 1 1 220px; min-width: 0; }
+    #ideaPanel input[type="text"], #ideaPanel select, #ideaPanel textarea { font: inherit; font-size: 0.85rem; max-width: 100%; box-sizing: border-box; padding: 0.3rem 0.45rem; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text); }
+    #ideaPanel textarea { width: 100%; resize: vertical; }
+    .idea-radios { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.6rem; }
+    .idea-radio { display: flex; gap: 0.5rem; align-items: flex-start; border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.7rem; background: var(--surface-2); cursor: pointer; min-width: 0; }
+    .idea-radio.is-picked { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+    .idea-radio__body { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; flex: 1; font-size: 0.82rem; }
+    .idea-add { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .idea-add input { flex: 1 1 140px; min-width: 0; }
+    .idea-status { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+    .idea-card { display: flex; flex-direction: column; gap: 0.35rem; border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.7rem; background: var(--surface-2); font-size: 0.82rem; }
+    .idea-card--warn { border-color: var(--warn); background: var(--warn-dim); }
+    .idea-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; min-height: 0; }
+    .idea-chip { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.1rem 0.5rem; border: 1px solid var(--border); border-radius: 999px; background: var(--accent-dim); font-size: 0.78rem; max-width: 100%; }
+    .idea-chip--static { background: transparent; }
+    .idea-chip__x { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 0.1rem; font: inherit; }
+    .idea-help { display: flex; flex-direction: column; gap: 0.4rem; border: 1px dashed var(--border); border-radius: 8px; padding: 0.6rem 0.7rem; }
+    .idea-items { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.25rem; }
+    .idea-items li span { margin-left: 0.35rem; }
+    .idea-quote { margin: 0; padding-left: 0.6rem; border-left: 3px solid var(--accent); }
+    .idea-topics { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.6rem; }
+    .idea-topic { display: flex; flex-direction: column; gap: 0.35rem; border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.7rem; background: var(--surface-2); font-size: 0.82rem; min-width: 0; }
+    .idea-topic.is-picked { border-color: var(--ok); }
+    .idea-topic__head { display: flex; gap: 0.45rem; align-items: flex-start; cursor: pointer; }
+    .idea-evidence { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.3rem; }
+    .idea-evidence li { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: baseline; }
+    .idea-source { flex: none; font-size: 0.7rem; }
+    .idea-evidence a, .idea-card a { color: var(--accent); }
+    #ideaPanel .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+    .idea-gate { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; }
+    .idea-gate ul { margin: 0; padding-left: 1.1rem; color: var(--text-muted); }
+    .idea-gate .badge { align-self: flex-start; }
+    .phase-idea-link { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; border: 1px dashed var(--border); border-radius: 6px; padding: 0.45rem 0.6rem; font-size: 0.8rem; }
+    .phase-idea-link span { flex: 1 1 220px; color: var(--text-muted); }
     /* Review tab: the review/ records of a review workspace (review-panel.js). */
     .rv-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
     .rv-summary { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.75rem; padding: 0; list-style: none; }
@@ -3493,6 +3529,7 @@
     <button class="tab-nav__btn" onclick="navigateTab('pipeline')" data-i18n="nav.pipeline">Pipeline and Progress</button>
     <button class="tab-nav__btn" onclick="navigateTab('review')" data-kinds="review" data-i18n="nav.review">📋 Review</button>
     <button class="tab-nav__btn" onclick="navigateTab('study')" data-kinds="observational-measurement experiment-intervention qualitative-participatory hardware lab-simulation data-resource" data-i18n="nav.study">🔬 Study</button>
+    <button class="tab-nav__btn" onclick="navigateTab('idea')" data-i18n="nav.idea">💡 Idea</button>
     <button class="tab-nav__btn" onclick="navigateTab('papertype')" data-i18n="nav.paperType">🧭 Paper Type</button>
     <button class="tab-nav__btn" onclick="navigateTab('modelo')" data-kinds="experimental" data-i18n="nav.model">🧠 Concept Map &amp; Model</button>
     <button class="tab-nav__btn" onclick="navigateTab('experiments')" data-kinds="experimental" data-i18n="nav.experiments">🧪 Experiments</button>
@@ -3615,6 +3652,17 @@
           <span class="panel__meta" data-i18n="study.meta">Protocol lock, ethics and registration, own data, analysis log and participant flow</span>
         </div>
         <div id="studyPanel" data-i18n="study.loading">Loading the study records…</div>
+      </section>
+    </div>
+
+    <!-- TAB: IDEA (every line; idea-panel.js, GET /api/idea): the optional guided phase before /plausibility -->
+    <div id="pane-idea" class="tab-pane">
+      <section class="panel" id="ideaCard">
+        <div class="panel__header">
+          <div class="panel__title" data-i18n="idea.title">💡 Idea shaping: from a vague idea to a plausibility draft</div>
+          <span class="panel__meta" data-i18n="idea.meta">Optional, before Phase 2: sources, profile, experience, interests, topics and a gated draft</span>
+        </div>
+        <div id="ideaPanel" data-i18n="idea.loading">Loading the idea brief…</div>
       </section>
     </div>
 
@@ -4830,6 +4878,9 @@
       }
       if (tabId === 'papertype') {
         window.refreshPaperTypePanel?.();
+      }
+      if (tabId === 'idea') {
+        window.refreshIdeaPanel?.();
       }
       if (tabId === 'review') {
         window.refreshReviewPanel?.();
@@ -8362,7 +8413,7 @@
         // The gates tab merged into the pipeline; old links still land on it.
         navigateTab('pipeline');
         document.getElementById('gatesPanel')?.scrollIntoView();
-      } else if (hash && ['pipeline', 'flow', 'review', 'study', 'modelo', 'experiments', 'novelty', 'sections', 'historia', 'telemetria', 'doctor', 'atlas', 'preview', 'artifacts'].includes(hash)) {
+      } else if (hash && ['pipeline', 'flow', 'review', 'study', 'idea', 'modelo', 'experiments', 'novelty', 'sections', 'historia', 'telemetria', 'doctor', 'atlas', 'preview', 'artifacts'].includes(hash)) {
         navigateTab(hash);
       }
       loadStatus();
@@ -8387,6 +8438,7 @@
       novelty: () => window.refreshNoveltyPanel?.(),
       review: () => window.refreshReviewPanel?.(),
       study: () => window.refreshStudyPanel?.(),
+      idea: () => window.refreshIdeaPanel?.(),
       historia: () => window.refreshAiHistoryPanel?.(),
       doctor: () => { window.refreshDoctorPanel?.(); window.refreshKeysPanel?.(); },
       modelo: () => { refreshModelData(); window.refreshMathPanel?.(); },

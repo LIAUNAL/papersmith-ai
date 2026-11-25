@@ -9255,6 +9255,12 @@ class ForgeVocabularyDefinitionTests(unittest.TestCase):
 #: the other fails on an admission whose file no longer carries the word, so an
 #: entry cannot outlive the argument that bought it.
 FORGE_FLOOR_SURFACE_ADMISSIONS: dict[str, dict[str, str]] = {
+    "_core/idea/bank.py": {
+        "kaggle": "the fallback copy of smith's managed MCP server names "
+                  "(generators.MANAGED_MCP_SERVERS), used when the engine runs "
+                  "without the papersmith package; a test holds the two equal. "
+                  "A server name smith configures, not a target's word",
+    },
     "journal-finder/data/publindex-ibn.json": {
         "transfer": "the bundled Publindex IBN 2026 list quotes each Colombian "
                     "journal's own scope and OpenAlex topics verbatim (\"heat "

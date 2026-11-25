@@ -41,7 +41,7 @@
   const HIDDEN_CONTROLS = [
     '#smithAssistantFab', '#smithTerminalWindow', '#btnLaunchExternalTerm',
     '[onclick^="triggerRunPhase"]', '[data-phase-action]', '[data-phase-agent]',
-    '[data-action-override]', '[data-kw-help]', '[data-run-verify]', '[data-run-terminal]',
+    '[data-action-override]', '[data-idea-link]', '[data-idea-action]', '[data-run-verify]', '[data-run-terminal]',
     '[data-run-stop]', '[data-cli]', '[onclick*="sendToCli"]', '[data-exp-cli]', '[data-exp-step]',
     '[data-model-step]', '[data-novelty-judge]', '[onclick*="sendNoveltyDecision"]',
     '[onclick*="launchNoveltyJudge"]', '[onclick*="rebuildAtlasManuscript"]',
@@ -52,7 +52,7 @@
     '#btnUnmarkComments', '#btnUnmarkStrikes', '#btnUnmarkHumanize', '#btnUnmarkSelected',
     '[data-jp-action]:not([data-jp-action="pdf"])', '.journals-sjr label',
     '[data-exp-fold="infrastructure"]', '[data-atlas-complete]', '.badge--live',
-    '.phase-action__input', '.phase-action__agent', '.phase-action__foot', '.kw-help',
+    '.phase-action__input', '.phase-action__agent', '.phase-action__foot',
     '[onclick="navigateTab(\'doctor\')"]', '#keysCard', '[data-keys-prompt]', '[data-keys-terminal]',
   ];
   // The AI History tab is in the snapshot unless it was exported with --no-ai-history.
