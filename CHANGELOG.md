@@ -11,6 +11,32 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.84.2
+
+- **`experimental-implementation`'s `env` names a requirements file the skill
+  ships.** The shared engine prints
+  `pip install -r <skill>/assets/requirements-dev.txt`, and the experimental
+  skill did not carry that file, so the printed command failed with "Could not
+  open requirements file". It now ships the same development requirements as
+  `proposal-implementation`, and a test checks that every requirements file
+  `env` names exists.
+- **The results discussion and the Experiments view read the canonical
+  paragraph labels.** `experimental-deliberation` declares
+  `**Success criterion:** …` at the start of a paragraph, optionally on a
+  bullet, as the canonical form, but `discussion_cli.py scaffold` and the
+  command center's Experiments view only read the bullet form, so a protocol
+  written in the canonical form scaffolded with every criterion empty. Both
+  now read either form, with the first label winning as before.
+- **Quotes of the data paper no longer raise a source-authority conflict on
+  every successor.** `detectConflicts` scanned the `## Reference Sources`
+  section, which holds the data paper verbatim, so a source sentence such as
+  "… obtained from a nearby weather station …" had to be acknowledged on the
+  accept of every later revision. Lines under that heading are now skipped
+  until the next level-2 heading; every other section is checked as before.
+- **The experimental skill's docs say what it ships.** They said the domain
+  ships no `assets/kit/`, while it ships the figure helper
+  `assets/kit/ps_figures.py`; they now say it ships no scaffold kit.
+
 ## 0.84.1
 
 - **The paper's phases and the systematic-review checklist work in a cloned
