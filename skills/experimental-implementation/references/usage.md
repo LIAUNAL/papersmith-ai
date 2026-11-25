@@ -4,7 +4,8 @@ See [SKILL.md](../SKILL.md) for the full contract. This file documents only
 this skill's own checklist-holder obligations — the declared filename, what
 happens when it is absent, and what happens when a checklist already exists
 under a different name. It does not mirror the sibling's full
-`references/usage.md`: this skill ships no `assets/kit/`, so the kit-asset
+`references/usage.md`: this skill ships no scaffold kit (its `assets/kit/` holds only the figure helper
+`ps_figures.py`), so the kit-asset
 sections there (`materialize --stage scaffold`/`objects`/`harness`, the
 placeholder token table, adoption) do not apply here (see SKILL.md's "Which
 commands are not available yet, and why").

@@ -933,3 +933,26 @@ class DiscussionViewTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ParagraphLabelTests(unittest.TestCase):
+    """experimental-deliberation's canonical form writes `**Success criterion:** ...` as a paragraph line,
+    optionally on a bullet; the Experiments view reads both forms."""
+
+    def test_paragraph_labels_are_read_and_bullets_still_work(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        (root / "experiments").mkdir()
+        (root / "experiments" / "experiments-para-v01.md").write_text(
+            "# Plan\n\n## Experiment [exp:E1] (core) — Paragraph form\n\n"
+            "**Hypothesis:** The reading rule abstains on switched worlds.\n\n"
+            "**Success criterion:** at least 0.75 of the switched worlds abstain.\n\n"
+            "**Success criterion:** a second criterion that must not replace the first.\n\n"
+            "## Experiment [exp:E2] — Bullet form\n\n"
+            "- **Success criterion:** the bullet criterion.\n",
+            encoding="utf-8")
+        protocol = experiments_view.get_experiments_view(root)["protocol"]
+        e1, e2 = protocol["experiments"]
+        self.assertEqual(e1["hypothesis"], "The reading rule abstains on switched worlds.")
+        self.assertEqual(e1["success_criterion"], "at least 0.75 of the switched worlds abstain.")
+        self.assertEqual(e2["success_criterion"], "the bullet criterion.")

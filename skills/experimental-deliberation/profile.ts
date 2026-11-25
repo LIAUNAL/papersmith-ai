@@ -32,6 +32,13 @@ import { PROSE_REFERENCE_PATTERN } from "./experiment-convention.js";
  */
 const ACHIEVED_RESULT = /\b(?:outperform(?:s|ed)|beats|beat|surpass(?:es|ed)|achiev(?:es|ed)|obtain(?:s|ed)|state[- ]of[- ]the[- ]art|significantly better|reduces the error|wins against)\b/iu;
 
+/**
+ * The level-2 heading v1 renders above every loaded read-only source fragment. Its section
+ * is the data paper quoting itself, verbatim and carried into every successor, so
+ * `detectConflicts` skips it: a source sentence there is not the plan asserting an outcome.
+ */
+const SOURCE_REFERENCE_HEADING = "Reference Sources";
+
 /** Where the data paper and dataset guidance live, and the one source that bounds every claim in this document. */
 const DATA_PAPER = "guidance/data-paper";
 
@@ -106,7 +113,7 @@ export const profile: DeliberationDomainProfile = {
 		// guide) and wrong here: this domain's declared sources are a data paper, the
 		// latest managed proposal and an area benchmark -- never a paper guide. Declared
 		// so v1 names what it actually loaded.
-		sourceReferenceHeading: "Reference Sources",
+		sourceReferenceHeading: SOURCE_REFERENCE_HEADING,
 		// Declared, unlike the mathematical sibling. A mathematical revision is answerable
 		// to its own derivation, which is timeless; an experimental one is answerable to a
 		// reader who has to know what changed between two plans before a run is launched
@@ -131,8 +138,13 @@ export const profile: DeliberationDomainProfile = {
 		detectConflicts: (candidateText) => {
 			const conflicts: { id: string; sourceName: string; claim: string; evidence: string }[] = [];
 			const seen = new Set<string>();
+			// Inside `## <SOURCE_REFERENCE_HEADING>` until the next level-2 heading: the
+			// verbatim source fragments v1 rendered, which every successor carries.
+			let inReferenceSources = false;
 			for (const line of candidateText.split("\n")) {
 				const evidence = line.replace(/\s+/gu, " ").trim();
+				if (/^## /u.test(evidence)) inReferenceSources = evidence.slice(3).trim() === SOURCE_REFERENCE_HEADING;
+				if (inReferenceSources) continue;
 				if (!evidence || !ACHIEVED_RESULT.test(evidence)) continue;
 				const id = `claimed-result:${sha256(evidence).slice(0, 12)}`;
 				if (seen.has(id)) continue;

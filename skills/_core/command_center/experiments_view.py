@@ -125,7 +125,9 @@ _PROTOCOL_RE = re.compile(r"^experiments-.+-v(\d+)\.md$")
 #: or "### 5.1 Title [exp:E1]". The title is the text after the tag, else before it.
 _EXPERIMENT_RE = re.compile(r"^#{1,6}\s+(.*?)\s*\[exp:([^\]]+)\]\s*[—–-]?\s*(.*)$")
 _REPORT_RE = re.compile(r"^###\s+Expected Report:?\s*(.*)$")
-_BULLET_RE = re.compile(r"^-\s+\*\*([^*]+?):?\*\*:?\s*(.*)$")
+#: A labelled field, as a bullet (`- **Success criterion:** ...`) or as a paragraph line (`**Success criterion:** ...`),
+#: the canonical form experimental-deliberation declares (skills/experimental-deliberation/SKILL.md, "Preservation").
+_BULLET_RE = re.compile(r"^(?:-\s+)?\*\*([^*]+?):?\*\*:?\s*(.*)$")
 _SCHEME_RE = re.compile(r"^\*\*Validation scheme:?\*\*:?\s*(.*)$", re.IGNORECASE)
 _BULLET_FIELDS = {
     "hypothesis": "hypothesis",

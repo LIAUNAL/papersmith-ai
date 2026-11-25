@@ -68,8 +68,9 @@ def main(target: str, name: str, seed: str, kit: str | None = None) -> int:
             # The one scaffold destination with no kit source: `src/` has no
             # modules yet because step 9 has written none of them, so this
             # file is engine-authored rather than copied. Preserved
-            # verbatim: `experimental-implementation` ships no `assets/kit/`
-            # at all, and this is the one write that never needs one.
+            # verbatim: `experimental-implementation` ships no scaffold kit (its
+            # `assets/kit/` holds only `ps_figures.py`), and this is the one write
+            # that never needs one.
             full.write_text(authored_package_init(name))
             continue
 

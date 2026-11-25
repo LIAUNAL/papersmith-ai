@@ -458,9 +458,9 @@ has not been through this skill yet.
 
 ## Flow A -- first pass
 
-This domain ships no `assets/kit/` (`materialize --stage scaffold` is
-unavailable, above), so a target's scaffold is hand-written, not
-materialized. Everything else follows the sibling's own first-pass shape,
+This domain ships no scaffold kit: its `assets/kit/` holds only the figure
+helper `ps_figures.py` (`materialize --stage scaffold` is unavailable,
+above), so a target's scaffold is hand-written, not materialized. Everything else follows the sibling's own first-pass shape,
 narrowed to what this domain actually has:
 
 1. Clone the target repository under `implementations/<repo>/`, then `env`
@@ -622,13 +622,15 @@ sibling's launcher, never this one: run this skill's commands through its own
 
 ## Which commands are not available yet, and why
 
-This domain ships no `assets/kit/` at all (measured this session: the kit
-sibling ships is ~99% general machinery, and copying ~2,000 lines to change the
-~20 that are not would be the exact duplication the operator refused for the
-CLI, one directory over). Consequence, stated rather than discovered:
+This domain ships no scaffold kit: its `assets/kit/` holds only the figure
+helper `ps_figures.py` (measured this session: the kit the sibling ships is
+~99% general machinery, and copying ~2,000 lines to change the ~20 that are
+not would be the exact duplication the operator refused for the CLI, one
+directory over). Consequence, stated rather than discovered:
 
 - **`materialize --stage scaffold`** and any other stage that copies kit
-  destinations reads `assets/kit/`, which this skill does not ship. A target
+  destinations reads a scaffold kit from `assets/kit/`, which this skill does
+  not ship (its `assets/kit/` holds only `ps_figures.py`). A target
   scaffolded under this domain needs its object-to-module map approved and
   written by hand, or from a kit a later change adds.
 - **A target the sibling scaffolded carries the sibling's seal**,
@@ -697,7 +699,8 @@ domain-specific one.
 
 - `references/usage.md` -- this skill's own checklist-holder obligations
   (declared filename, create-on-absent, write-refusal-into-an-undeclared-
-  holder). This skill ships no `assets/kit/`, so the sibling's own worked
+  holder). This skill ships no scaffold kit (its `assets/kit/` holds only
+  the figure helper `ps_figures.py`), so the sibling's own worked
   invocations and kit-asset sections do not apply here; see
   [`proposal-implementation/references/usage.md`](../proposal-implementation/references/usage.md)
   for those.
