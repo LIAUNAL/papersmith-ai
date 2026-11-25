@@ -30,8 +30,9 @@ primary outcome and analysis must be fixed before its data exist. It is not
 for the applied-AI line (its plan is `/experimental-deliberation`) nor for the
 review line (its protocol is `/systematic-review`'s G-PROTOCOL).
 
-The skill ships to every workspace, and no existing flow calls it yet: each
-empirical line wires it into its own flow when the line arrives.
+The skill ships to every workspace, and each of the six empirical lines
+(observational-measurement, hardware, lab-simulation, data-resource,
+experiment-intervention, qualitative-participatory) calls it from its own flow.
 
 ## The objective flow
 

@@ -37,16 +37,28 @@ number it carries:
   `/remote-parallelism` hangs off the credentials and `/experiments-tutor`
   off the reviewer's report, while `/hyperparameter-search` and
   `/experiment-diagrams` are named in the *Flow rules* card;
+- `2`, below the SOTA pool: the paper type. On the report's acceptance
+  `/paper-type` hands the idea to the `paper-type-advisor`, which relates every
+  catalogue type to it, and records the type and variant the operator agrees in
+  `.papersmith/paper_type.json`; when that type belongs to another line,
+  `smith kind set` moves the workspace there;
 - `6` to `10`: scaffolding, declarations, writing, figures and the paper. Lane 6
-  also draws the review line: `smith init --kind review` serves the nine PRISMA
-  2020 review section contracts and `/systematic-review` (`review_cli.py`)
-  replaces the experimental phases. Lane 8 draws `ai-auditor` (the writing
+  also names the eight lines a workspace can follow (`smith init --kind
+  <line>`, `manifest.LINES`): the experimental line these lanes draw, the review
+  line (`/systematic-review`, `review_cli.py`, the nine PRISMA 2020 section
+  contracts) and six empirical lines, each with a flow page of its own (below).
+  Lane 8 draws `ai-auditor` (the writing
   quality behind `ai_audit` and `humanize`) and lane 9 `figure-visual-reviewer`
   (a rendered diagram judged by eye once its mechanical audit passed). Lane 10
   draws the PDF preview tab, which carries the style and redundancy panel and
   the final judge panel: the `paper-reviewer` returns one round, `/paper-writing`
   records it with `paper_cli.py review --input <round.json>` in
-  `.papersmith/paper_review.json`, and the tab shows the verdict per round;
+  `.papersmith/paper_review.json`, and the tab shows the verdict per round
+  and types the next round's request from its *Launch the final judge* button.
+  Its second row is the tab's editor: Caztor, the LaTeX editor (files, LaTeX
+  source, PDF and assistant chat) the tab shows while its *LaTeX editor* switch
+  is on, and the *Change Control* panel, which hands the operator's marks to
+  Caztor's chat;
 - `10a`: journal choice, venue adaptation and Spanish translation after the
   compiled PDF. `/journal-finder` ranks international journals from OpenAlex
   works and sources, with the SJR quartile from the bundled SCImago 2025
@@ -98,9 +110,12 @@ and becomes an assertion. It was untracked until 0.11.0.
 Requirements: Node, and the Archify skill at the version the artifact was
 rendered with (**3.0.1** — the bytes are the renderer's, so the version is part
 of the recipe). The candidate records the repository revision it describes in
-`meta.repository.revision`, and every node's `sources` names the path and line
-range it was transcribed from, so the drawing is checkable against the code
-rather than trusted.
+`meta.repository.revision` (`REVISION` in the build), and every node's
+`sources` names the path and line range it was transcribed from, so the drawing
+is checkable against the code rather than trusted. The strict provenance gate
+reads each range at that revision, not in the working tree, so the build reads
+the agent definitions from it too (`git show`); move `REVISION` to the commit
+you transcribe and keep the ranges true there.
 
 ```bash
 SCRATCH=$(mktemp -d)
@@ -115,7 +130,9 @@ cp "$SCRATCH/papersmith-pi-flow.html" skills/_core/command_center/static/papersm
 When the browser check cannot start Chrome (it reports
 `viewer/browser-check-runtime`), point it at a Chrome or Chromium binary with
 `ARCHIFY_CHROME=<path>`, and add `ARCHIFY_CHROME_NO_SANDBOX=1` where the sandbox
-cannot start; Playwright's Chromium under `~/.cache/ms-playwright/` works.
+cannot start (a kernel that restricts unprivileged user namespaces makes
+Chromium abort with "No usable sandbox"); Playwright's Chromium under
+`~/.cache/ms-playwright/` works.
 
 The dashboard serves the second copy in its *Flujo Archify* tab, and
 `tests/test_command_center_neutral_defaults.py` holds the two byte-identical.
@@ -144,7 +161,7 @@ gate's: Archify's grid search, which routes an edge around nodes it has no
 relationship with, gives up on a scene of more than 80 obstacles
 (`maximumObstacleCount`), and an authored `via` cannot replace it, because only
 two automatic routes may cross (with a halo) -- an authored crossing is a
-showcase error. The flow is at 121 components, so every edge has to be routable
+showcase error. The flow is at 128 components, so every edge has to be routable
 without the grid: between row neighbours, straight down a column, or through
 the corridor between two rows. That is why the dashed `replication` ->
 `expBuild` arrow is gone (its relation lives in the `expBuild` tag and in the
@@ -157,7 +174,7 @@ Any new edge that only the grid can route fails at the current size.
 The page draws at whatever width the viewport gives it, so the frame is a
 capture decision rather than part of the artifact. The committed PNG is 1400px
 wide at **device pixel ratio 1**, captured full-page with `?embed=1` (which is
-what drops the viewer's own chrome); it is 1400x4764 for the current drawing. A browser driver needs those three
+what drops the viewer's own chrome); it is 1400x5214 for the current drawing. A browser driver needs those three
 parameters; the ratio is the one that is easy to get wrong, because the default
 capture comes out at 2× and a 2800px file is four times the bytes for a drawing
 nobody reads at that size.
@@ -225,3 +242,72 @@ cp "$SCRATCH/papersmith-review-flow.html" skills/_core/command_center/static/pap
 The drawing has 69 components, under the 80-obstacle limit of Archify's grid
 search, and keeps the Pi flow's five columns of 182px for the same readability
 cap. There is no PNG of it yet.
+
+# The empirical lines' flow diagrams
+
+Each empirical line has a flow page of its own,
+`papersmith-<kind>-flow.html` for `observational-measurement`, `hardware`,
+`lab-simulation`, `data-resource`, `experiment-intervention` and
+`qualitative-participatory`. Unlike the two flows above, nothing in them is
+transcribed by hand: they are generated from the line's board table,
+`LINE_TABLES` in `skills/_core/command_center/empirical_board.py`, so a page
+cannot say something its board does not.
+
+- One lane per board step, numbered and labelled as the dashboard's *Pipeline y
+  Avance* shows them. A lane reads left to right: the skills the step runs
+  (`/<skill>`, or *Operator* when it runs none), the records it writes, and the
+  operator gates the board lists under it (a gate drawn only for a validation
+  with people, or only for some variants, says so in its tag).
+- The first node of each lane carries the chain down column 0: a `security`
+  edge labelled *waits for G-…* into a step that waits for a gate
+  (`phase_gates`), a dashed *waits for nothing* edge into a step that waits for
+  nothing (`ungated`), the main path otherwise. A lane with more than five
+  nodes turns at column 4 into a second row, right to left, so every edge is
+  between row neighbours or straight down a column and the pages keep the Pi
+  flow's five columns of 182px.
+- The cards hold the line (`smith init --kind <kind>`, its summary, its extra
+  reporting checklists), the waits, every gate's criteria and who acts per step.
+- Every step and gate node cites its `Step(...)` or `Gate(...)` definition by
+  line range at the pinned revision.
+
+The dashboard serves the copy in `skills/_core/command_center/static/` in the
+*Flujo Archify* tab of a workspace of that line: `LineTable.flow_html` is
+`papersmith-<kind>-flow.html`, derived from the line's kind, and a workspace's
+own `docs/papersmith-flow.html` still wins. `tests/test_line_flow_diagrams.py`
+holds the two copies byte-identical, each page's lanes and step nodes against
+the table's steps and labels in order, its gate nodes and *waits for* edges
+against the table's gates, every cited range against the definition it names,
+and `/api/flow` against a workspace of each line.
+
+| File | What it is |
+| --- | --- |
+| `papersmith-<kind>-flow.html` | One line's page: self-contained, offline |
+| `papersmith-line-flow.build.mjs` | The layout: one Archify candidate per line from the dump |
+| `../../scripts/line_flow_candidates.py` | The dump: every `LINE_TABLES` entry with its definitions' line ranges |
+
+## Regenerating the line flows
+
+Commit the board change first: `scripts/line_flow_candidates.py` takes the
+line ranges at `--revision` (default `HEAD`) with `ast`, and refuses when a
+cited definition reads differently in the working tree, because the strict
+provenance gate checks the ranges at that revision. Then, with Archify
+**3.0.1**:
+
+```bash
+SCRATCH=$(mktemp -d)
+PYTHONPATH=$PWD/src:$PWD python scripts/line_flow_candidates.py "$SCRATCH/lines.json"
+node docs/diagrams/papersmith-line-flow.build.mjs "$SCRATCH/lines.json" "$SCRATCH"
+for kind in observational-measurement hardware lab-simulation data-resource \
+            experiment-intervention qualitative-participatory; do
+  node ~/.claude/skills/archify/bin/archify.mjs finalize architecture \
+    "$SCRATCH/$kind/candidate.json" "$SCRATCH/$kind/papersmith-$kind-flow.html" \
+    --repo-root . --quality showcase --out-dir "$SCRATCH/$kind/evidence" --json
+  cp "$SCRATCH/$kind/papersmith-$kind-flow.html" docs/diagrams/
+  cp "$SCRATCH/$kind/papersmith-$kind-flow.html" skills/_core/command_center/static/
+done
+```
+
+A new empirical line needs nothing here but its `LINE_TABLES` entry and its
+kind in the loop above (and in the test's `KINDS`). The pages have 34 to 44
+components, under the 80-obstacle limit of Archify's grid search, though no
+edge needs it. There are no PNGs of them.

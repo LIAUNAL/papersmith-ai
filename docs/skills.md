@@ -34,6 +34,14 @@ the folder name.
 flowchart TD
     IDEA["the idea, in two sentences"] --> PL["1. plausibility"]
     PDF["PDFs placed in guidance/"] --> PI["2. paper-ingestion"]
+    PL -- "the accepted idea" --> PT["30. paper-type"]
+    PT -- "applied-ai: this flow, unchanged" --> PD
+    PT -- "review: smith kind set review" --> SR["21. systematic-review"]
+    PT -- "an empirical type: smith kind set" --> EL["24-29. the empirical line skills"]
+    EL -- "the protocol stage" --> SP["31. study-protocol-deliberation"]
+    SP -- "protocol/ locked by the operator" --> EL
+    SR -- "review/ records" --> PW
+    EL -- "protocol/, study/, analysis/ records" --> PW
 
     PI -- "guidance/paper-guide (optional)" --> PD["3. proposal-deliberation"]
     PL -- "top-5 + provisional report" --> PD
@@ -90,7 +98,12 @@ and why the engine's limits are recorded in both.
 *Skill 9 is the only one that reads everything before it at once*, and 11 is not in
 the chain: it stands aside and looks at any of them, itself included.
 
-The map draws the eleven skills that take part in the flow. Skill 12,
+The map draws the eleven skills that take part in the experimental flow, and
+where the paper type sends a workspace instead: section 30, `paper-type`,
+agrees the type after plausibility; an applied-AI type keeps the flow above,
+and any other moves the workspace with `smith kind set` to its own line, whose
+skill (sections 21 and 24 to 29) routes to its records and, on an empirical
+line, to section 31, `study-protocol-deliberation`. Skill 12,
 `upgrade-project`, is not a stage: it operates on the workspace the flow runs
 inside, and its own section below explains it. Sections 13 to 19 cover the
 skills that serve the flow from beside it — `datasets`, `experiment-diagrams`,
@@ -110,7 +123,10 @@ own skill; it routes to the shared empirical modules, the allocation record
 included. Section 29, `qualitative-participatory`, is the
 qualitative-participatory line's own skill; it routes to the shared empirical
 modules and to the qualitative core (transcripts, codebook, theme sign-off,
-verbatim quotes, consensus rounds and MICMAC).
+verbatim quotes, consensus rounds and MICMAC). Section 30, `paper-type`, agrees
+the paper type after plausibility and so chooses the line; section 31,
+`study-protocol-deliberation`, is the deliberation engine's third profile, the
+protocol every empirical line locks before its data exist.
 
 ---
 
@@ -3630,6 +3646,66 @@ satisfied.
 **How it runs.** `/qualitative-participatory` owns no script and no record; the agreed variant chooses the checklist: `qualitative-mixed` reports on `srqr` (SRQR), or on `coreq` (COREQ) for a study of interviews or focus groups, `consensus-foresight` on `accord` (ACCORD), and `experience-report` has none. The overview comes from `study_cli.py status`, `qual_cli.py status`, `consensus_cli.py status`, `consensus_cli.py round status`, `consensus_cli.py micmac status` and `checklist_cli.py check --guideline <id>`. The stages are the case, panel or experience and its framework (G-STUDY-PROTOCOL, optional for an experience report; a consensus study records its plan, threshold and rounds against the lock with `consensus_cli.py plan record --by`); ethics and consent (G-ETHICS, not applicable allowed for an experience report without participant data); fieldwork, rounds or implementation (`qual_cli.py transcripts add --by`, G-TRANSCRIPTS; `consensus_cli.py panel add` and `round record --by`, G-ROUNDS); coding, consensus or reflection (`qual_cli.py codebook record` and `themes signoff --by`, G-ANALYSIS; `consensus_cli.py round status` and `micmac compute --by`); integration with prior work; writing from the SRQR-shaped contracts, every participant quote written `\pquote{<code>}{<text>}`; `qual_cli.py quotes check`, `paper_cli.py verify` (`quote-not-verbatim`), the checklist and the `qualitative-study` final judge.
 
 **What it never does.** It never generates data, never writes or edits a transcript, never invents or polishes a quote and never enters a rating: it never transcribes, prints a transcript or a member's comment, or writes a quote that is not the transcript's own words. It never recruits participants or panel members or collects material: ethics, consent, data collection and the analytic sign-off stay human. It never records a protocol approval, consensus plan, ethics record, transcript registration, panel member, round, codebook version, theme sign-off or MICMAC computation on the operator's behalf, never presents an item below the pre-specified threshold as consensus, never claims an effect for an experience report and never marks a `needs-judgment` item satisfied.
+
+### 30. `paper-type` — which kind of paper the idea becomes, agreed with the operator
+
+**When.** Right after the operator accepts the plausibility report (plausibility
+hands over here), or whenever the operator asks which kind of paper to build
+(`/paper-type`). It ships to every workspace.
+
+**How it runs.** It records the accepted idea in `.papersmith/plausibility.json`
+(`paper_type_cli.py accept --by`, which also scores it) or scores it again
+(`paper_type_cli.py score`): a deterministic 0-100 match per type of the
+catalogue (`skills/_core/paper_types/paper_types.json`, eight types: applied
+AI, review, observational and measurement, experiment or intervention,
+qualitative and participatory, hardware, laboratory and simulation, data
+resource), counted from the words that signal each type in the idea and the
+plausibility artifacts, with no model call. The `paper-type-advisor` agent then
+relates every type to the idea (`strong`, `partial`, `weak` or `none`, one
+sentence each) and proposes a type and variant; the variant chooses the
+reporting checklist. The operator agrees with `paper_type_cli.py agree --type
+--variant --by --rationale`, and the record in `.papersmith/paper_type.json`
+says what the workspace does next (`layout`): `current` (its line already
+fits), `switch:<line>` (`smith kind set <type> --by <name>` moves it, or a new
+workspace starts with `smith init --kind <line>`) or `planned` (no flow yet).
+The dashboard's *Tipo de paper* tab shows the same scores and agreement
+(`GET /api/paper-type`, `POST /api/paper-type/score`, `POST
+/api/paper-type/agree`). When the idea changes after an agreement, `score`
+marks it `agreed_stale`.
+
+**What it never does.** It never agrees on the operator's behalf (a
+non-interactive run records and scores, never agrees), never suggests a type
+for words the idea does not contain, and never runs `smith kind set` or
+changes the workspace layout itself. The full contract is
+[`skills/paper-type/SKILL.md`](../skills/paper-type/SKILL.md).
+
+### 31. `study-protocol-deliberation` — the protocol of an empirical study, fixed before its data exist
+
+**When.** In a workspace of an empirical line (observational-measurement,
+experiment-intervention, qualitative-participatory, hardware, lab-simulation,
+data-resource), at the protocol stage of its flow, and for every later
+amendment. It is not for the applied-AI line (`/experimental-deliberation`)
+nor for the review line (`/systematic-review`'s G-PROTOCOL).
+
+**How it runs.** It is the shared deliberation engine's third domain profile,
+beside `proposal-deliberation` and `experimental-deliberation`, with the same
+scaffold: resolve a locus, patch it, preview, acknowledge, publish. It keeps
+the protocol as managed revisions `protocol/study-protocol-<slug>-vNN.md` of
+labelled fields (research question, exactly one primary outcome, secondary
+outcomes, design, eligibility, sample size and its justification, analysis
+plan) and refuses a revision with zero or several primary outcomes, a sample
+size without justification, an analysis plan without a primary model, or a
+field that states a result. The operator then approves a published revision
+with `study_cli.py protocol approve --by`, which locks it by its hash
+(G-STUDY-PROTOCOL; the hardware line calls the same lock G-SPEC), and a later
+revision is an amendment (`protocol amend --by --reason`). The details are in
+*Study protocol* and *Operator records* below.
+
+**What it never does.** It never picks the primary outcome, never invents
+data, a pilot result, an effect size, a variance or a dropout rate, and never
+computes a sample size from data it has not seen; accepting a change and
+authorizing publication stay the operator's. The full contract is
+[`skills/study-protocol-deliberation/SKILL.md`](../skills/study-protocol-deliberation/SKILL.md).
 
 ### Shared empirical modules (for the empirical paper lines)
 

@@ -3,7 +3,7 @@
 > **A paper forge**: turns reference PDFs into high-fidelity Markdown that an agent can read (equations in LaTeX, tables as tables, figures as files), and drives the formal deliberation —mathematics and experimental design— through to the code that tests itself and the compiled paper.
 
 [![CI](https://github.com/LIAUNAL/papersmith-ai/actions/workflows/test.yml/badge.svg)](https://github.com/LIAUNAL/papersmith-ai/actions/workflows/test.yml)
-[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D21-green.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D21%20(Caztor%3A%2026)-green.svg)](https://nodejs.org/)
 [![Python](https://img.shields.io/badge/Python-%3E%3D3.11-blue.svg)](https://www.python.org/)
 
 <p align="center">
@@ -85,6 +85,7 @@ The full path, from a PDF to a compiled paper:
 | # | You invoke | What it does | Where it leaves the result |
 |---|---------|----------|-------------------------|
 | 1 | `/plausibility` | Explores the idea before any ingestion, in three stretches: it tracks ~25 references through their abstracts, maps the constellation in a single HTML and discusses the plausibility of the hypothesis against that SOTA. Without clear sentences, the dashboard's optional thematic help turns 3 to 5 keywords into a proposed idea from the lab bank (`banco-lia`) that you edit and approve before it runs as this prompt | `sota-pool/` (ignored, like `guidance/`) |
+| 1b | `/paper-type` (or the dashboard's *Tipo de paper* tab) | Once you accept the plausibility report: scores the idea against smith's eight paper types (a deterministic 0-100 match per type, no model call), has the `paper-type-advisor` agent relate each type to the idea and propose a type and variant, and records the type you agree. An applied-AI type keeps this flow; any other moves the workspace to its own line with `smith kind set <type> --by <name>` (see [The paper type and the eight lines](#the-paper-type-and-the-eight-lines)) | `.papersmith/plausibility.json` (the accepted idea) and `.papersmith/paper_type.json` (scores, suggestion, agreement) |
 | 2 | `/paper-ingestion` | Converts the reference PDFs into readable Markdown (equations in LaTeX, tables as tables, figures as files) | `guidance/<folder>/` |
 | 3 | `/proposal-deliberation` | Builds the proposal with you in one order — the central problem and its pillars, then the hypotheses, then the mathematics, each locked until the one before it exists — and publishes each agreement as a managed revision, with the SOTA constellation alongside; every idea is then justified by 2 to 5 SOTA pool citations, and the `paper-reviewer` agent classifies its contribution type | `proposals/` (the revision and its `graph.html`); the citations in `.papersmith/citations.json`; the contribution type in `.papersmith/model_spec.json` |
 | 3b | `/math-tutor` | Before implementing a revision: a Socratic tutor that discusses its concept map and mathematics with you, reads the pages you draw by hand, and checks your understanding of why the novelty holds | nothing on disk but its thread (`.papersmith/math-tutor/`); used from the dashboard's Mapa Conceptual & Modelo tab |
@@ -103,7 +104,7 @@ The full path, from a PDF to a compiled paper:
 | 11b | `/journal-finder` (or the PDF Preview tab's *Revistas sugeridas* block) | Once the paper compiles: you pick a quartile range (`Q1`, `Q2-Q3`, `Q1-Q4`) and it ranks the journals that already publish work like the paper, each with its quartile and where it came from, open-access state, APC, h-index, a review-time estimate and the similar works that justify the fit; an agent then reads each journal's aims and scope and writes the case for it. `--scope national` (the tab's International / National selector) ranks Colombian journals of the Publindex IBN 2026 list instead, only categories A1, A2 and B, with each one's measured submission-to-publication time and the languages it receives. It never submits and never contacts an editor | `paper/journal-candidates.json` and `paper/journal-candidates.md` |
 | 11c | `paper-writing` `venue` verbs and the `venue-adapter` agent (the PDF Preview tab's *Revista elegida* card) | After you choose a journal: reads its author guidelines and template, measures the manuscript against them and alerts on sections to adjust, sections missing and inconsistencies with smith's base template, proposes an adjustment plan only when it is prudent, and builds the journal's own `main.tex` once you approve the plan. Text changes go only through the `write` loop | `paper/venues/<slug>/` (the canonical `paper/main.tex` is never written) |
 | 11d | `paper-writing` `translate` verbs and the `translator` and `translation-style-reviewer` agents (the PDF Preview tab) | For a journal that only receives Spanish: translates the finished English manuscript into neutral academic Spanish block by block, each block passing a fidelity gate (citations, labels, math, numbers, paragraphs) before it is stored; `translate audit` scores style, flow and redundancy, and the tab compiles and previews the Spanish PDF. The English paper stays the source | `paper/translations/es/` |
-| 11e | the `paper-reviewer` final judge (the PDF Preview tab's judge panel) | Reviews the compiled paper round by round with the main-track form (overall 1-6, confidence 1-5, Quality, Clarity, Significance, Originality 1-4); `paper_cli.py review --input <round.json>` records each round and, from the second on, a verdict on every revision the previous one raised | `.papersmith/paper_review.json` |
+| 11e | the `paper-reviewer` final judge (the PDF Preview tab's judge panel and its "Run round N of the judge" button) | Reviews the compiled paper round by round on the rubric the workspace's line chooses: `ml-conference` on the experimental line (the main-track form: overall 1-6, confidence 1-5, Quality, Clarity, Significance, Originality 1-4), `systematic-review` (review), `empirical-study` (observational-measurement, experiment-intervention), `measurement-science` (hardware, lab-simulation), `data-descriptor` (data-resource) or `qualitative-study` (qualitative-participatory); `paper_cli.py review --input <round.json>` records each round, refuses a rubric that does not serve the line and, from the second round on, records a verdict on every revision the previous one raised | `.papersmith/paper_review.json` |
 | 12 | `/figure-review` | Looks at the render: rasterizes every `Figures/<id>.pdf` and measures what a raster can support (ink outside the canvas, collisions) | a visual report, never a change |
 | 13 | `/skill-audit` | Audits any of the above: what the code accepts versus what its documentation promises | a report, never a change |
 | 14 | `/upgrade-project` | Brings the workspace to the version of the CLI you have installed: it syncs the kit files and migrates the artifacts, delegating everything to `smith upgrade` | the workspace itself |
@@ -116,6 +117,46 @@ afterwards, if desired, a PDF can be placed in `guidance/reference-papers/` and 
 through `/paper-ingestion`; the deliberation is then carried out with
 `/proposal-deliberation`. Steps 4 to 10b only make sense once there's a published proposal
 and a target repository to implement it in.
+
+### The paper type and the eight lines
+
+The table above is the **experimental line**, for an applied-AI paper (a
+method measured against the state of the art). After plausibility,
+`/paper-type` decides with you which kind of paper the idea becomes: it scores
+the accepted idea against the catalogue in
+`skills/_core/paper_types/paper_types.json`, the `paper-type-advisor` agent
+relates every type to the idea, and you agree a type (and its variant, which
+chooses the reporting checklist) in the conversation or in the dashboard's
+*Tipo de paper* tab. The agreement lives in `.papersmith/paper_type.json`. A
+workspace with no agreed type stays on its line. Each type has its own line:
+its section contracts, its flow in every harness entrypoint, its line skill,
+its board in `smith ui` and its final-judge rubric.
+
+| Line (`smith init --kind`) | For | Flow |
+|---|---|---|
+| `experimental` (type `applied-ai`, the default) | A method compared with the SOTA: proposal, proof of concept, experiments | [How it works — the order](#how-it-works--the-order) |
+| `review` | Systematic, scoping or bibliometric reviews (PRISMA 2020) | [The review line](#the-review-line-systematic-reviews) |
+| `observational-measurement` | Observational studies, diagnostic validations, measurement instruments (STROBE, STARD 2015, COSMIN) | [The observational and measurement line](#the-observational-and-measurement-line) |
+| `hardware` | A device, sensor or instrument built and validated (HardwareX) | [The hardware line](#the-hardware-line) |
+| `lab-simulation` | Materials studies and modelling or simulation, with GUM uncertainty | [The lab-simulation line](#the-lab-simulation-line) |
+| `data-resource` | A corpus, dataset or benchmark as the contribution (Datasheets for Datasets) | [The data-resource line](#the-data-resource-line) |
+| `experiment-intervention` | Trials with people and field, crop or animal experiments (CONSORT 2025, ARRIVE 2.0) | [The experiment-intervention line](#the-experiment-intervention-line) |
+| `qualitative-participatory` | Qualitative or mixed-methods studies, expert consensus and foresight, experience reports (SRQR, COREQ) | [The qualitative-participatory line](#the-qualitative-participatory-line) |
+
+A new workspace picks its line with `smith init --kind <line>`. An existing
+one moves with `smith kind set <type> --by <name>` once `/paper-type` has
+scored the idea: it records the agreement, applies the line's contracts and
+flow text through `smith upgrade`, removes the other line's files only when
+unedited, and refuses once a proposal revision or `paper/main.tex` exists
+(leaving an empirical line, also a study-protocol revision or its lock),
+unless `--force` ([docs/cli.md](docs/cli.md#smith-kind-set-type-dir)).
+The empirical lines share one machinery: `/study-protocol-deliberation` and the
+operator's protocol lock, ethics and registration records, own-data
+dictionaries and quality checks, an append-only analysis log that labels each
+run confirmatory or exploratory, participant-flow diagrams and reporting
+checklists. The assistant never generates measurements or data, and never
+records ethics, consent, data collection, a sign-off or the primary outcome on
+the operator's behalf.
 
 The diagram shows the full flow: every stage in this order with
 its command, its agents (with the tools each one declares in Pi), its
@@ -152,8 +193,11 @@ page never ends the session of a running phase: a reload reattaches to it. The s
 every harness entrypoint (`CLAUDE.md`, `OPENCODE.md`, `.pi/APPEND_SYSTEM.md`,
 `.agents/AGENTS.md`) under "Paper construction flow".
 
-The dashboard has twelve tabs; the tab names below are the Spanish ones the
-dashboard shows (the interface also has an English catalogue). The header
+The dashboard's tabs depend on the workspace's line; the tab names below are
+the Spanish ones the dashboard shows (the interface also has an English
+catalogue). *Mapa Conceptual & Modelo*, *Experimentos* and *Novedad &
+Hallazgos* appear only on the experimental line, *Revisión* only on the review
+line and *Estudio* only on the empirical lines. The header
 carries the run selector (the short run id, such as `r07`, with the file name as
 tooltip), a dark/light theme toggle (dark by default; the framed Archify and
 manuscript-summary views follow it) and a text-size control (A ×1, ×1.25, ×1.5,
@@ -162,7 +206,10 @@ manuscript-summary views follow it) and a text-size control (A ×1, ×1.25, ×1.
 | Tab | What it shows |
 |---|---|
 | **Flujo Archify** | The interactive flow diagram above and the table of every agent the workspace ships. It is the tab the dashboard opens on |
-| **Pipeline y Avance** | The eleven phases with their sub-phases, their evidence on disk, their gates and each phase's console |
+| **Pipeline y Avance** | The eleven phases with their sub-phases, their evidence on disk, their gates and each phase's console (another line shows its own steps and gates) |
+| **Revisión** | A review workspace's records: protocol and registration, search log, screening progress (conflicts, kappa), PRISMA flow, extraction, risk of bias and the PRISMA 2020 checklist |
+| **Estudio** | An empirical workspace's records: the study protocol and its lock, ethics and registration, data, the analysis log, participant flow, measurement or qualitative records and the line's reporting checklist |
+| **Tipo de paper** | One card per catalogue type with its score for the idea, a short description, its reporting guideline and why it fits the idea or not; the suggested and agreed types highlighted, *Discuss with the agent* (types `/paper-type` into the agent) and *Agree type* (records the agreement and says which `smith kind set` moves the workspace) |
 | **Mapa Conceptual & Modelo** | The proposal built in five ordered steps: a stepper for the central problem and its pillars → the hypotheses → the mathematics → the SOTA citations → the judge-reviewer, each step locked until the one before it exists on disk and with a *Generar y deliberar* button that types its `/proposal-deliberation` into the agent (the mathematics step also offers `/math-tutor`); the judge-reviewer's contribution type right after the hypotheses, with affinity bars per contribution type; the pillar → hypothesis tree drawn with arrows; the novelty, the five-layer concept map and the paper's mathematics rendered in LaTeX with the `math-tutor` Socratic tutor beside it; each pillar, hypothesis, layer and equation with its SOTA citations (title, year, why and the quote of its abstract) or a mark that it owes them; its blocks fold |
 | **Experimentos** | A stepper SOTA citations → proof of concept → verify → full experiment, one button each (the full-experiment button stays disabled until `G-EXP-POC` passes), then, in flow order and folded, the protocol, datasets, proof-of-concept and full-experiment cards, the comparison, the infrastructure and run options, and the `experiments-tutor` last. Each card opens with the stage's summary and discussion read from `Results/discussion.json` (hypothesis verdicts with their evidence and tests, novelty, performance measures, qualitative gallery, limitations, next steps), and a **PoC vs full experiments** section compares each hypothesis's verdict across the two stages |
 | **Novedad & Hallazgos** | The manuscript summary diagram at the top, with its rebuild button; the proof-of-concept verification card (`G-EXP-POC`), the novelty assessment with the paper-reviewer's contribution type of the findings, and the `G-NOVELTY` gate (below) |
@@ -375,7 +422,7 @@ start.
 | **Python** | ≥ 3.11 (CI: 3.11, 3.12) | the `smith` CLI and all the Python skills | there's no possible installation |
 | **Node.js** | ≥ 21 (CI: 24; local check: 26.13.0) | the deliberation engine (`jiti`, `typebox`) and the dashboard | `init` warns and `deliberate` refuses |
 | `npm` | compatible with the selected Node (local check: 12.2.2 with Node 26.13.0) | installing those two dependencies in the workspace | same as above |
-| **Node.js 26** and `tectonic` | Node ≥ 26 (CI: 26) | Caztor, the LaTeX editor of the dashboard's PDF tab, which comes with the install and compiles with Tectonic | downloaded once, checked against pinned SHA-256, into `~/.cache/papersmith/tools/` the first time the PDF tab opens (`PAPERSMITH_NO_TOOL_DOWNLOAD=1` turns that off) |
+| **Node.js 26** and `tectonic` | Node ≥ 26 (CI: 26, Caztor's own job) | Caztor, the LaTeX editor of the dashboard's PDF tab, which comes with the install and compiles with Tectonic | downloaded once, checked against pinned SHA-256, into `~/.cache/papersmith/tools/` the first time the PDF tab opens (`PAPERSMITH_NO_TOOL_DOWNLOAD=1` turns that off) |
 
 Both are checked at once:
 
@@ -501,7 +548,8 @@ The micromamba it bootstraps is a pinned release
 whose SHA-256 is checked before it runs; the comment above `MICROMAMBA_VERSION`
 in `scripts/setup_env.py` is the procedure for moving the pin.
 The locally verified Node/npm pair (26.13.0/12.2.2) is a workstation setup,
-not a new minimum for workspaces; CI still tests Node 24. If a shell picks an
+not a new minimum for workspaces: CI tests the forge on Node 24 and Caztor on
+Node 26. If a shell picks an
 older `node` or `npm`, check `command -v node` and `command -v npm` before
 changing the project's manifests. Keep account credentials in the harness's
 user configuration, never in `.pi/settings.json` or committed files.
@@ -587,8 +635,9 @@ conclusions, and the shared back matter); and its
 7. **Writing** with `/paper-writing`, and the 27-item PRISMA 2020 checklist
    (`review_cli.py checklist`) for submission.
 
-The dashboard's phase board still shows the experimental phases; a review
-workspace follows the list in its `CLAUDE.md`. Details in
+In `smith ui` the line has its own board: the Pipeline shows the review steps
+and their gates, the *Revisión* tab the records above, the Archify tab the
+review flow diagram and the final judge the `systematic-review` rubric. Details in
 [skills/systematic-review/SKILL.md](skills/systematic-review/SKILL.md).
 
 ### The observational and measurement line
@@ -668,6 +717,55 @@ The assistant never generates measurements or data, and never records a
 calibration, ethics, consent, data collection, sign-offs or the primary
 outcome on the operator's behalf. `/hardware status` reports where the work
 stands. Details in [skills/hardware/SKILL.md](skills/hardware/SKILL.md).
+
+### The lab-simulation line
+
+A laboratory or simulation study in the physical sciences is the lab-simulation
+line, in two variants the operator agrees with `/paper-type`: `materials`
+(synthesis, deposition or processing and the characterization of the samples)
+and `modelling-simulation` (an analytical or numerical model, its solver and
+its parameters). Both report every value with its GUM uncertainty and are
+checked against the `gum-reporting` checklist (GUM, JCGM 100:2008, clause 7).
+
+```bash
+smith init ~/papers/thin-films --kind lab-simulation \
+  --title "Annealing temperature and the sheet resistance of sputtered ITO films"
+```
+
+An existing workspace moves to it with `smith kind set lab-simulation --by
+"<operator>"` once `/paper-type` has scored the idea. The workspace has the
+empirical folders (`protocol/`, `study/`, `analysis/`, `datasets/`), the
+study's section contracts in `sections/`, the `/lab-simulation` skill, and its
+`CLAUDE.md` states the line's flow:
+
+1. **Sample matrix or model definition**, decided by the operator: the samples,
+   conditions and characterization techniques, or the model, solver,
+   parameters and convergence criteria.
+2. **Synthesis or simulation protocol** with `/study-protocol-deliberation`
+   (exactly one primary observable, the replicates per condition or the
+   parameter grid, the analysis plan), approved and locked by the operator
+   (G-STUDY-PROTOCOL); ethics only when the samples come from people or
+   animals.
+3. **Characterization or observables**: the operator measures or runs the
+   model and registers each raw data file by its SHA-256 with
+   `measure_cli.py data register`.
+4. **Calibration against known values** (G-CALIBRATION): every instrument
+   recorded from its calibration certificate; a reference material, a
+   standard sample, or for a simulation an analytical solution or benchmark
+   case, reproduced first.
+5. **Uncertainty**: `measure_cli.py uncertainty compute` writes the GUM budget
+   per quantity (type A from the replicates, type B from the instruments,
+   expanded uncertainty with its coverage factor), and every fit, comparison
+   and sweep goes through the labelled analysis log.
+6. **Open data and code** deposited by the operator.
+7. **Writing** with `/paper-writing`, the `gum-reporting` checklist and the
+   final judge on the measurement-science rubric.
+
+The assistant never generates measurements or data, and never records an
+instrument, a calibration, a data registration, the parameter grid or the
+choice of the primary observable on the operator's behalf.
+`/lab-simulation status` reports where the study stands. Details in
+[skills/lab-simulation/SKILL.md](skills/lab-simulation/SKILL.md).
 
 ### The data-resource line
 
@@ -1175,6 +1273,27 @@ international journals for a quartile range you choose or Colombian Publindex
 journals (A1, A2, B) by review time, and compiles the Spanish translation when
 the chosen journal only receives Spanish
 ([Choosing and adapting to a journal](#choosing-and-adapting-to-a-journal)).
+The final judge's panel has a "Run round N of the judge" button that types the
+next round's request into the agent.
+
+**Caztor, the LaTeX editor in the PDF tab.** The tab's toolbar switches between
+the PDF viewer and Caztor, a LaTeX editor that comes with the install: files,
+editor, the PDF it compiles with Tectonic (into `.caztor/build`, never
+`paper/main.pdf`) and an assistant chat that can run opencode, Claude Code, Pi
+or Antigravity with the workspace's tutors and reviewers as switches. Caztor
+starts when the tab opens with the **LaTeX editor** switch on, bound to
+loopback and framed only by the dashboard; switching it off shows the viewer
+and stops Caztor, and it also stops with `smith ui`. It needs
+Node.js 26 and `tectonic`; when either is missing, smith downloads it once
+into `~/.cache/papersmith/tools/` and checks it against a pinned SHA-256
+(`PAPERSMITH_NO_TOOL_DOWNLOAD=1` turns that off). The editor opens only in a
+browser holding the terminal login: the access link `smith ui` prints (or the
+browser it opens), the same one the CLI assistant needs; without it the tab
+says so, offers **Activate** and shows the viewer. The toolbar also holds
+Style & redundancy, open in a new tab and the Change Control toggle, whose
+panel folds to a narrow handle. Details in
+[docs/cli.md](docs/cli.md#smith-ui-dir).
+
 `smith audit .` and `/skill-audit` report across every phase; they never
 repair.
 
@@ -1198,7 +1317,7 @@ my-paper/
 │   ├── manifest.json            #   hashes of everything the framework generated
 │   ├── runs_ledger.jsonl        #   every dispatched run, in order
 │   └── version                  #   framework version that created it
-├── .claude/agents/              # the thirty-one subagents (single source of truth)
+├── .claude/agents/              # the thirty-three subagents (single source of truth)
 ├── skills/                      # the kit copy: the skills + _core
 │   └── _core/                   #   the two shared engines (deliberation, implementation)
 ├── sections/                    # the ten section contracts (they travel WITH content, like skills/)
@@ -1425,7 +1544,7 @@ repo-only).
 
 ## The agents
 
-A workspace ships **thirty-one subagents** in `.claude/agents/`. They are short
+A workspace ships **thirty-three subagents** in `.claude/agents/`. They are short
 bursts of work that a harness launches (for example, with the Task tool) on
 request, not replacements for the CLI. The shape is always the
 same — **one burst between two operator gates**: the agent decides
@@ -1454,16 +1573,18 @@ to establish it. The operator opens and closes the gates.
 | `diagram-author` | Writes a standalone TikZ diagram (`<id>.tex` + `<id>.diagram.json`) and compiles it in its own loop, up to the repair budget. It never draws a chart from measured numbers — that is the `place` verb. | `paper-writing` |
 | `figure-auditor` | Compares the components declared in the manifest against the section's prose and the pipeline steps; reports a structured verdict. | `paper-writing` |
 | `figure-visual-reviewer` | One visual pass over one rendered diagram whose mechanical audit already passed: reads a preview of at most 1400 px once and judges legibility at print scale, balance, overlaps and whether labels and arrows read correctly. Returns PASS, or FAIL with concrete fixes; it never edits a file. | `paper-writing`, `experiment-diagrams` |
-| `paper-reviewer` | Reviews the compiled paper with the main-track review form; grounds pertinence, novelty and coherence in quoted evidence. It is also the judge-reviewer that scores the proposal's and the findings' contribution type, with an affinity per type. | `paper-writing` |
+| `paper-reviewer` | Reviews the compiled paper on the rubric the workspace's line chooses (`ml-conference`, the main-track review form, on the experimental line; `systematic-review`, `empirical-study`, `measurement-science`, `data-descriptor` or `qualitative-study` on the others); grounds pertinence, novelty and coherence in quoted evidence. It is also the judge-reviewer that scores the proposal's and the findings' contribution type, with an affinity per type. | `paper-writing` |
 | `section-grounding-auditor` | Reads a block's own bound source section, verbatim, and judges each subject sentence against it: `supported` — with the quoted span that carries it —, `unsupported` or `undecidable`. No code path invokes it, and `write` re-derives both sides independently rather than trusting its account. | `paper-writing` |
 | `insumos-observer` | Reads the paper's four declared input sources —`proposals/`, `experiments/`, the destination repo's code and its own run outputs— and reports, for each observable fact, whether it holds and with what evidence. It never decides a value nor runs `declare`. | `paper-writing` |
 | `ai-auditor` | Measures writing quality (sentence-cadence variation $CV$, overused academic phrasing, formulaic transitions, lexical diversity) and revises written blocks for clarity under the strict F5 invariant preservation contract (citations, numbers, math inviolable). It never hides AI use: the AI-use declaration stays mandatory. | `paper-writing` |
 | `novelty-screener` | Discusses the hypothesis against the pool's abstracts, grades novelty and plausibility with an exact citation —all provisional— and ranks the top-5 for later ingestion, closing with a plausibility paragraph. Dialogue with a report at the end; it does not publish, does not write, does not ingest, does not deliberate. | `plausibility` |
 | `sota-scout` | Tracks the idea across the open literature —25 references with abstracts, each in its family (3 to 7 in the pool)— as `sota-pool/candidates.json`. It ends in the pool; it does not ingest nor finally grade anything. | `plausibility` |
+| `paper-type-advisor` | One paper-type reading after plausibility: from the accepted idea, its deterministic scores against the paper-type catalogue and what plausibility found, it relates every type to the idea and proposes a type and variant for the operator to agree. It reads only; it never writes the workspace nor records an agreement. | `paper-type` |
 | `sota-grapher` | Maps the pool to its constellation —one solar system per paper grouped by family, 20 planets maximum, edges between sibling systems— as `atlas.json` plus the single `atlas.html`, running checker and renderer until green. | `plausibility` |
 | `translator` | Translates one block (or one fragment outside the blocks: title, heading, caption) of the finished, verified English manuscript into neutral academic Spanish, from the English text, the paper's glossary of protected terms and the block's last style findings; keeps every citation key, label, formula, number and paragraph. It hands the Spanish body to `paper_cli.py translate store`, which judges it, and never edits `paper/main.tex`. | `paper-writing` |
 | `translation-style-reviewer` | Reads `translate audit` (style, flow, redundancy, cross-block repetition, per-block fidelity) and the stored Spanish blocks against their English, judges what the script cannot see (a restated idea, a sentence that drifted, a calque) and proposes a fix per finding with each location quoted. It never edits a file nor assigns a score. | `paper-writing` |
 | `venue-adapter` | Reads a chosen journal's author guidelines and template and measures the manuscript against them: requirements (each one a quote and a url), sections to adjust, sections missing and inconsistencies with smith's base template; proposes an adjustment plan only when prudent and iterates it with the operator until they approve its exact text. It writes nothing and never submits. | `paper-writing` |
+| `prompt-reviewer` | One prompt review for a phase prompt that failed the deterministic prompt gate: returns an improved prompt that keeps every requirement of the original, or the clarifying questions that make one possible. It reads only; it never writes the workspace nor launches the skill. | `prompt-gate` |
 | `audit-report` | Audits a subject that enumerates a closed set —operations, subcommands, codes, assets— looking for the gap between what its code accepts and what its documentation promises. It reports; it never repairs. | `skill-audit` |
 
 Three rules that order everything else:
@@ -1471,7 +1592,7 @@ Three rules that order everything else:
 - **The source of truth is `.claude/agents/`.** Each harness's routing docs
   (`CLAUDE.md`, `.pi/APPEND_SYSTEM.md`, `OPENCODE.md`,
   `.agents/AGENTS.md`) list
-  all thirty-one, and they are generated: an agent is changed
+  all thirty-three, and they are generated: an agent is changed
   there, not in the projection.
 - **Each agent declares the skill it loads** (`skills/<name>/SKILL.md`), and that
   binding is verified: an agent that points at a skill the workspace does not
@@ -1482,8 +1603,8 @@ Three rules that order everything else:
   operator's account nor the draft on their own.
 
 **Which model runs each agent.** An agent with no `model:` line runs on the
-session's model. Three agents only read (`Read`, `Glob`, `Grep`) and hold no
-gate — `math-tutor`, `insumos-observer` and `style-sampler` — so they carry
+session's model. Three of the agents that only read (`Read`, `Glob`, `Grep`)
+and hold no gate — `math-tutor`, `insumos-observer` and `style-sampler` — carry
 `model: sonnet`. Claude Code reads that line straight from `.claude/agents/`,
 because the workspace copies that directory rather than rendering it. The
 projections for the other harnesses drop the line. Pi has no cited per-agent

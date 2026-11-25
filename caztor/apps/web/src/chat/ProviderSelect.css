@@ -46,7 +46,7 @@
   opacity: 0.7;
 }
 
-/* In the row after the logo or name, never over it: a long name such as "Codex" has no free corner. */
+/* In the row after the name, never over it: a long name such as "Antigravity" has no free corner. */
 .provider-select__option {
   gap: var(--space-2);
 }

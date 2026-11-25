@@ -177,8 +177,8 @@ class HardwareStepsTests(MeasurementBoardCase):
         self.assertEqual(len(re.findall(r"^\s*(\d+)\. \*\*", flow, re.M)), len(HW_STEPS))
         self.assertEqual(list(empirical_board.LINE_TABLES[HARDWARE].steps), HW_STEPS)
 
-    def test_the_flow_diagram_falls_back_to_the_shared_one(self) -> None:
-        self.assertEqual(lines.board(HARDWARE).flow_html, "papersmith-flow.html")
+    def test_the_flow_diagram_is_the_line_s_own(self) -> None:
+        self.assertEqual(lines.board(HARDWARE).flow_html, "papersmith-hardware-flow.html")
         self.assertEqual(TestClient(server.create_app(self.workspace())).get("/api/flow").status_code, 200)
 
     def test_the_agreed_hardware_type_passes_step_two(self) -> None:

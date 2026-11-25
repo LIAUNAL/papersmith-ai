@@ -81,6 +81,29 @@ def read_workspace_version(workspace: Path, default: str) -> str:
     return text.strip() if text and text.strip() else default
 
 
+#: Agent definitions in `.claude/agents/` that another tool owns, by file stem.
+#: Caztor writes `caztor.md` there and its own opencode and Antigravity copies
+#: (`.opencode/agents/caztor.md`, `.agents/agents/caztor.md`), and never writes
+#: `.pi/`; smith neither lists nor projects them, so `upgrade` cannot overwrite
+#: Caztor's copies or create a Pi one.
+FOREIGN_AGENTS = frozenset({"caztor"})
+
+#: The agent files those tools write themselves, which smith must never remove
+#: even when an older release baselined them as its own projections.
+FOREIGN_AGENT_FILES = frozenset(
+    f"{directory}/{name}.md" for name in FOREIGN_AGENTS
+    for directory in (".claude/agents", ".opencode/agents", ".agents/agents"))
+
+
+def _smith_agent_files(agent_dir: Path) -> list[Path]:
+    """The `*.md` definitions in ``agent_dir`` that are smith's, sorted.
+
+    Raises ``OSError`` like :meth:`Path.glob`; callers keep their fail-soft
+    handling.
+    """
+    return sorted(path for path in agent_dir.glob("*.md") if path.stem not in FOREIGN_AGENTS)
+
+
 def collect_agents(workspace: Path) -> list[dict[str, str]]:
     """Read only agent names/descriptions from the canonical front matter.
 
@@ -94,7 +117,7 @@ def collect_agents(workspace: Path) -> list[dict[str, str]]:
     if not fs.is_dir(agent_dir):
         return agents
     try:
-        candidates = sorted(agent_dir.glob("*.md"))
+        candidates = _smith_agent_files(agent_dir)
     except OSError:
         return agents
     for path in candidates:
@@ -881,7 +904,9 @@ def _translate_agent_for_antigravity(
 def _collect_projected_agents(
     workspace: Path, translate: Any, *, warnings: list[str] | None,
 ) -> list[dict[str, str]]:
-    """Project every `.claude/agents/*.md` definition through ``translate``.
+    """Project every smith `.claude/agents/*.md` definition through ``translate``.
+
+    The definitions other tools own (:data:`FOREIGN_AGENTS`) are left out.
 
     ``translate`` returns ``(entry, skip_reason, notes)``. Fail-soft by
     contract, like :func:`collect_commands`: a definition that is not a regular
@@ -893,7 +918,7 @@ def _collect_projected_agents(
     if not fs.is_dir(agent_dir):
         return agents
     try:
-        candidates = sorted(agent_dir.glob("*.md"))
+        candidates = _smith_agent_files(agent_dir)
     except OSError:
         return agents
     skipped: list[str] = []

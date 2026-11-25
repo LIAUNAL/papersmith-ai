@@ -2463,7 +2463,10 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         # the dashboard: the line's board names it (lines.board, read per
         # request like the board): the review line's (a copy of
         # docs/diagrams/papersmith-review-flow.html) for a review workspace,
-        # else the Pi flow (a copy of docs/diagrams/papersmith-pi-flow.html).
+        # each empirical line's own (a copy of
+        # docs/diagrams/papersmith-<kind>-flow.html, generated from its
+        # LineTable) for a workspace of that line, else the Pi flow (a copy of
+        # docs/diagrams/papersmith-pi-flow.html).
         flow_path = root_path / "docs" / "papersmith-flow.html"
         if not flow_path.is_file():
             shipped = lines.board(paper_type_view.decision.current_line(root_path)).flow_html

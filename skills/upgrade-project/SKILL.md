@@ -202,6 +202,20 @@ at: the file is left as it is, the report lists it under **unsynchronized**,
 and it stays drift until the markers are repaired. Edit outside the block, not
 inside it: a line added inside the block is replaced on the next upgrade.
 
+### The paper line is kept
+
+`upgrade` never changes a workspace's line. It reads `paper_kind` from
+`.papersmith/config.json` (absent means `experimental`) and keeps it, and the
+kit it copies is filtered for that line (`manifest.kit_layout`): files only
+another line receives (its section contracts, its line skill, its folders) are
+never copied in, and a non-experimental line's contracts are served at
+`sections/`. A section contract the workspace edited is kept and reported as
+`Kept edited contract: <path>`; `smith upgrade --force` replaces it with the
+kit's. Moving a workspace to another line is not an upgrade: it is
+`smith kind set <type> --by <name>` after `/paper-type` has scored the idea
+(see `docs/cli.md`), which records the agreement and then runs the upgrade for
+the new line.
+
 ## Reading the result
 
 The report names the workspace, the version, the count of changed files, and

@@ -230,10 +230,12 @@ describe("login hints", () => {
 });
 
 describe("Antigravity in the header", () => {
-  it("shows its official logo, account-only mode, and the agy sign-in hint", async () => {
+  it("shows its name as text, account-only mode, and the agy sign-in hint", async () => {
     await setup([provider("antigravity", { modes: ["account"], keys: [], slot: null })]);
     const header = screen.getByRole("group", { name: "Assistant" });
-    expect(within(header).getAllByRole("img", { name: "Antigravity" })).toHaveLength(2);
+    expect(within(header).getByText("Antigravity", { selector: ".provider-logo--large" })).toBeInTheDocument();
+    expect(within(header).getByRole("radio", { name: "Antigravity" })).toHaveAttribute("aria-checked", "true");
+    expect(within(header).queryAllByRole("img")).toHaveLength(0);
     expect(within(signIn()).getAllByRole("radio")).toHaveLength(1);
     expect(within(screen.getByTestId("login-hint")).getByText("agy", { selector: "code" })).toBeInTheDocument();
   });

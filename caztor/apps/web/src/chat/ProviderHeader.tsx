@@ -21,7 +21,7 @@ interface ProviderHeaderProps {
   login?: { api: LoginApi; pollMs: number; onEnded: () => void } | undefined;
 }
 
-/** The top of the chat pane: the active provider's logo, its state, the provider and model choices, and New chat. */
+/** The top of the chat pane: the active provider's name, its state, the provider and model choices, and New chat. */
 export function ProviderHeader({ listing, running, onSelect, onModel, onAuthMode, onSaveKey, onDeleteKey, onNewChat, login }: ProviderHeaderProps) {
   const active: ProviderInfo | undefined = listing.providers.find((provider) => provider.id === listing.selected);
   return (

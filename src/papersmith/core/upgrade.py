@@ -17,6 +17,7 @@ from ..generators import (
     PI_SETTINGS_FILE,
     ensure_mcp_servers,
     seed_pi_settings,
+    FOREIGN_AGENT_FILES,
 )
 from ..kit import resolve_and_validate_origin
 from ..schema import validate_tools
@@ -68,6 +69,10 @@ def _orphaned(root: Path, previous_managed: set[str], current_render: set[str]) 
     eligible: list[str] = []
     for path in previous_managed:
         if not path.startswith(DYNAMIC_PREFIXES) or path in current_render:
+            continue
+        # Caztor writes its own agent files there; an older release baselined
+        # smith-written copies of them, which are now Caztor's to keep.
+        if path in FOREIGN_AGENT_FILES:
             continue
         if not _contained(path):
             continue

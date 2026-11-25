@@ -13,6 +13,81 @@ number is `0`, breaking changes can still arrive without a major bump.
 
 ## Unreleased
 
+- **Paper types: plausibility now ends by agreeing which kind of paper the idea
+  becomes (#198, closes #197).** `/paper-type` records the accepted idea in
+  `.papersmith/plausibility.json`, scores it 0-100 against a catalogue of eight
+  types (`skills/_core/paper_types/paper_types.json`, deterministic, no model
+  call), has the new `paper-type-advisor` agent relate each type to the idea,
+  and records the type and variant the operator agrees in
+  `.papersmith/paper_type.json`. The dashboard gains a *Tipo de paper* tab
+  (`/api/paper-type`, `/api/paper-type/score`, `/api/paper-type/agree`) and an
+  advisory sub-step 2.5 that locks nothing. `smith kind set <type> --by <name>`
+  moves a workspace to the agreed type's line: it applies the line's contracts
+  and flow text through `smith upgrade`, removes the other line's files only
+  when unedited, and refuses once a proposal revision or `paper/main.tex`
+  exists (or, leaving an empirical line, a study protocol) unless `--force`. `smith upgrade` no longer overwrites
+  a section contract the workspace edited (`--force` still does). The
+  applied-AI (`experimental`) flow is unchanged, pinned by a characterization
+  test.
+
+- **Eight paper lines (#198-#205).** `smith init --kind` takes `experimental`,
+  `review`, `observational-measurement`, `hardware`, `lab-simulation`,
+  `data-resource`, `experiment-intervention` and `qualitative-participatory`.
+  Each line has its section contracts, its flow in every harness entrypoint,
+  its line skill, its own board in `smith ui` (steps, gates, a *Revisión* or
+  *Estudio* tab) and a final-judge rubric (`systematic-review`,
+  `empirical-study`, `measurement-science`, `data-descriptor`,
+  `qualitative-study`; `ml-conference` stays the experimental one). The
+  empirical lines share `/study-protocol-deliberation` and the operator's
+  protocol lock, ethics and registration records, own-data dictionaries and
+  quality checks, an append-only analysis log that labels runs confirmatory or
+  exploratory, participant-flow diagrams, a measurement core (GUM uncertainty,
+  Bland-Altman and ICC agreement) and a reporting-checklist engine (PRISMA
+  2020, STROBE, STARD 2015, COSMIN, HardwareX, GUM, Datasheets, CONSORT 2025,
+  ARRIVE 2.0, SRQR, COREQ, ACCORD). The assistant never generates data or
+  records an operator's decision.
+
+- **The experiment-intervention line records the allocation, never the
+  list.** The operator's allocation record (method, row count, concealment)
+  is bound to the list's hash, and a trial with people needs a prospective
+  registration.
+
+- **The qualitative-participatory line quotes participants verbatim.**
+  Registered transcripts, codebook versions and theme sign-off, quotes
+  checked by `verify`, and consensus rounds with MICMAC.
+
+- **Caztor, a LaTeX editor in the PDF tab (#196, closes #195).** The PDF
+  Preview tab can show Caztor (files, LaTeX editor, the PDF it compiles with
+  Tectonic into `.caztor/build`, and an assistant chat) in place of the
+  viewer. It comes prebuilt with the install, runs on Node.js 26 and
+  `tectonic` (downloaded once and checked against pinned SHA-256 when
+  missing), binds loopback, can be framed only by the dashboard and stops with
+  `smith ui`. Its page token is handed only to a browser holding the terminal
+  login, through a per-launch key passed in the environment; downloads run
+  outside the editor's lock, so stopping never waits for one. Both bundles
+  ship third-party notices, and `scripts/build-caztor.py --require` refuses a
+  Node older than 26. The final judge's panel gains a "Run round N of the
+  judge" button.
+
+- **A new PDF tab layout (#196).** One toolbar serves the viewer and the
+  editor (editor switch, Style & redundancy, open in a new tab, the Change
+  Control toggle with its pending count); the Change Control panel folds to a
+  narrow handle; the editor and the viewer fill the window height; the board
+  banner shows one title line with a Details toggle. Opening the CLI
+  assistant takes the keyboard from Caztor, and a reload asks for Caztor
+  again instead of keeping an old message.
+
+- **One locked dependency set (#207, closes #58).** `env/environment.yml` is
+  the single dependency source, locked with conda-lock for linux-64, osx-64,
+  osx-arm64 and win-64 (`env/cpu.conda-lock.yml`; CUDA and ROCm locks
+  beside it). `scripts/setup_env.py install` and CI build the environment
+  from the lock instead of solving hand-written lists, and the dashboard's
+  own runtime takes its bounds from `env/environment.yml`; `install` skips
+  the rebuild when the environment matches its lock (`--rebuild` forces it)
+  and downloads everything before replacing it. `requirements.txt` is generated from the
+  same source; `scripts/lock-env.py` refreshes the locks
+  (`docs/releasing.md`).
+
 - **WSL: the dashboard opens the login URL in the Windows browser again
   (#188).** Without `wslview`, `smith ui` and the **Activate** button handed
   the terminal login URL to `explorer.exe`, which opens the Documents folder

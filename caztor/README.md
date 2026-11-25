@@ -335,6 +335,6 @@ Opt-in checks use real programs. They are skipped unless the variable is set:
 
 `packages/core` and `packages/api` import no Node built-in; a test enforces it. Everything the app needs from the machine is behind a port, which keeps a future Cloudflare deployment possible: the web app on Pages, `core` and `api` on a Worker, and the local adapters replaced by cloud ones (R2 or Durable Objects for files, a container for Tectonic). **The terminal-backed chat is local-only**: it needs the provider command-line programs on your machine, so a hosted version would need an API-based assistant instead.
 
-## Logos and notices
+## Names and notices
 
-The provider logos are the owners' marks, used only to show which assistant is active. Caztor is independent and not affiliated with Anthropic, opencode or OpenAI. Their origin, hashes and terms are in [`NOTICE.md`](NOTICE.md).
+Caztor ships no vendor logo: each assistant is shown by its name, as text. The names belong to their owners; Caztor is independent and not affiliated with Anthropic, opencode, OpenAI or Google. Notices are in [`NOTICE.md`](NOTICE.md), and the third-party licences of the bundled code in each build's `THIRD_PARTY_NOTICES.md`.

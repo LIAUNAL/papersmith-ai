@@ -5,20 +5,6 @@
   justify-content: center;
 }
 
-.provider-logo img {
-  display: block;
-  width: auto;
-  object-fit: contain;
-}
-
-.provider-logo--small img {
-  height: 1.25rem;
-}
-
-.provider-logo--large img {
-  height: 1.75rem;
-}
-
 .provider-logo--text {
   font-weight: var(--weight-semibold);
   white-space: nowrap;

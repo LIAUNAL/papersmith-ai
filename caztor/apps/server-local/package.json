@@ -2,6 +2,7 @@
   "name": "@caztor/server-local",
   "version": "0.0.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "dependencies": {
     "@hono/node-server": "^2.1.4",
