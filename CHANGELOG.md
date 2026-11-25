@@ -11,6 +11,21 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.84.1
+
+- **The paper's phases and the systematic-review checklist work in a cloned
+  or moved workspace.** A provenance record keeps the contract path that
+  `substitute --contract` received, which is absolute on the machine that
+  wrote the block. On any other machine that path is gone, so
+  `paper_cli.py phases` crashed with `FileNotFoundError`, and
+  `review_cli.py checklist`, which reads `phases`, reported every declaration
+  as missing (PRISMA item 24 owed although `review-registration` was
+  declared). `plan`, `phases` and `verify` now look the contract up by file
+  name in the workspace's own `sections/` first, and fall back to the
+  recorded path, so a copy on the same machine reads its own contracts. A
+  contract found nowhere reads as `drifted` instead of crashing the report.
+  The persisted record is unchanged, so no migration is needed.
+
 ## 0.84.0
 
 - **Idea shaping: an optional guided phase before plausibility.** An operator
