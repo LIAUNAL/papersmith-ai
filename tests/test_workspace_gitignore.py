@@ -140,6 +140,15 @@ class EngineStateIsIgnoredTests(unittest.TestCase):
         self.assertTrue(_ignored(self.workspace, "analysis/streams/" + "0" * 64))
         self.assertFalse(_ignored(self.workspace, "analysis/log.jsonl"))
 
+    def test_caztors_local_state_is_ignored_without_the_user_adding_it(self) -> None:
+        # The in-browser editor keeps its builds, chats and provisioned guides
+        # under `.caztor/`; the workspace ignores it from `smith init` on.
+        text = (self.workspace / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("\n.caztor/\n", text)
+        self.assertTrue(_ignored(self.workspace, ".caztor/build/main.pdf"))
+        self.assertTrue(_ignored(self.workspace, ".caztor/guides/INDEX.md"))
+        self.assertFalse(_ignored(self.workspace, "paper/.gitkeep"))
+
     def test_running_the_engine_leaves_nothing_new_for_git_to_track(self) -> None:
         link_node_modules(self.workspace)
         if not (self.workspace / "node_modules").exists() or shutil.which("node") is None:

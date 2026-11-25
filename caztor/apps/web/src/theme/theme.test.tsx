@@ -1,7 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { ProviderLogo } from "../chat/ProviderLogo.tsx";
 import { createThemeStore, THEME_KEY } from "./theme.ts";
 import { ThemeControl } from "./ThemeControl.tsx";
 
@@ -60,19 +59,5 @@ describe("the theme control", () => {
     await userEvent.selectOptions(control, "dark");
     expect(control).toHaveValue("dark");
     expect(document.documentElement.dataset["theme"]).toBe("dark");
-  });
-});
-
-describe("the logo of a provider with a dark variant", () => {
-  const media = (container: HTMLElement) => container.querySelector("source")?.getAttribute("media");
-
-  it("follows the manual theme, not only the system's", async () => {
-    const store = createThemeStore(memory());
-    const { container } = render(<ProviderLogo provider="opencode" />);
-    expect(media(container)).toBe("(prefers-color-scheme: dark)");
-    await act(async () => store.set("dark"));
-    expect(media(container)).toBe("all");
-    await act(async () => store.set("light"));
-    expect(media(container)).toBe("not all");
   });
 });

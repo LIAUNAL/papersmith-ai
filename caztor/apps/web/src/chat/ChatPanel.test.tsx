@@ -136,18 +136,12 @@ describe("ChatPanel", () => {
 });
 
 describe("ChatPanel header", () => {
-  it("shows the active provider's logo at the top without repeating its name as text", async () => {
+  it("shows the active provider's name as text at the top, with no logo image", async () => {
     await setup();
     const header = screen.getByRole("group", { name: "Assistant" });
-    expect(within(header).getAllByRole("img", { name: "Claude Code" }).length).toBeGreaterThan(0);
-    expect(within(header).queryByText("Claude Code")).toBeNull();
-  });
-
-  it("falls back to the name as text when the logo fails to load", async () => {
-    await setup();
-    const header = screen.getByRole("group", { name: "Assistant" });
-    for (const image of within(header).getAllByRole("img", { name: "Claude Code" })) fireEvent.error(image);
-    expect(within(header).getAllByText("Claude Code").length).toBeGreaterThan(0);
+    expect(within(header).getByText("Claude Code", { selector: ".provider-logo--large" })).toBeInTheDocument();
+    expect(within(header).getByRole("radio", { name: "Claude Code" })).toHaveAttribute("aria-checked", "true");
+    expect(within(header).queryAllByRole("img")).toHaveLength(0);
   });
 
   it("switches provider from the selector and shows the other conversation", async () => {

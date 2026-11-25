@@ -14,7 +14,7 @@ interface ProviderSelectProps {
 }
 
 /**
- * The main providers as one radio group of logos: arrow keys move the choice among them, only the selected one is in
+ * The main providers as one radio group of names: arrow keys move the choice among them, only the selected one is in
  * the tab order. The other providers follow in a "More providers" dropdown; while one of them is active it shows there
  * and no radio is checked. An unavailable provider can be chosen, so its reason and the re-check are shown, but it
  * cannot start a turn.

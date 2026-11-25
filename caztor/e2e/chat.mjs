@@ -122,14 +122,11 @@ try {
     console.log(`Real turns: ${stored.length}; cost per turn (USD): ${JSON.stringify(usage.map((u) => u?.costUsd ?? null))}`);
     check("no console errors or CSP violations", problems.length === 0, problems.join(" | "));
   } else {
-    // 1. The header: the real logo, and no provider name as text.
+    // 1. The header: the active provider by its name, as text (Caztor ships no vendor logo).
     const header = chat.getByRole("group", { name: "Assistant" });
     await header.waitFor();
-    const logos = await header.getByRole("img", { name: "Claude Code" }).count();
-    check("the active provider's logo is shown", logos >= 1);
-    const loaded = await header.getByRole("img", { name: "Claude Code" }).first().evaluate((image) => image.complete && image.naturalWidth > 0);
-    check("the logo file loads from this origin", loaded);
-    check("the provider name is not repeated as text", (await header.getByText("Claude Code", { exact: true }).count()) === 0);
+    check("the active provider's name is shown as text", (await header.getByText("Claude Code", { exact: true }).count()) >= 1);
+    check("no provider logo image is shown", (await header.getByRole("img", { name: "Claude Code" }).count()) === 0);
     check("opencode, codex and antigravity are listed", (await header.getByRole("radiogroup", { name: "Provider" }).getByRole("radio").count()) === 4);
     check("Pi is offered in the More providers dropdown, not as a radio", (await header.getByRole("combobox", { name: "More providers" }).getByRole("option", { name: "Pi" }).count()) === 1);
 
@@ -225,11 +222,7 @@ try {
     await chat.getByRole("heading", { name: /Codex is not available/ }).waitFor({ timeout: 5000 });
     check("an unavailable provider shows its reason and a re-check", (await chat.getByText(/not available yet/).count()) >= 1 && (await chat.getByRole("button", { name: "Check again" }).count()) === 1 && (await box.isDisabled()));
     check("selecting Codex shows the disclosure that it can run commands in its sandbox", (await chat.getByRole("note", { name: "Codex runs commands" }).innerText()).includes("inside its own sandbox"));
-    const codexLogo = chat.getByRole("group", { name: "Assistant" }).getByRole("img", { name: "Codex" }).first();
-    check("the Codex logo file loads from this origin", await codexLogo.evaluate((image) => image.complete && image.naturalWidth > 0));
-    const dot = await chat.getByRole("radio", { name: "Codex" }).locator(".provider-select__flag").boundingBox();
-    const mark = await chat.getByRole("radio", { name: "Codex" }).getByRole("img").boundingBox();
-    check("the unavailable dot does not overlap the Codex logo", dot !== null && mark !== null && (dot.x >= mark.x + mark.width || dot.y >= mark.y + mark.height || dot.x + dot.width <= mark.x || dot.y + dot.height <= mark.y));
+    check("the Codex choice shows its name as text", (await chat.getByRole("radio", { name: "Codex" }).getByText("Codex").count()) >= 1);
     await page.screenshot({ path: join(outDir, "05-codex-unavailable-light.png") });
     await page.emulateMedia({ colorScheme: "dark" });
     await pause(400);
@@ -292,22 +285,14 @@ try {
     await chat.getByText("please edit the title").first().waitFor({ timeout: 10000 });
     check("history is restored after a reload", (await chat.getByText("please edit the title").count()) >= 1 && (await chat.locator(".tool-card").count()) >= 1);
 
-    // 6. The logo text fallback when the file cannot load.
-    await page.route("**/assets/claude-*.svg", (route) => route.abort());
-    await page.reload({ waitUntil: "load" });
-    const fallbackHeader = page.getByRole("region", { name: "Chat" }).getByRole("group", { name: "Assistant" });
-    await fallbackHeader.getByText("Claude Code").first().waitFor({ timeout: 10000 });
-    check("the provider name appears as text when the logo cannot load", (await fallbackHeader.getByRole("img", { name: "Claude Code" }).count()) === 0);
-    await page.screenshot({ path: join(outDir, "04-logo-fallback.png") });
-    await page.unroute("**/assets/claude-*.svg");
-    // 7. Antigravity, on a scripted runner: logo, permanent notice, account only, and how it looks at both window sizes.
+    // 7. Antigravity, on a scripted runner: its name, permanent notice, account only, and how it looks at both window sizes.
     await page.reload({ waitUntil: "load" });
     const assistant = page.getByRole("region", { name: "Chat" }).getByRole("group", { name: "Assistant" });
     await assistant.getByRole("radio", { name: "Antigravity" }).click();
     const isolation = page.getByRole("note", { name: "Antigravity isolation" });
     await isolation.waitFor({ timeout: 10000 });
     check("the Antigravity notice names ~/.gemini and offers no way to dismiss it", (await isolation.innerText()).includes("~/.gemini") && (await isolation.getByRole("button").count()) === 0);
-    check("the Antigravity logo is shown", (await assistant.getByRole("img", { name: "Antigravity" }).count()) >= 1);
+    check("Antigravity is shown by its name", (await assistant.getByText("Antigravity", { exact: true }).count()) >= 1);
     const summary = page.locator("details.auth-panel summary");
     await summary.waitFor({ timeout: 10000 });
     if (!(await page.locator("details.auth-panel").evaluate((node) => node.open))) await summary.click();
@@ -339,8 +324,8 @@ try {
       await pause(300);
       await page.screenshot({ path: join(outDir, `06-pi-${width}.png`) });
     }
-    // The refusals this script provokes on purpose (409 undo conflicts, a model that is required) and the logo request it
-    // aborts on purpose are logged by the browser as failed resource loads; anything else, a CSP violation above all, is a failure.
+    // The refusals this script provokes on purpose (409 undo conflicts, a model that is required) are logged by the
+    // browser as failed resource loads; anything else, a CSP violation above all, is a failure.
     const unexpected = problems.filter((p) => !/status of 409|net::ERR_FAILED/.test(p));
     check("no console errors or CSP violations in the normal flows", unexpected.length === 0 && !problems.some((p) => /Content Security Policy/i.test(p)), unexpected.join(" | "));
   }

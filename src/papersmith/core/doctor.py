@@ -266,12 +266,15 @@ def _skill_rows(root: Path, wiring: dict[str, Any], tools: list[str]) -> list[di
 
 def _agent_rows(root: Path, wiring: dict[str, Any], tools: list[str]) -> list[dict[str, str]]:
     try:
-        from ..generators import AGENT_DIRS
+        from ..generators import AGENT_DIRS, FOREIGN_AGENTS
     except ImportError:  # pragma: no cover - the table ships with the package
-        AGENT_DIRS = _AGENT_DIRS_FALLBACK
+        AGENT_DIRS, FOREIGN_AGENTS = _AGENT_DIRS_FALLBACK, frozenset({"caztor"})
     rows = []
     for agent in wiring.get("agents", []):
         name = agent.get("name", "?")
+        if name in FOREIGN_AGENTS:
+            # Another tool's definition (Caztor's), not a smith agent.
+            continue
         state = agent.get("state")
         if state == "MISSING":
             rows.append(_row("agents", name, "fail", agent.get("detail") or "absent"))

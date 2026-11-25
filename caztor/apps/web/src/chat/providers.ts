@@ -1,30 +1,22 @@
 import type { ProviderId } from "@caztor/core";
-import antigravityLogo from "../assets/providers/antigravity.svg?no-inline";
-import claudeLogo from "../assets/providers/claude.svg?no-inline";
-import codexLogo from "../assets/providers/codex.svg?no-inline";
-import opencodeLogoDark from "../assets/providers/opencode-logo-dark.svg?no-inline";
-import opencodeLogoLight from "../assets/providers/opencode-logo-light.svg?no-inline";
 
 export interface ProviderMeta {
   id: ProviderId;
-  /** The name shown as text only when the logo is missing or fails to load. */
+  /**
+   * The name the chat shows for the provider, as text. No vendor logo ships with Caztor (see NOTICE.md): every provider,
+   * in the selector and the header, is a text label.
+   */
   name: string;
   /** The command the user installs. */
   command: string;
-  /**
-   * The vendor's official logo, shipped unmodified (see NOTICE.md). `dark` is the variant for dark color schemes.
-   * Null when no official asset could be obtained: the name is shown as text instead. Codex has no logo of its own: it
-   * shows the OpenAI mark.
-   */
-  logo: { light: string; dark?: string } | null;
 }
 
 export const PROVIDER_META: Record<ProviderId, ProviderMeta> = {
-  opencode: { id: "opencode", name: "opencode", command: "opencode", logo: { light: opencodeLogoLight, dark: opencodeLogoDark } },
-  claude: { id: "claude", name: "Claude Code", command: "claude", logo: { light: claudeLogo } },
-  codex: { id: "codex", name: "Codex", command: "codex", logo: { light: codexLogo } },
-  antigravity: { id: "antigravity", name: "Antigravity", command: "agy", logo: { light: antigravityLogo } },
-  pi: { id: "pi", name: "Pi", command: "pi", logo: null },
+  opencode: { id: "opencode", name: "opencode", command: "opencode" },
+  claude: { id: "claude", name: "Claude Code", command: "claude" },
+  codex: { id: "codex", name: "Codex", command: "codex" },
+  antigravity: { id: "antigravity", name: "Antigravity", command: "agy" },
+  pi: { id: "pi", name: "Pi", command: "pi" },
 };
 
 /**

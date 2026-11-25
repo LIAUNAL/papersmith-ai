@@ -56,7 +56,7 @@ describe("ProviderSelect", () => {
 
     it("shows opencode, Claude Code, Pi and Antigravity as radios, and neither Codex nor a More providers dropdown", () => {
       setup({ providers: all });
-      expect(screen.getAllByRole("radio").map((radio) => radio.textContent || radio.querySelector("img")?.getAttribute("alt"))).toEqual(["opencode", "Claude Code", "Pi", "Antigravity"]);
+      expect(screen.getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["opencode", "Claude Code", "Pi", "Antigravity"]);
       expect(screen.queryByRole("radio", { name: "Codex" })).toBeNull();
       expect(screen.queryByRole("combobox", { name: "More providers" })).toBeNull();
     });
