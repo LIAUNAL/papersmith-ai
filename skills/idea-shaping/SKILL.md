@@ -1,6 +1,6 @@
 ---
 name: idea-shaping
-description: "Trigger: when the operator has only a vague idea for a paper and asks for help shaping it before plausibility (`/idea-shaping`, `smith idea`, or the dashboard's Idea tab). An optional guided phase (lane 2a): the operator decides the sources (banco-lia, another bank MCP, or none), states a profile, experience and interests one question at a time, the idea-guide agent proposes three candidate topics with evidence, the operator picks or combines them, and a two-sentence draft that passes the plausibility prompt gate is handed off as `/plausibility <draft>` only when the operator launches it. Records every step in `.papersmith/idea_brief.json` through the `smith idea` CLI."
+description: "Trigger: when the operator has only a vague idea for a paper and asks for help shaping it before plausibility (`/idea-shaping`, `smith idea`, or the dashboard's Idea tab). An optional guided phase (lane 2a): the operator decides the sources (banco-lia, another bank MCP, or none), states a profile, experience and interests one question at a time, the engine proposes three candidate topics with evidence (the idea-guide agent adds its own suggestions and a draft), the operator picks or combines the engine's topics, and a two-sentence draft that passes the plausibility prompt gate is handed off as `/plausibility <draft>` only when the operator launches it. Records every step in `.papersmith/idea_brief.json` through the `smith idea` CLI."
 ---
 
 # Idea Shaping
@@ -85,12 +85,13 @@ interests --keywords LIST`, `--domain TEXT` and `--admired TEXT`.
 
 ## Step 5 — candidate topics
 
-`smith idea topics --propose` computes three deterministic candidates from
-the interests, the profile topics and, when the chosen bank is compatible, the
-bank's hits, with OpenAlex volume counts of the last four years when
-reachable. This skill then delegates to the `idea-guide` agent, which reads
-the brief and returns three candidate topics, each with a rationale and its
-evidence, and a draft.
+`smith idea topics --propose` computes three deterministic candidates, `t1`
+to `t3` (`--n N` for another number), from the interests, the profile topics
+and, when the chosen bank is compatible, the bank's hits, with OpenAlex volume
+counts of the last four years when reachable, and records them in the brief.
+These engine topics are the only topics the brief holds. This skill then
+delegates to the `idea-guide` agent, which reads the brief and returns its own
+three topic suggestions, each with a rationale and its evidence, and a draft.
 
 **Measure this before delegating.** `smith idea show --json` must hold a bank
 choice (`bank.choice` is not empty) and at least one interest keyword; a
@@ -100,28 +101,35 @@ shape. When the chosen bank is conversation-only, query it yourself through
 its `mcp__<server>__*` tools first and hand the agent the hits you used, each
 with the tool and query that returned it.
 
-Show the operator, in their language, one card per topic: its title, the
-rationale and every evidence item with its source. Then ask the operator to
-pick one topic, combine two or three, or ask for new candidates, and record
-the choice with `smith idea topics --choose t1,t2` (the operator's own note
-goes in the choice when they give one).
+Show the operator, in their language, one card per engine topic: its id,
+title, rationale and every evidence item with its source. Show the guide's
+suggestions beside them in the conversation, labelled as the guide's; no verb
+records them. Then ask the operator to pick one engine topic, combine two or
+three, or ask for new candidates (`smith idea topics --propose` again, for
+example after changing the interests; it clears the previous pick). Record the
+choice with `smith idea topics --choose t1,t3`. When the operator prefers an
+angle from a guide suggestion, record it with the closest engine topics and
+the angle in their words: `smith idea topics --choose t1 --note TEXT`.
 
 ## Step 6 — draft, gate and handoff
 
-Compose the draft with `smith idea draft --compose`, or start from the
-agent's draft and record it with `smith idea draft --text -` (the text on
-stdin). The draft states, in at least two sentences, the problem and the
-proposal, built from the chosen topics. Check it with `smith idea draft
---check`: it runs the plausibility rules of the prompt gate (at least 15 words
-and two sentences, naming a problem and a proposal) and records the score and
-what is missing. Show the operator the draft and the gate result; they edit it
-until it passes and they agree with it.
+Compose the draft with `smith idea draft --compose`, or record the guide's
+draft (or the operator's edit of it) with `smith idea draft --text -` (the
+text on stdin). Both record the draft, unapproved, with its prompt-gate
+result: the plausibility rules (at least 15 words and two sentences, naming a
+problem and a proposal), its score and what is missing. The draft states, in
+at least two sentences, the problem and the proposal, built from the chosen
+topics. `smith idea draft --check` only scores, the `--text` given or else
+the recorded draft, and records nothing: use it to try an edit before
+recording it. Show the operator the draft and the gate result; they edit it
+until it passes and they agree with it, and the text they keep is recorded
+with `--text -`.
 
 When the operator approves it, record the approval with `smith idea approve`
-(it refuses while the gate fails) and print the handoff with `smith idea
-handoff`, which returns `/plausibility <draft>`. Show that line to the
-operator: typing it, or pressing **Launch plausibility** in the Idea tab, is
-the operator's decision. Never run `/plausibility` on the operator's behalf.
+(it refuses while the gate fails, and prints the handoff line); `smith idea
+handoff` prints the same `/plausibility <draft>` again later. Show that line
+to the operator: typing it, or pressing **Launch plausibility** in the Idea
+tab, is the operator's decision. Never run `/plausibility` on the operator's behalf.
 
 ## Rules
 
@@ -138,9 +146,26 @@ the operator's decision. Never run `/plausibility` on the operator's behalf.
   the engine or a tool returned it.
 - **Record through the CLI.** Never hand-edit `.papersmith/idea_brief.json`.
 - **Non-interactive runs** (`claude -p`, `pi -p`, scheduled jobs): run `smith
-  idea start --answers FILE.json --bank banco-lia|none|SERVER --yes` when the
-  operator gave an answers file, report the topics and the draft, and never
-  approve or hand off.
+  idea start --answers FILE.json --bank banco-lia|none|SERVER` (without
+  `--yes`, which approves the draft when the gate passes) when the operator
+  gave an answers file, report the topics and the draft, and never approve or
+  hand off.
+
+## Refusals
+
+A refused verb prints `<CODE>: <message>` (with `--json`, `{"ok": false,
+"error": <CODE>, "message": ...}`) and exits 1; the refused step is not
+recorded. Tell the
+operator the message and what to do; never work around it by editing a file.
+
+- Brief and steps: `BRIEF_UNREADABLE`, `NOT_A_WORKSPACE`, `ANSWERS_UNREADABLE`,
+  `LEVEL_UNKNOWN`, `STEP_UNKNOWN`, `STEP_INVALID`.
+- Sources: `BANK_CHOICE_INVALID`, `SERVER_MISSING`, `SERVER_UNKNOWN`,
+  `SERVER_MANAGED`, `SERVER_EXISTS`, `SERVER_NAME_INVALID`, `SERVER_SPEC`,
+  `FIELD_TYPE`, `MCP_CONFIG_UNREADABLE`, `MCP_CONFIG_SYMLINK`.
+- Topics: `TOPICS_ABSENT`, `TOPIC_MISSING`, `TOPIC_UNKNOWN`.
+- Draft and handoff: `DRAFT_EMPTY`, `DRAFT_TOO_LONG`, `DRAFT_ABSENT`,
+  `DRAFT_GATE_FAILED`, `DRAFT_NOT_APPROVED`.
 
 ## When a delegated agent cannot be spawned
 
@@ -155,9 +180,12 @@ inline and why the agent could not be spawned.
 
 ## Guide contract
 
-The `idea-guide` agent returns exactly one JSON object, which this skill
-records with the CLI (`topics --choose` after the operator picks, `draft
---text -` for the draft the operator keeps):
+The `idea-guide` agent returns exactly one JSON object. No verb stores its
+`topics`: they are suggestions shown to the operator in the conversation, and
+the brief's topics stay the engine's (`topics --propose`). What this skill
+records is the operator's choice among the engine's topics (`topics --choose
+t1,…`, with the angle of a guide suggestion in `--note` when the operator
+wants it) and the draft the operator keeps (`draft --text -`):
 
 ```json
 {
@@ -172,4 +200,5 @@ records with the CLI (`topics --choose` after the operator picks, `draft
 }
 ```
 
-`topics` holds three candidates, `t1` to `t3`.
+`topics` holds three suggestions, `t1` to `t3` in the guide's own numbering,
+which is not the brief's: never pass a guide id to `topics --choose`.

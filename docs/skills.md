@@ -203,18 +203,22 @@ snippets are never abstracts or quotes. Without the key nothing changes. Details
 in [mcp.md](mcp.md#literature-discovery-ai2s-asta-asta).
 
 **Thematic help, when the operator has no sentences yet.** The skill itself only
-ever receives an idea. In the dashboard, the box that opens on phase 2 offers an
-optional *Ayuda temática*: the operator types 3 to 5 keywords, the dashboard's
-server queries the lab bank through the `banco-lia` MCP (`search_bank`), and the
-panel shows the best-matching LIA items, the topics they belong to and a proposed
-idea, composed deterministically from the keywords and those matches (no model
-call). The operator edits it and presses **Aprobar y lanzar**, which sends
-`/plausibility <idea>` through the normal launch path; nothing runs without that
-click. For the skill, a draft that arrives this way is an idea like any other: the
-two-sentence minimum still applies, and the bank items are LIA continuity context,
-never SOTA evidence and never cited as such. The help needs `uv`/`uvx` and the
-`banco-lia` entry of `.mcp.json`; what it calls and how it behaves offline is in
-[mcp.md](mcp.md#the-dashboards-thematic-help).
+ever receives an idea. An operator without one goes first to the optional idea
+shaping ([section 32](#32-idea-shaping--a-vague-idea-shaped-into-two-sentences-before-plausibility)):
+`/idea-shaping`, `smith idea`, or the dashboard's *Idea* tab, which phase 2's
+console opens with **Shape the idea first**. In step 4 of that tab, with
+`banco-lia` as the source, **Ask the bank** sends 3 to 5 keywords to the
+dashboard's server, which queries the lab bank through the `banco-lia` MCP
+(`search_bank`); the panel shows the best-matching LIA items, the topics they
+belong to and a proposed idea, composed deterministically from the keywords and
+those matches (no model call). **Use as the draft** records it as the step-6
+draft, which the operator edits, approves and sends with **Launch
+plausibility** as `/plausibility <idea>`; nothing runs without that click. For
+the skill, a draft that arrives this way is an idea like any other: the
+two-sentence minimum still applies, and the bank items are LIA continuity
+context, never SOTA evidence and never cited as such. The help needs `uv`/`uvx`
+and the `banco-lia` entry of `.mcp.json`; what it calls and how it behaves
+offline is in [mcp.md](mcp.md#the-dashboards-thematic-help).
 
 ### 2. `paper-ingestion` — from PDF to Markdown
 
@@ -3731,11 +3735,15 @@ queried). (2) Profile: an ORCID iD, an OpenAlex author, or a Google Scholar
 link used only to find the author in OpenAlex or ORCID (Scholar is never
 scraped); the author's works are summarised into topics. (3) Experience:
 level, methods, data and equipment access, time. (4) Interests: keywords,
-application domain, an admired paper. (5) Topics: the engine proposes three
-candidates deterministically from the interests, the profile and the chosen
-bank's hits, with OpenAlex volume counts of the last four years; the skill
-delegates to the `idea-guide` agent, which returns three topics with their
-rationale and evidence and a draft; the operator picks or combines them.
+application domain, an admired paper; in the Idea tab this step also carries
+the bank's thematic help (*Ask the bank*). (5) Topics: the engine proposes
+three candidates deterministically from the interests, the profile and the
+chosen bank's hits, with OpenAlex volume counts of the last four years, and
+records them; the skill delegates to the `idea-guide` agent, which suggests
+three topics of its own with their rationale and evidence, and a draft. The
+guide's topics are shown in the conversation and never recorded; the operator
+picks or combines the engine's topics (`topics --choose`), with the angle of a
+guide suggestion as the pick's note when they want it.
 (6) Draft: at least two sentences naming a problem and a proposal, checked
 live by the prompt gate with the plausibility rules; `approve` refuses while
 the gate fails, and `handoff` prints `/plausibility <draft>`. The questions

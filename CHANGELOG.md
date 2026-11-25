@@ -21,14 +21,33 @@ number is `0`, breaking changes can still arrive without a major bump.
   only through the agent's own tools), or none. Then it asks for the author
   profile (ORCID, OpenAlex, or a Google Scholar link used only to find the
   author in OpenAlex; Scholar is never scraped), the experience and the
-  interests, one question at a time. The new read-only `idea-guide` agent
-  proposes three topics, each with its evidence named by source, and a draft
-  of at least two sentences checked live against the plausibility prompt
-  gate; once the operator approves it, `smith idea handoff` prints
-  `/plausibility <draft>`, which only the operator launches. Every step is
-  recorded in `.papersmith/idea_brief.json`. The flow text of every harness,
-  the plausibility skill, the README and `docs/skills.md` (section 32) and
-  `docs/cli.md` (`smith idea`) describe it.
+  interests, one question at a time. The engine proposes three topics, each
+  with its evidence named by source (in the CLI and the tab); in
+  `/idea-shaping` the new read-only `idea-guide` agent also suggests topics
+  and drafts in the conversation. The operator picks or combines the engine's
+  topics, and a draft of at least two sentences is checked live against the
+  plausibility prompt gate; once the operator approves it, `smith idea
+  approve` (and later `smith idea handoff`) prints `/plausibility <draft>`,
+  which only the operator launches. Every step is recorded in
+  `.papersmith/idea_brief.json`; its file mode is kept when it is rewritten.
+  The flow text of every harness, the plausibility skill, the README and
+  `docs/skills.md` (section 32) and `docs/cli.md` (`smith idea`) describe it.
+- **The Idea tab replaces Phase 2's inline thematic help.** Phase 2's console
+  no longer carries the *Ayuda temática* keyword box: its **Shape the idea
+  first** button (*Construir la idea primero*) opens the new *Idea* tab, whose
+  step 4 holds the bank help (*Ask the bank*, still
+  `POST /api/plausibility/suggest` for `banco-lia`, or the `search` action of
+  `/api/idea/bank` for another compatible bank); its proposed idea becomes
+  the step-6 draft, launched with **Launch plausibility**. The tab's routes are
+  `GET /api/idea` and `POST /api/idea/{bank,profile,experience,interests,topics,choose,draft,approve}`,
+  same-origin only; an engine refusal answers `{"ok": false, "code",
+  "message"}` with `409` for a damaged file (`BRIEF_UNREADABLE`,
+  `MCP_CONFIG_UNREADABLE`) and `422` otherwise, including `FIELD_TYPE` for a
+  field that is not text.
+- **`smith idea bank --add` writes `.mcp.json` safely.** It adds the server
+  entry keeping every other server and the file's mode, refuses a symlinked
+  `.mcp.json` (`MCP_CONFIG_SYMLINK`) and a non-text server field
+  (`FIELD_TYPE`).
 
 ## 0.83.0
 

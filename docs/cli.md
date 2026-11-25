@@ -244,7 +244,7 @@ is recorded.
 
 ```bash
 smith idea                                   # start: the six steps, interactively
-smith idea start --answers answers.json --bank none --yes
+smith idea start --answers answers.json --bank none
 smith idea bank --list
 smith idea bank --choose banco-lia
 smith idea profile --orcid 0000-0002-1825-0097
@@ -263,20 +263,34 @@ helps an operator with a vague idea reach the two sentences `/plausibility`
 needs, and records every step in `.papersmith/idea_brief.json`, which
 plausibility and `/paper-type` may read. `smith idea` forwards to the engine
 `skills/_core/idea/idea_cli.py`; plain `smith idea` runs `start`. Every verb
-takes `--json` to print JSON on stdout.
+takes the workspace as `ROOT` or `--root DIR` (default: the current
+directory) and `--json` to print one JSON object on stdout.
 
 | Verb | What it does |
 |------|--------------|
-| `start` | Runs steps 1 to 6 interactively, one question at a time. `--answers FILE.json` runs them without interaction from a file of answers, `--bank banco-lia\|none\|<server>` sets the step-1 source, and `--yes` accepts the proposals without asking |
+| `start` | Runs steps 1 to 6 interactively, one question at a time. `--answers FILE.json` runs them without interaction from a JSON object whose keys are the steps: `bank`, `profile`, `experience`, `interests`, `chosen`, `draft`, plus `n` (how many topics) and `approve`; `--bank banco-lia\|none\|<server>` sets the step-1 source; `--yes` approves the draft without asking when the prompt gate passes |
 | `show` | Prints the brief |
-| `bank` | Step 1, the sources. `--list` lists `banco-lia` and the other servers of the workspace's `.mcp.json` that smith does not manage; `--probe SERVER` runs `initialize` and `tools/list` and reports whether it is available and compatible (it exposes `search_bank`, optionally `taxonomy`) and its tools; `--choose banco-lia\|none\|SERVER` records the choice (a compatible server is searched like banco-lia; any other is usable only through the agent's own `mcp__<server>__*` tools; `none` queries no bank); `--add NAME --command ...` or `--add NAME --url ...` writes a server entry to `.mcp.json`, keeping the other servers |
+| `bank` | Step 1, the sources. `--list` (also what `bank` with no option does) lists `banco-lia` and the other servers of the workspace's `.mcp.json` that smith does not manage; `--probe SERVER` runs `initialize` and `tools/list` and reports whether it is available and compatible (it exposes `search_bank`, optionally `taxonomy`) and its tools; `--choose banco-lia\|none\|SERVER` records the choice (a compatible server is searched like banco-lia; any other is usable only through the agent's own `mcp__<server>__*` tools; `none` queries no bank); `--add NAME --command CMD` or `--add NAME --url URL` writes a server entry to `.mcp.json`, keeping the other servers and the file's mode, and refuses a symlinked `.mcp.json` |
 | `profile` | Step 2. `--orcid`, `--openalex`, `--scholar` or `--name` finds the author in OpenAlex and summarises their works into topics. A Google Scholar link is used only to find the author's name; Scholar is never scraped. Offline or unmatched, it records the reason and never fails |
-| `experience` | Step 3: `--level student\|early-career\|experienced\|senior`, `--methods LIST`, `--resources LIST` (data, equipment, compute), `--time TEXT`; each answer is merged, never erasing the others |
+| `experience` | Step 3: `--level student\|early-career\|experienced\|senior`, `--methods LIST`, `--resources LIST` (data, equipment, compute), `--time TEXT`; lists are comma-separated, and each answer is merged, never erasing the others |
 | `interests` | Step 4: `--keywords LIST`, `--domain TEXT`, `--admired TEXT` (title or DOI) |
-| `topics` | Step 5. `--propose` computes three candidate topics from the interests, the profile and, when the chosen bank is compatible, its hits, each evidence item naming its source, with OpenAlex counts of the last four years when reachable; `--choose t1,t2` records the operator's pick or combination |
-| `draft` | Step 6. `--compose` writes a draft of two or more sentences naming a problem and a proposal from the chosen topics; `--text -` stores the text read from stdin; `--check` runs the plausibility rules of the prompt gate and records the score and what is missing |
-| `approve` | Records the operator's approval of the draft; refuses while the gate fails |
+| `topics` | Step 5. `--propose` computes three candidate topics (`--n N` for another number) from the interests, the profile and, when the chosen bank is compatible, its hits, each evidence item naming its source, with OpenAlex counts of the last four years when reachable; it clears the previous pick. `--choose t1,t2` records the operator's pick or combination, and `--note TEXT` the angle they want with it |
+| `draft` | Step 6. `--compose` composes a draft of two or more sentences naming a problem and a proposal from the chosen topics; `--text TEXT` (`-` reads stdin) records the operator's own text. Both record the draft, unapproved, with its prompt-gate result (score and what is missing). `--check` only scores the `--text` given, else the recorded draft, against the plausibility rules of the prompt gate and records nothing. With no option it prints the recorded draft |
+| `approve` | Records the operator's approval of the draft and prints the handoff line; refuses while the gate fails |
 | `handoff` | Prints `/plausibility <draft>`; refuses unless the draft is approved. It never launches plausibility |
+
+A refusal prints `<CODE>: <message>` on stderr (with `--json`, `{"ok": false,
+"error": <CODE>, "message": ...}` on stdout) and exits 1; a usage error exits
+2. The codes:
+
+- Brief and steps: `BRIEF_UNREADABLE`, `NOT_A_WORKSPACE`, `ANSWERS_UNREADABLE`,
+  `LEVEL_UNKNOWN`, `STEP_UNKNOWN`, `STEP_INVALID`.
+- Sources: `BANK_CHOICE_INVALID`, `SERVER_MISSING`, `SERVER_UNKNOWN`,
+  `SERVER_MANAGED`, `SERVER_EXISTS`, `SERVER_NAME_INVALID`, `SERVER_SPEC`,
+  `FIELD_TYPE`, `MCP_CONFIG_UNREADABLE`, `MCP_CONFIG_SYMLINK`.
+- Topics: `TOPICS_ABSENT`, `TOPIC_MISSING`, `TOPIC_UNKNOWN`.
+- Draft and handoff: `DRAFT_EMPTY`, `DRAFT_TOO_LONG`, `DRAFT_ABSENT`,
+  `DRAFT_GATE_FAILED`, `DRAFT_NOT_APPROVED`.
 
 ### `smith status [<dir>]`
 
@@ -762,7 +776,7 @@ the kit's `env/environment.yml` declares) once into `$XDG_CACHE_HOME/papersmith/
 when that install fails (offline) does it refuse, naming `smith env install`.
 
 Serves the **Paper Command Center**: a local dashboard inside the workspace with
-its twelve tabs, the eleven phases of the paper flow, the gates (`G-EXP-POC`,
+its tabs (fifteen in an experimental workspace), the eleven phases of the paper flow, the gates (`G-EXP-POC`,
 `G-NOVELTY` and `G1` to `G4`), the ten-section matrix and the health of the
 harness wiring. It updates by itself as the phases advance: the server watches
 `sections/`, `openspec/`, `experiments/`, `paper/`, `sota-pool/`,
@@ -786,13 +800,59 @@ python -m skills._core.command_center.server --port 8080
 
 **The tabs.** The dashboard opens on *Flujo Archify* (the interactive flow diagram,
 served at `/api/flow`, and the table of the workspace's agents from `/api/agents`).
-The rest, in order: *Pipeline y Avance*, *Tipo de paper*, *Mapa Conceptual & Modelo*, *Experimentos*,
-*Novedad & Hallazgos*, *Secciones del Paper*, *Atlas de Grafos*, *Previsualización
-PDF*, *Artefactos*, *Historia con IA*, *Telemetría y Costos* and *Smith Doctor* (the
-table `smith doctor` prints). The English catalogue calls them Archify Flow,
-Pipeline and Progress, Paper Type, Concept Map & Model, Experiments, Novelty & Findings, Paper
-Sections, Graph Atlas, PDF Preview, Artifacts, AI History, Telemetry and Costs, and
-Smith Doctor.
+The rest, in order, in an experimental workspace: *Pipeline y Avance*, *Idea*,
+*Tipo de paper*, *Mapa Conceptual & Modelo*, *Experimentos*, *Novedad &
+Hallazgos*, *Oficina de Agentes*, *Secciones del Paper*, *Atlas de Grafos*,
+*Previsualización PDF*, *Artefactos*, *Historia con IA*, *Telemetría y Costos*
+and *Smith Doctor* (the table `smith doctor` prints). The English catalogue
+calls them Archify Flow, Pipeline and Progress, Idea, Paper Type, Concept Map &
+Model, Experiments, Novelty & Findings, Agents Office, Paper Sections, Graph
+Atlas, PDF Preview, Artifacts, AI History, Telemetry and Costs, and Smith
+Doctor. A review workspace shows *Revisión* after *Pipeline y Avance* and an
+empirical one *Estudio*, in place of the three experimental tabs.
+
+**The Idea tab.** *Idea* is the optional idea-shaping phase before
+`/plausibility` (lane 2a; [`smith idea`](#smith-idea-verb-dir) is its terminal
+front end and `/idea-shaping` its skill), shown on every line. A six-step
+stepper (sources with their status chips, profile, experience, interests,
+topics as cards with their evidence, and the draft with its live prompt-gate
+score) records every step in `.papersmith/idea_brief.json` through the same
+engine as `smith idea`; a reload opens the first unanswered step. Step 4
+carries the bank's thematic help (*Ask the bank*): for `banco-lia` it calls
+`POST /api/plausibility/suggest` (below), for another compatible bank the
+`search` action of `/api/idea/bank`; *Use as the draft* records the bank's
+proposed idea as the step-6 draft. *Talk to the guide* types `/idea-shaping`
+into the agent without pressing Enter, and *Launch plausibility* is enabled
+only while the editor holds the approved draft unchanged: it types
+`/plausibility <draft> [prompt-gate: approved]` into the agent. Its routes,
+each same-origin only (else `403`) except the `GET`, and each answering the
+tab's whole state (`{ok, brief, choices, levels, ready, handoff}`, plus
+`result` for the step):
+
+- `GET /api/idea` returns the brief, the bank choices of `.mcp.json` and,
+  once the draft is approved, its handoff line.
+- `POST /api/idea/bank` with `{"action": "list"|"probe"|"choose"|"add"|"search", ...}`
+  (`server`, `choice`, `name`, `command`, `url`, `query`); `list` is the
+  default; `add` writes the server to `.mcp.json` like `smith idea bank --add`
+  and chooses it.
+- `POST /api/idea/profile` with `{"text"}` (an ORCID iD, OpenAlex id, Scholar
+  link or name) or the explicit `orcid`, `openalex_author`, `scholar_url`,
+  `name`.
+- `POST /api/idea/experience` (`level`, `methods`, `resources`, `time`) and
+  `POST /api/idea/interests` (`keywords`, `domain`, `admired_paper`).
+- `POST /api/idea/topics` with `{"n"}` proposes topics; `POST /api/idea/choose`
+  with `{"topic_ids", "note"}` records the pick.
+- `POST /api/idea/draft` with `{"action": "compose"|"text"|"check", "text"}`:
+  `compose` (the default) and `text` record the draft with its gate result,
+  `check` only scores the text (or the recorded draft).
+- `POST /api/idea/approve` approves the recorded draft.
+
+A refusal of the engine answers `{"ok": false, "code", "message"}`: `409` for
+a damaged file the operator must fix (`BRIEF_UNREADABLE`,
+`MCP_CONFIG_UNREADABLE`), `422` for every other code (the list under
+[`smith idea`](#smith-idea-verb-dir), plus `ACTION_UNKNOWN`, `PROFILE_MISSING`,
+`QUERY_MISSING`, `TOPICS_N_INVALID`, and `FIELD_TYPE` for a field that is not
+text or a list of texts).
 
 **The Paper type tab.** *Tipo de paper* (*Paper Type* in English) shows every
 type of the paper-type catalogue as a card: its score for the accepted idea,
@@ -984,20 +1044,22 @@ The gates follow the same order: `G-EXP-POC` passes once a proof of concept clos
 with a complete discussion and the operator verified it (`smith novelty approve
 --gate poc`, or the verification card of *Novedad & Hallazgos*); `G-NOVELTY` turns
 `ACTIVE` once Phase 5 passes and `PASS` when the operator approves the findings;
-`G1` to `G4` read Phases 6 to 9. Phase 2's console carries the optional thematic
-help described below. `/api/state` carries the diagram's edges (`pipeline_chain`
+`G1` to `G4` read Phases 6 to 9. Phase 2's console offers **Shape the idea
+first** (*Construir la idea primero*), which opens the *Idea* tab; the thematic
+help lives in that tab's step 4. `/api/state` carries the diagram's edges (`pipeline_chain`
 and `gate_links`) in its payload instead of the frontend; its tramos follow the
 same order and map onto the eleven phases (Phase 5 as five tramos: protocol,
 proof of concept, full experiments, credentials, remote run).
 
-**Thematic help for `/plausibility`.** Clicking phase 2 opens its console. Under
-*Ayuda temática (palabras clave)* (*Thematic help (keywords)* in English), 3 to 5
-keywords — each trimmed, non-empty, at most 40 characters, duplicates ignored
-regardless of case — become a query to the `banco-lia` MCP. The panel shows the
-ranked LIA items, the topics they fall under and a proposed `/plausibility` idea
-(at least two sentences, in the dashboard's language) that you edit; **Aprobar y
-lanzar** sends `/plausibility <idea>` through the same launch path as the box's
-own prompt, and nothing is launched without that click. The route is
+**Thematic help for `/plausibility`.** In step 4 (interests) of the *Idea*
+tab, with `banco-lia` chosen as the source, **Ask the bank** (*Consultar el
+banco*) turns 3 to 5 keywords — each trimmed, non-empty, at most 40
+characters, duplicates ignored regardless of case — into a query to the
+`banco-lia` MCP. The panel shows the ranked LIA items, the topics they fall
+under and a proposed `/plausibility` idea (at least two sentences, in the
+dashboard's language); **Use as the draft** (*Usar como borrador*) records it
+as the step-6 draft, which you edit, approve and launch from step 6 with
+**Launch plausibility**; nothing is launched without that click. The route is
 `POST /api/plausibility/suggest` with `{"keywords": [...], "language": "es"|"en"}`;
 it is same-origin only (`403` otherwise), answers `422` with the refusal
 `KEYWORDS_INVALID` when the keywords break the rule above, and `200` otherwise,

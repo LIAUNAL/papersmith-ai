@@ -38,11 +38,16 @@ start the bank, and for the dashboard's thematic help below.
 
 ## The dashboard's thematic help
 
-`banco-lia` is not only for agents. The dashboard's phase-2 box (`/plausibility`)
-has an optional *Ayuda temática (palabras clave)* that queries the same bank for an
-operator who has no clear sentences yet. See [cli.md](cli.md#smith-ui-dir) for the
-panel and [skills.md](skills.md#1-plausibility--map-the-territory-before-collecting-it)
-for the skill's side.
+`banco-lia` is not only for agents. Step 4 (interests) of the dashboard's *Idea*
+tab, the optional idea shaping before `/plausibility`, has a thematic help,
+**Ask the bank** (*Consultar el banco*), that queries the same bank for an
+operator who has no clear sentences yet; **Use as the draft** turns its proposed
+idea into the tab's step-6 draft, launched from there. See
+[cli.md](cli.md#smith-ui-dir) ("The Idea tab") for the panel and
+[skills.md](skills.md#32-idea-shaping--a-vague-idea-shaped-into-two-sentences-before-plausibility)
+for the skill's side. Another bank the operator chose in step 1 is searched
+through `/api/idea/bank` when it exposes `search_bank`; this section describes
+the `banco-lia` route.
 
 **What it calls.** The dashboard server is its own small MCP client (standard
 library only). For each request it starts the same server command papersmith
@@ -70,7 +75,7 @@ other case, including `{"available": false, "reason": "..."}`.
 
 - `uv` (`uvx`) on `PATH`, exactly as for the harnesses above. Without it, or when
   the entry is missing from `.mcp.json`, the panel reports why and keeps the
-  box usable: the operator writes the idea by hand.
+  step usable: the operator writes the idea by hand.
 - The first run downloads the bank package from GitHub, which can take a while, so
   the client allows about 90 seconds before giving up. Once `uvx` has cached the
   package, later runs work offline. A spawn failure, a timeout or a protocol error

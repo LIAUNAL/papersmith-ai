@@ -53,8 +53,9 @@ without guessing the order. The minimum path:
    [Open the dashboard from another device](#open-the-dashboard-from-another-device)).
 4. **Check that the idea is plausible** — with your idea in two sentences,
    `/plausibility` tracks the SOTA and returns the constellation plus a ranked top 5.
-   If you have no clear sentences yet, the dashboard's phase-2 box offers an
-   optional *Ayuda temática*: type 3 to 5 keywords and it proposes the idea for you to edit.
+   If you have no clear sentences yet, shape the idea first: the phase-2 card's
+   *Construir la idea primero* button (*Shape the idea first* in English) opens
+   the *Idea* tab, or run `/idea-shaping` in your harness or `smith idea` in a terminal.
 5. **Put a reference PDF** in `guidance/reference-papers/` and run
    `smith ingest <pdf>` — or ask for `/paper-ingestion` inside your harness.
 6. **Open the deliberation** with `/proposal-deliberation`: the central problem and
@@ -84,8 +85,8 @@ The full path, from a PDF to a compiled paper:
 
 | # | You invoke | What it does | Where it leaves the result |
 |---|---------|----------|-------------------------|
-| 0 | `/idea-shaping` (or `smith idea`, or the dashboard's *Idea* tab) | Optional, before step 1 (lane 2a of the dashboard's phase 2), for an idea that is still vague: you decide which knowledge bank to use (`banco-lia`, another bank MCP, or none), then answer one question at a time about your author profile (ORCID, OpenAlex, or a Google Scholar link used only to find you in OpenAlex), your experience and your interests; the `idea-guide` agent proposes three topics, each with its evidence and where it came from, you pick or combine them, and a draft of at least two sentences that passes the plausibility prompt gate becomes `/plausibility <draft>` when you launch it | `.papersmith/idea_brief.json` |
-| 1 | `/plausibility` | Explores the idea before any ingestion, in three stretches: it tracks ~25 references through their abstracts, maps the constellation in a single HTML and discusses the plausibility of the hypothesis against that SOTA. Without clear sentences, the dashboard's optional thematic help turns 3 to 5 keywords into a proposed idea from the lab bank (`banco-lia`) that you edit and approve before it runs as this prompt | `sota-pool/` (ignored, like `guidance/`) |
+| 0 | `/idea-shaping` (or `smith idea`, or the dashboard's *Idea* tab) | Optional, before step 1 (lane 2a of the dashboard's phase 2), for an idea that is still vague: you decide which knowledge bank to use (`banco-lia`, another bank MCP, or none), then answer one question at a time about your author profile (ORCID, OpenAlex, or a Google Scholar link used only to find you in OpenAlex), your experience and your interests; the engine proposes three topics, each with its evidence and where it came from (in the conversation the `idea-guide` agent also suggests topics and a draft), you pick or combine them, and a draft of at least two sentences that passes the plausibility prompt gate becomes `/plausibility <draft>` when you launch it | `.papersmith/idea_brief.json` |
+| 1 | `/plausibility` | Explores the idea before any ingestion, in three stretches: it tracks ~25 references through their abstracts, maps the constellation in a single HTML and discusses the plausibility of the hypothesis against that SOTA. Without clear sentences, start with step 0: its *Idea* tab's thematic help (step 4) turns 3 to 5 keywords into a proposed idea from the lab bank (`banco-lia`) that you edit and approve before it runs as this prompt | `sota-pool/` (ignored, like `guidance/`) |
 | 1b | `/paper-type` (or the dashboard's *Tipo de paper* tab) | Once you accept the plausibility report: scores the idea against smith's eight paper types (a deterministic 0-100 match per type, no model call), has the `paper-type-advisor` agent relate each type to the idea and propose a type and variant, and records the type you agree. An applied-AI type keeps this flow; any other moves the workspace to its own line with `smith kind set <type> --by <name>` (see [The paper type and the eight lines](#the-paper-type-and-the-eight-lines)) | `.papersmith/plausibility.json` (the accepted idea) and `.papersmith/paper_type.json` (scores, suggestion, agreement) |
 | 2 | `/paper-ingestion` | Converts the reference PDFs into readable Markdown (equations in LaTeX, tables as tables, figures as files) | `guidance/<folder>/` |
 | 3 | `/proposal-deliberation` | Builds the proposal with you in one order — the central problem and its pillars, then the hypotheses, then the mathematics, each locked until the one before it exists — and publishes each agreement as a managed revision, with the SOTA constellation alongside; every idea is then justified by 2 to 5 SOTA pool citations, and the `paper-reviewer` agent classifies its contribution type | `proposals/` (the revision and its `graph.html`); the citations in `.papersmith/citations.json`; the contribution type in `.papersmith/model_spec.json` |
@@ -179,7 +180,8 @@ loads, its stretch, its tools, the phase(s) it acts in and the harnesses it is
 projected to, in a table you can sort and filter. Clicking a phase opens its console:
 a text box with the stage's rules as a guide that sends `/<skill> <text>` to an
 agent in the support terminal (for `/plausibility`, the idea in at least two
-sentences, or the optional *Ayuda temática* described under
+sentences; without one, *Construir la idea primero* opens the *Idea* tab
+described under
 [Step 1](#step-1--check-that-the-idea-is-plausible-plausibility)), the real
 `smith` command for the phase, or a link to the panel
 that owns the work: the concept map, the math tutor, the PoC board, the
@@ -210,6 +212,7 @@ manuscript-summary views follow it) and a text-size control (A ×1, ×1.25, ×1.
 | **Pipeline y Avance** | The eleven phases with their sub-phases, their evidence on disk, their gates and each phase's console (another line shows its own steps and gates) |
 | **Revisión** | A review workspace's records: protocol and registration, search log, screening progress (conflicts, kappa), PRISMA flow, extraction, risk of bias and the PRISMA 2020 checklist |
 | **Estudio** | An empirical workspace's records: the study protocol and its lock, ethics and registration, data, the analysis log, participant flow, measurement or qualitative records and the line's reporting checklist |
+| **Idea** | The optional idea shaping before `/plausibility`, on every line: a six-step stepper (sources with their status chips, profile, experience, interests with the bank's thematic help, topic cards with their evidence, and the draft with its live prompt-gate score); *Talk to the guide* types `/idea-shaping` into the agent and *Launch plausibility* sends the approved draft as `/plausibility`. See [`smith idea`](docs/cli.md#smith-idea-verb-dir) |
 | **Tipo de paper** | One card per catalogue type with its score for the idea, a short description, its reporting guideline and why it fits the idea or not; the suggested and agreed types highlighted, *Discuss with the agent* (types `/paper-type` into the agent) and *Agree type* (records the agreement and says which `smith kind set` moves the workspace) |
 | **Mapa Conceptual & Modelo** | The proposal built in five ordered steps: a stepper for the central problem and its pillars → the hypotheses → the mathematics → the SOTA citations → the judge-reviewer, each step locked until the one before it exists on disk and with a *Generar y deliberar* button that types its `/proposal-deliberation` into the agent (the mathematics step also offers `/math-tutor`); the judge-reviewer's contribution type right after the hypotheses, with affinity bars per contribution type; the pillar → hypothesis tree drawn with arrows; the novelty, the five-layer concept map and the paper's mathematics rendered in LaTeX with the `math-tutor` Socratic tutor beside it; each pillar, hypothesis, layer and equation with its SOTA citations (title, year, why and the quote of its abstract) or a mark that it owes them; its blocks fold |
 | **Experimentos** | A stepper SOTA citations → proof of concept → verify → full experiment, one button each (the full-experiment button stays disabled until `G-EXP-POC` passes), then, in flow order and folded, the protocol, datasets, proof-of-concept and full-experiment cards, the comparison, the infrastructure and run options, and the `experiments-tutor` last. Each card opens with the stage's summary and discussion read from `Results/discussion.json` (hypothesis verdicts with their evidence and tests, novelty, performance measures, qualitative gallery, limitations, next steps), and a **PoC vs full experiments** section compares each hypothesis's verdict across the two stages |
@@ -1032,15 +1035,18 @@ searching the web (their subagents get no MCP grant that fails safe); their main
 sessions can still use Asta. Ai2 licenses Asta for academic, non-commercial use
 with acknowledgement.
 
-**Thematic help, when the idea is not clear yet.** In the dashboard, the box
-that opens when you click phase 2 carries an optional *Ayuda temática*. Type 3 to
-5 keywords and the server asks the lab's `banco-lia` MCP (its `search_bank` tool)
-for the best matches; the panel lists the ranked LIA items (projects and
+**Thematic help, when the idea is not clear yet.** In the dashboard's *Idea*
+tab (phase 2's *Construir la idea primero* button opens it), step 4, the
+interests, carries the bank's thematic help when `banco-lia` is the chosen
+source. Type 3 to 5 keywords and press *Consultar el banco* (*Ask the bank*):
+the server asks the lab's `banco-lia` MCP (its `search_bank` tool) for the
+best matches, and the panel lists the ranked LIA items (projects and
 articles), the topics they fall under and a proposed `/plausibility` idea,
-composed from your keywords and those matches, in an editable text area.
-Nothing runs until you press **Aprobar y lanzar**, which sends
-`/plausibility <your edited idea>` through the same launch path as any other
-phase-2 prompt, so the two-sentence rule still applies. The bank items are LIA
+composed from your keywords and those matches. *Usar como borrador* (*Use as
+the draft*) makes it the step-6 draft, which you edit and approve there.
+Nothing runs until you press *Lanzar plausibilidad* (*Launch plausibility*)
+in step 6, which sends `/plausibility <your approved idea>` to the agent, so
+the two-sentence rule still applies. The bank items are LIA
 continuity context, never SOTA evidence. It needs `uv`/`uvx` on `PATH` and the
 `banco-lia` entry of the workspace's `.mcp.json`; the first run downloads the
 package and later runs work offline. If the bank cannot be reached the panel
@@ -1055,8 +1061,9 @@ banco-lia when it exposes `search_bank`, otherwise only through the agent's
 own tools), or none. Then it asks for your author profile (ORCID, OpenAlex,
 or a Google Scholar link used only to find you in OpenAlex; Scholar is never
 scraped), your experience and your interests, one question at a time. The
-`idea-guide` agent proposes three candidate topics, each with its evidence and
-the source it came from; you pick or combine them, and the draft is checked
+engine proposes three candidate topics, each with its evidence and the source
+it came from (in `/idea-shaping` the `idea-guide` agent also suggests topics
+and a draft in the conversation); you pick or combine them, and the draft is checked
 live against the plausibility prompt gate. Once you approve it, `smith idea
 handoff` prints `/plausibility <draft>`; launching it stays your decision.
 Every answer is recorded in `.papersmith/idea_brief.json`. See
@@ -1642,7 +1649,7 @@ each `probe` state's section in its own file,
 
 ## Anatomy of each skill
 
-The guided tour of every skill, with its flow diagram, is in [docs/skills.md](docs/skills.md). The workspace ships twenty-two skills; each one's `SKILL.md` is its source of truth:
+The guided tour of every skill, with its flow diagram, is in [docs/skills.md](docs/skills.md). Every workspace ships twenty-five skills, each with its slash command; each one's `SKILL.md` is its source of truth:
 
 - [`datasets`](skills/datasets/SKILL.md)
 - [`experiment-diagrams`](skills/experiment-diagrams/SKILL.md)
@@ -1651,21 +1658,33 @@ The guided tour of every skill, with its flow diagram, is in [docs/skills.md](do
 - [`experiments-tutor`](skills/experiments-tutor/SKILL.md)
 - [`figure-review`](skills/figure-review/SKILL.md)
 - [`hyperparameter-search`](skills/hyperparameter-search/SKILL.md)
+- [`idea-shaping`](skills/idea-shaping/SKILL.md)
 - [`journal-finder`](skills/journal-finder/SKILL.md)
 - [`kaggle-accounts`](skills/kaggle-accounts/SKILL.md)
 - [`math-tutor`](skills/math-tutor/SKILL.md)
 - [`paper-ingestion`](skills/paper-ingestion/SKILL.md)
+- [`paper-type`](skills/paper-type/SKILL.md)
 - [`paper-writing`](skills/paper-writing/SKILL.md)
 - [`pixelrag`](skills/pixelrag/SKILL.md)
 - [`plausibility`](skills/plausibility/SKILL.md)
+- [`prompt-gate`](skills/prompt-gate/SKILL.md)
 - [`proposal-deliberation`](skills/proposal-deliberation/SKILL.md)
 - [`proposal-implementation`](skills/proposal-implementation/SKILL.md)
 - [`remote-execution`](skills/remote-execution/SKILL.md)
 - [`remote-parallelism`](skills/remote-parallelism/SKILL.md)
 - [`skill-audit`](skills/skill-audit/SKILL.md)
-- [`systematic-review`](skills/systematic-review/SKILL.md)
+- [`study-protocol-deliberation`](skills/study-protocol-deliberation/SKILL.md)
 - [`ui-github`](skills/ui-github/SKILL.md)
 - [`upgrade-project`](skills/upgrade-project/SKILL.md)
+
+A workspace of another line also ships that line's own skill: [`systematic-review`](skills/systematic-review/SKILL.md) for the review line, and one per empirical line:
+
+- [`observational-measurement`](skills/observational-measurement/SKILL.md)
+- [`hardware`](skills/hardware/SKILL.md)
+- [`lab-simulation`](skills/lab-simulation/SKILL.md)
+- [`data-resource`](skills/data-resource/SKILL.md)
+- [`experiment-intervention`](skills/experiment-intervention/SKILL.md)
+- [`qualitative-participatory`](skills/qualitative-participatory/SKILL.md)
 
 ## The CLI commands
 
