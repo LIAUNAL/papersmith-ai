@@ -11,6 +11,17 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## 0.84.3
+
+- **The whole reference-sources section of an experimental protocol is
+  skipped by the source-authority check.** 0.84.2 ended the skipped span at the
+  next level-2 heading, but the data paper quoted there carries level-2
+  headings of its own (`## Structure`, `## Provenance`, ...), so a source
+  sentence such as "… obtained from a nearby weather station …" under its
+  `## Structure` heading still raised `SOURCE_AUTHORITY_CONFLICT` on every
+  accept. The span now ends at the `## Changes` header that successors render,
+  or at the end of the document.
+
 ## 0.84.2
 
 - **`experimental-implementation`'s `env` names a requirements file the skill
