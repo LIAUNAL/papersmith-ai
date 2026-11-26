@@ -834,6 +834,13 @@ exit, never a silent empty result, and a service that refuses the operator's
 configured key refuses `RESOLVER_REFUSED` — never `IDENTIFIER_UNRESOLVED`,
 because the paper was never looked up.
 
+**The `papersmith.yaml` reader fails closed.** `paper_resolve.parse_yaml_subset` reads nested
+mappings, scalars, block lists of scalars and block lists of mappings (an `authors:` list of
+`- name: ...` items with nested `email:`/`orcid:` keys becomes a list of dicts), and keys after
+such a list (`paper_writing.roles`) are kept. Any line it cannot place -- a deeper indentation
+it does not own, a list item where a key belongs -- refuses `PAPERSMITH_CONFIG_UNREADABLE`
+naming that line, never a partial read that later surfaces as `RESOLVER_ROLE_EMPTY`.
+
 **Asta's records.** Ai2's Asta answers with the Semantic Scholar corpus: the
 record's abstract is the paper's own (never the model-written `tldr`, and never
 markup stripped into text), and its `full_text_url` is always `null` — Asta is

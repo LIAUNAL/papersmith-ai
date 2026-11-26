@@ -11,6 +11,14 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **The `papersmith.yaml` reader keeps every key after a list of mappings.** An
+  `authors:` list of `- name: ...` items with nested keys ended the parse silently, so
+  `paper_writing.roles` was dropped and `resolve` refused `RESOLVER_ROLE_EMPTY`. A list of
+  mappings now reads as a list of dicts, and any line the reader cannot place refuses
+  `PAPERSMITH_CONFIG_UNREADABLE` naming that line instead of a partial read.
+
 ## 0.84.3
 
 - **The whole reference-sources section of an experimental protocol is

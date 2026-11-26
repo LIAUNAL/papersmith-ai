@@ -240,5 +240,105 @@ class SemanticScholarResolverTests(unittest.TestCase):
         assert "semantic-scholar" in paper_resolve.RESOLVERS
 
 
+class ConfigListOfMappingsTests(unittest.TestCase):
+    """`parse_yaml_subset` reads a block list of mappings and fails closed,
+    naming the line, on anything it leaves unread (S4)."""
+
+    AUTHORS_FIRST = (
+        "project:\n"
+        "  name: demo\n"
+        "authors:\n"
+        "  - name: \"Ada Lovelace\"\n"
+        "    email: ada@example.org\n"
+        "    orcid: 0000-0000-0000-0001\n"
+        "  - name: \"Charles Babbage\"\n"
+        "    affiliation: Analytical Engine Lab\n"
+        "paper_writing:\n"
+        "  contact: \"a@b.example\"\n"
+        "  roles:\n"
+        "    discovery: []\n"
+        "    resolution:\n"
+        "      - openalex\n"
+        "      - crossref\n"
+        "    full-text: []\n"
+    )
+
+    def write(self, text: str) -> Path:
+        directory = Path(tempfile.mkdtemp())
+        path = directory / "papersmith.yaml"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_a_list_of_mappings_parses_and_keeps_every_later_key(self) -> None:
+        parsed = paper_resolve.parse_yaml_subset(self.AUTHORS_FIRST)
+        self.assertEqual(parsed["authors"], [
+            {"name": "Ada Lovelace", "email": "ada@example.org", "orcid": "0000-0000-0000-0001"},
+            {"name": "Charles Babbage", "affiliation": "Analytical Engine Lab"},
+        ])
+        self.assertEqual(parsed["paper_writing"]["roles"]["resolution"], ["openalex", "crossref"])
+        self.assertEqual(parsed["paper_writing"]["contact"], "a@b.example")
+        self.assertEqual(parsed["project"], {"name": "demo"})
+
+    def test_a_config_with_authors_before_paper_writing_resolves_its_roles(self) -> None:
+        config = paper_resolve.load_config(self.write(self.AUTHORS_FIRST))
+        self.assertEqual(paper_resolve.require_role_connectors(config, "resolution"),
+                         ["openalex", "crossref"])
+
+    def test_a_list_item_mapping_with_a_nested_block(self) -> None:
+        text = "people:\n  - name: A\n    tags:\n      - x\n      - y\n  - name: B\nafter: 1\n"
+        self.assertEqual(paper_resolve.parse_yaml_subset(text), {
+            "people": [{"name": "A", "tags": ["x", "y"]}, {"name": "B"}], "after": "1"})
+
+    def test_scalar_items_with_colons_stay_scalars(self) -> None:
+        text = "urls:\n  - https://example.org/a\n  - \"key: value\"\n"
+        self.assertEqual(paper_resolve.parse_yaml_subset(text),
+                         {"urls": ["https://example.org/a", "key: value"]})
+
+    def test_an_unread_remainder_raises_naming_the_line(self) -> None:
+        cases = {
+            # a deeper line under a scalar list item
+            "roles:\n  - openalex\n      stray: 1\nlater: x\n": 3,
+            # a deeper line under a scalar mapping value
+            "a: 1\n    b: 2\nc: 3\n": 2,
+            # a mapping key at the indent of a list that already ended
+            "outer:\n  items:\n    - x\n   odd: y\n": 4,
+        }
+        for text, line in cases.items():
+            with self.subTest(text=text):
+                with self.assertRaises(ValueError) as ctx:
+                    paper_resolve.parse_yaml_subset(text)
+                self.assertIn(f"line {line}", str(ctx.exception))
+
+    def test_load_config_refuses_config_unreadable_naming_the_line(self) -> None:
+        text = self.AUTHORS_FIRST.replace("    email: ada@example.org\n",
+                                          "    email: ada@example.org\n       broken: deeper\n")
+        with self.assertRaises(Refused) as ctx:
+            paper_resolve.load_config(self.write(text))
+        self.assertEqual(ctx.exception.code, "PAPERSMITH_CONFIG_UNREADABLE")
+        self.assertIn("line 6", str(ctx.exception))
+
+    def test_the_previous_shape_still_parses_identically(self) -> None:
+        text = (
+            "paper_ingestion:\n"
+            "  engine: marker  # a trailing comment\n"
+            "  source_roots: []\n"
+            "\n"
+            "paper_writing:\n"
+            "  contact: \"a@b.example\"\n"
+            "  roles:\n"
+            "    discovery: []\n"
+            "    resolution:\n"
+            "      - openalex\n"
+            "    full-text: []\n"
+            "  empty:\n"
+        )
+        self.assertEqual(paper_resolve.parse_yaml_subset(text), {
+            "paper_ingestion": {"engine": "marker", "source_roots": []},
+            "paper_writing": {"contact": "a@b.example",
+                              "roles": {"discovery": [], "resolution": ["openalex"], "full-text": []},
+                              "empty": {}},
+        })
+
+
 if __name__ == "__main__":
     unittest.main()
