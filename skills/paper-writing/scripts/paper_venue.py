@@ -844,6 +844,199 @@ def read_authors(tex: str) -> tuple:
     return pieces[0], pieces[1:]
 
 
+# --- the author block, parsed into the facts a class's own commands take ------
+#: `$^{1,*}$`, `$^1$` or `\textsuperscript{1,*}`: one superscript marker.
+_MARK_RE = re.compile(r"\$\^\{(?P<a>[^{}]*)\}\$|\$\^(?P<b>[^${}]*)\$|\\textsuperscript\{(?P<c>[^{}]*)\}")
+_MARK_TOKEN_RE = re.compile(r"\x00(\d+)\x00")
+_LAYOUT_COMMAND_RE = re.compile(
+    r"\\(?:centering|raggedright|raggedleft|small|footnotesize|scriptsize|normalsize|large|Large)(?![A-Za-z])\s*")
+_LINE_BREAK_RE = re.compile(r"\\\\(?:\[[^\]]*\])?")
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_ORCID_RE = re.compile(r"\d{4}-\d{4}-\d{4}-\d{3}[\dX]")
+_EMAILS_LINE_RE = re.compile(r"^e-?mails?\s*:\s*", re.IGNORECASE)
+_ORCID_LINE_RE = re.compile(r"^orcids?\s*:?\s*", re.IGNORECASE)
+_CORRESPONDING_RE = re.compile(r"^corresponding\s+authors?\s*:?\s*", re.IGNORECASE)
+
+
+def _unparseable(reason: str) -> Refused:
+    return Refused(
+        "TITLE_BLOCK_UNPARSEABLE",
+        f"the \\author block of {TITLE_BLOCK!r} cannot be mapped into the class's author commands: "
+        f"{reason}; write it in the revealed-author form of sections/09-title-and-keywords.md "
+        "(one author line with superscript indices, one affiliation per index, then the e-mails, "
+        "ORCID and corresponding-author lines)",
+    )
+
+
+def _read_marks(raw: str) -> tuple:
+    """`(indices, corresponding)` of one superscript's content."""
+    indices, corresponding = [], False
+    for token in (piece.strip() for piece in raw.split(",")):
+        if token in ("*", "\\ast", "$\\ast$"):
+            corresponding = True
+        elif re.fullmatch(r"[A-Za-z0-9]+", token):
+            indices.append(token)
+        else:
+            raise _unparseable(f"the superscript marker {token!r} is neither an affiliation index nor `*`")
+    return indices, corresponding
+
+
+def _plain(text: str) -> str:
+    """`text` with `\\texttt`/`\\url`/`\\href{mailto:..}` and style wrappers
+    unwrapped, whitespace collapsed."""
+    text = re.sub(r"\\href\{[^{}]*\}\{([^{}]*)\}", r"\1", text)
+    text = re.sub(r"\\url\{([^{}]*)\}", r"\1", text)
+    return _collapse(_unwrap_text_styles(text))
+
+
+def _surname_matches(entry_name: str, author_name: str) -> bool:
+    words = _plain(entry_name.replace("~", " ")).split()
+    return bool(words) and _plain(author_name.replace("~", " ")).split()[-1:] == words[-1:]
+
+
+def parse_author_block(tex: str) -> dict | None:
+    """The `\\author{...}` of the title block as `{"authors": [{name,
+    affiliations, corresponding, email, orcid}], "affiliations": [{index,
+    text}], "corresponding_note"}`, read from the revealed-author form of
+    `sections/09-title-and-keywords.md` with or without its outer minipage.
+    `None` when there is no `\\author`. Refuses `TITLE_BLOCK_UNPARSEABLE`
+    on anything it cannot place -- never a guess a class would typeset as
+    nonsense or as invalid LaTeX."""
+    argument = _command_argument(strip_comments(tex), "author")
+    if argument is None:
+        return None
+    body = argument.strip()
+    opening = re.match(r"\\begin\{minipage\}(?:\[[^\]]*\])*\s*", body)
+    if opening:
+        if not body[opening.end():].startswith("{"):
+            raise _unparseable("the minipage has no width argument")
+        _width, end = _balanced_group(body, opening.end())
+        closing = re.search(r"\\end\{minipage\}\s*$", body)
+        if end <= opening.end() or closing is None:
+            raise _unparseable("the minipage does not close at the end of \\author")
+        body = body[end:closing.start()]
+    if re.search(r"\\(?:begin|end)\{", body):
+        raise _unparseable("it holds an environment other than one outer minipage")
+    body = _LAYOUT_COMMAND_RE.sub("", body)
+
+    marks = []
+
+    def stash(match) -> str:
+        marks.append(_read_marks(match.group("a") or match.group("b") or match.group("c") or ""))
+        return f"\x00{len(marks) - 1}\x00"
+
+    lines = [_collapse(line) for line in _LINE_BREAK_RE.split(_MARK_RE.sub(stash, body))]
+    lines = [line for line in lines if line]
+    if not lines:
+        raise _unparseable("it is empty")
+
+    authors = []
+    names_line = re.sub(r"\\and(?![A-Za-z])", "\x01", lines[0])
+    names_line = re.sub(r",\s*and\s+|\s+and\s+|,", "\x01", names_line)
+    for piece in names_line.split("\x01"):
+        indices, corresponding = [], False
+        for found in _MARK_TOKEN_RE.finditer(piece):
+            more, star = marks[int(found.group(1))]
+            indices += more
+            corresponding = corresponding or star
+        name = _plain(_MARK_TOKEN_RE.sub("", piece))
+        if not name:
+            if indices or corresponding:
+                raise _unparseable(f"a superscript marker on the author line follows no name: {lines[0]!r}")
+            continue
+        authors.append({"name": name, "affiliations": indices, "corresponding": corresponding,
+                        "email": None, "orcid": None})
+    if not authors:
+        raise _unparseable("the first line names no author")
+
+    affiliations, emails, orcids = [], [], []
+    corresponding_line = None
+    for line in lines[1:]:
+        lead = _MARK_TOKEN_RE.match(line)
+        rest = _MARK_TOKEN_RE.sub("", line).strip()
+        if lead:
+            indices, star = marks[int(lead.group(1))]
+            if star and not indices:
+                corresponding_line = _CORRESPONDING_RE.sub("", rest)
+                continue
+            if star or len(indices) != 1:
+                raise _unparseable(f"an affiliation line carries more than one index: {line!r}")
+            if any(entry["index"] == indices[0] for entry in affiliations):
+                raise _unparseable(f"affiliation index {indices[0]!r} is defined twice")
+            affiliations.append({"index": indices[0], "text": _plain(rest)})
+            continue
+        if _MARK_TOKEN_RE.search(line):
+            raise _unparseable(f"a superscript marker sits inside a line: {line!r}")
+        if _EMAILS_LINE_RE.match(rest):
+            emails += _EMAIL_RE.findall(_plain(_EMAILS_LINE_RE.sub("", rest)))
+            continue
+        if _ORCID_LINE_RE.match(rest) and _ORCID_RE.search(rest):
+            for entry in re.split(r"[;,]", _ORCID_LINE_RE.sub("", rest)):
+                found = _ORCID_RE.search(entry)
+                if found:
+                    orcids.append((entry[:found.start()].strip(), found.group(0)))
+                elif entry.strip():
+                    raise _unparseable(f"an ORCID entry carries no identifier: {entry.strip()!r}")
+            continue
+        if _CORRESPONDING_RE.match(rest):
+            corresponding_line = _CORRESPONDING_RE.sub("", rest)
+            continue
+        text = _plain(rest)
+        if affiliations and affiliations[-1]["index"] is not None:
+            # an indexed affiliation wrapped over several `\\` lines
+            affiliations[-1]["text"] = _collapse(affiliations[-1]["text"] + " " + text)
+        else:
+            affiliations.append({"index": None, "text": text})
+
+    indexed = [entry["index"] for entry in affiliations if entry["index"] is not None]
+    if indexed and len(indexed) != len(affiliations):
+        raise _unparseable("indexed and unindexed affiliation lines are mixed")
+    for author in authors:
+        missing = [index for index in author["affiliations"] if index not in indexed]
+        if missing:
+            raise _unparseable(f"{author['name']!r} cites affiliation index {missing[0]!r}, "
+                               "which no affiliation line defines")
+        if indexed and not author["affiliations"] and len(indexed) > 1:
+            raise _unparseable(f"{author['name']!r} carries no affiliation index")
+
+    corresponding_email = None
+    if corresponding_line is not None:
+        found = _EMAIL_RE.findall(_plain(corresponding_line))
+        if len(found) > 1:
+            raise _unparseable("the corresponding-author line holds more than one e-mail")
+        corresponding_email = found[0] if found else None
+        if not any(a["corresponding"] for a in authors):
+            if len(authors) != 1:
+                raise _unparseable("a corresponding-author line exists but no author carries `*`")
+            authors[0]["corresponding"] = True
+
+    if emails:
+        if len(emails) == len(authors):
+            for author, email in zip(authors, emails):
+                author["email"] = email
+        elif not set(emails) <= {corresponding_email}:
+            raise _unparseable(f"{len(emails)} e-mail(s) for {len(authors)} author(s); list one per author, "
+                               "in the author order")
+    if corresponding_email:
+        for author in (a for a in authors if a["corresponding"]):
+            if author["email"] not in (None, corresponding_email):
+                raise _unparseable(f"{author['name']!r} has two e-mails: {author['email']} and "
+                                   f"{corresponding_email}")
+            author["email"] = corresponding_email
+
+    for entry_name, orcid in orcids:
+        if not entry_name and len(authors) == 1:
+            matches = authors
+        else:
+            matches = [a for a in authors if _surname_matches(entry_name, a["name"])]
+        if len(matches) != 1:
+            raise _unparseable(f"the ORCID {orcid} names {entry_name or 'no author'!r}, which matches "
+                               f"{len(matches)} author(s) instead of one")
+        matches[0]["orcid"] = orcid
+
+    return {"authors": authors, "affiliations": affiliations, "corresponding_note": "Corresponding author."}
+
+
 def _split_top_level(text: str) -> list:
     parts, depth, current = [], 0, []
     index = 0
@@ -908,6 +1101,9 @@ def parse_documentclass(tex: str) -> tuple:
 
 _BIBSTYLE_RE = re.compile(r"^[ \t]*\\bibliographystyle\{(?P<name>[^}]+)\}", re.MULTILINE)
 _SECTION_COMMAND_RE = re.compile(r"^[ \t]*\\section\*?\{")
+#: Every sectioning line `build` carries over from the canonical file:
+#: `\section`, `\subsection`, `\subsubsection`, starred or not.
+_HEADING_COMMAND_RE = re.compile(r"^[ \t]*\\(?:sub)*section\*?\{")
 
 
 def _split_id(qualified: str) -> tuple:
@@ -954,16 +1150,21 @@ class Manuscript:
         self.headings = self._headings()
 
     def _headings(self) -> dict:
-        """The `\\section` line sitting between a section's first block and
-        whatever block precedes it, outside every block region."""
+        """The heading lines sitting between a section's first block and
+        whatever block precedes it, outside every block region: from the last
+        `\\section` line on (the `\\subsection` lines after it included), or
+        every `\\subsection` line when the section opens with one (a
+        Limitations subsection the contract places inside Results)."""
         headings = {}
         previous_end = 0
         for block in sorted(self.blocks, key=lambda b: b["begin"]["start"]):
             gap = self.data[previous_end:block["begin"]["start"]].decode("utf-8")
             if block["section"] not in headings:
-                lines = [line for line in gap.splitlines() if _SECTION_COMMAND_RE.match(line)]
+                lines = [line.strip() for line in gap.splitlines() if _HEADING_COMMAND_RE.match(line)]
+                tops = [i for i, line in enumerate(lines) if _SECTION_COMMAND_RE.match(line)]
+                lines = lines[tops[-1]:] if tops else lines
                 if lines:
-                    headings[block["section"]] = lines[-1].strip()
+                    headings[block["section"]] = "\n".join(lines)
             previous_end = block["end"]["end"]
         return headings
 
@@ -1598,19 +1799,148 @@ def _document_class_line(name: str, options: list) -> str:
 
 
 def _retitle_heading(heading: str | None, title: str | None, section_id: str) -> str:
-    """The `\\section` line for one emitted section: the canonical line with
-    its label kept, the title replaced by the venue's when it names one."""
+    """The heading lines for one emitted section: the canonical lines with
+    their labels kept, the first line's title replaced by the venue's when it
+    names one. A `\\section` is emitted only when the canonical file carries
+    no heading line for the section."""
     if heading is None:
         return f"\\section{{{title or section_id.replace('-', ' ').title()}}}"
     if not title:
         return heading
-    match = re.match(r"^(\s*\\section\*?)\{", heading)
+    match = re.match(r"^(\s*\\(?:sub)*section\*?)\{", heading)
     if not match:
         return heading
     _content, end = _balanced_group(heading, match.end() - 1)
     if end <= match.end() - 1:
         return heading
     return f"{match.group(1)}{{{title}}}{heading[end:]}"
+
+
+def _join_names(names: list) -> str:
+    if len(names) <= 2:
+        return " and ".join(names)
+    return ", ".join(names[:-1]) + ", and " + names[-1]
+
+
+def _elsarticle_authors(parsed: dict) -> str:
+    """`\\author[aff..]{Name\\corref{cor1}\\fnref{orcidN}}` and `\\ead{..}`
+    per author, then `\\cortext`, the ORCID `\\fntext`s and one
+    `\\address[affN]{..}` per affiliation (elsarticle's own commands)."""
+    lines, notes = [], []
+    labels = {entry["index"]: f"aff{entry['index']}" for entry in parsed["affiliations"] if entry["index"]}
+    for number, author in enumerate(parsed["authors"], start=1):
+        option = ",".join(labels[index] for index in author["affiliations"])
+        if not option and len(labels) == 1:
+            option = next(iter(labels.values()))
+        name = author["name"]
+        if author["corresponding"]:
+            name += "\\corref{cor1}"
+        if author["orcid"]:
+            name += f"\\fnref{{orcid{number}}}"
+            notes.append(f"\\fntext[orcid{number}]{{ORCID: {author['orcid']}}}")
+        lines.append(f"\\author[{option}]{{{name}}}" if option else f"\\author{{{name}}}")
+        if author["email"]:
+            lines.append(f"\\ead{{{author['email']}}}")
+    if any(author["corresponding"] for author in parsed["authors"]):
+        lines.append(f"\\cortext[cor1]{{{parsed['corresponding_note']}}}")
+    lines += notes
+    for entry in parsed["affiliations"]:
+        if entry["index"]:
+            lines.append(f"\\address[{labels[entry['index']]}]{{{entry['text']}}}")
+        else:
+            lines.append(f"\\address{{{entry['text']}}}")
+    return "\n".join(lines) + "\n"
+
+
+def _marked_names(parsed: dict, mark) -> list:
+    """Each author's name followed by `mark(indices, corresponding)`; the
+    indices only when there is more than one affiliation, the
+    corresponding mark only when there is more than one author."""
+    several_affiliations = len(parsed["affiliations"]) > 1
+    several_authors = len(parsed["authors"]) > 1
+    return [author["name"] + mark(author["affiliations"] if several_affiliations else [],
+                                  author["corresponding"] and several_authors)
+            for author in parsed["authors"]]
+
+
+def _contact_lines(parsed: dict) -> list:
+    emails = [a["email"] for a in parsed["authors"] if a["email"]]
+    orcids = [f"{a['name']} {a['orcid']}" for a in parsed["authors"] if a["orcid"]]
+    lines = []
+    if emails:
+        lines.append("E-mails: " + ", ".join(f"\\texttt{{{email}}}" for email in emails))
+    if orcids:
+        lines.append("ORCID: " + "; ".join(orcids))
+    return lines
+
+
+def _ieeetran_authors(parsed: dict) -> str:
+    def mark(indices, corresponding):
+        tokens = list(indices) + (["*"] if corresponding else [])
+        return f"\\textsuperscript{{{','.join(tokens)}}}" if tokens else ""
+
+    names = _join_names(_marked_names(parsed, mark))
+    several = len(parsed["affiliations"]) > 1
+    lines = [(f"\\textsuperscript{{{entry['index']}}}" if several and entry["index"] else "") + entry["text"]
+             for entry in parsed["affiliations"]]
+    lines += _contact_lines(parsed)
+    if len(parsed["authors"]) > 1 and any(a["corresponding"] for a in parsed["authors"]):
+        lines.append("\\textsuperscript{*}" + parsed["corresponding_note"])
+    block = f"\\IEEEauthorblockN{{{names}}}"
+    if lines:
+        block += "\n\\IEEEauthorblockA{" + "\\\\\n".join(lines) + "}"
+    return f"\\author{{{block}}}\n"
+
+
+def _llncs_authors(parsed: dict) -> str:
+    position = {entry["index"]: str(number)
+                for number, entry in enumerate(parsed["affiliations"], start=1) if entry["index"]}
+
+    def mark(indices, corresponding):
+        text = f"\\inst{{{','.join(position[i] for i in indices)}}}" if indices else ""
+        return text + (f"\\thanks{{{parsed['corresponding_note']}}}" if corresponding else "")
+
+    names = _marked_names(parsed, mark)
+    names = [name + (f"\\orcidID{{{author['orcid']}}}" if author["orcid"] else "")
+             for name, author in zip(names, parsed["authors"])]
+    institutes = [entry["text"] for entry in parsed["affiliations"]]
+    emails = [a["email"] for a in parsed["authors"] if a["email"]]
+    if emails:
+        contact = ", ".join(f"\\email{{{email}}}" for email in emails)
+        institutes = institutes[:-1] + [(institutes[-1] + "\\\\\n" if institutes else "") + contact]
+    text = "\\author{" + " \\and ".join(names) + "}\n"
+    if institutes:
+        text += "\\institute{" + " \\and\n".join(institutes) + "}\n"
+    return text
+
+
+#: Classes whose own environment typesets the highlights inside the front
+#: matter (elsarticle's `highlights`, an itemize of its own); every other
+#: class keeps the highlights block among the declarations.
+_HIGHLIGHTS_FAMILIES = frozenset({"elsarticle"})
+HIGHLIGHTS_BLOCK = f"{BACK_SECTION}.bm-highlights"
+
+
+def highlights_items(tex: str) -> list:
+    """The `\\item` texts of the highlights block's itemize. Refuses
+    `HIGHLIGHTS_UNPARSEABLE` when the block holds no itemize with items."""
+    body = strip_comments(tex)
+    found = re.search(r"\\begin\{itemize\}(.*?)\\end\{itemize\}", body, re.DOTALL)
+    items = [_collapse(item) for item in re.split(r"\\item(?![A-Za-z])", found.group(1))[1:]] if found else []
+    items = [item for item in items if item]
+    if not items:
+        raise Refused("HIGHLIGHTS_UNPARSEABLE",
+                      f"{HIGHLIGHTS_BLOCK!r} holds no itemize with \\item lines, so the class's highlights "
+                      "environment cannot be filled; write the highlights as one itemize")
+    return items
+
+
+def moved_highlights(family: str, manuscript: "Manuscript") -> dict | None:
+    """The written highlights block a class places in its front matter."""
+    block = manuscript.by_id.get(HIGHLIGHTS_BLOCK)
+    if family in _HIGHLIGHTS_FAMILIES and block is not None and block["written"]:
+        return block
+    return None
 
 
 def _front_matter(family: str, manuscript: Manuscript, report: dict) -> tuple:
@@ -1624,17 +1954,25 @@ def _front_matter(family: str, manuscript: Manuscript, report: dict) -> tuple:
     abstract_region = manuscript.region("abstract").decode("utf-8") if abstract_blocks else ""
     report["abstract"] = [b["id"] for b in abstract_blocks]
     title = read_title(title_block["text"]) if title_block else None
-    names, affiliations = read_authors(title_block["text"]) if title_block else (None, [])
+    parsed = None
+    if family != "generic" and title_block:
+        parsed = parse_author_block(title_block["text"])
+    highlights_block = moved_highlights(family, manuscript)
+    highlights = highlights_items(highlights_block["text"]) if highlights_block else []
     keywords = read_keywords(keywords_block["text"]) if keywords_block else []
     report["title"] = TITLE_BLOCK if title_block else None
     report["keywords"] = KEYWORDS_BLOCK if keywords_block else None
+    report["highlights"] = HIGHLIGHTS_BLOCK if highlights_block else None
+    authors_found = parsed is not None if family != "generic" else bool(
+        title_block and _command_argument(strip_comments(title_block["text"]), "author") is not None)
     report["unmapped"] = [
-        name for name, value in (("title", title), ("authors", names), ("keywords", keywords or None),
+        name for name, value in (("title", title), ("authors", authors_found), ("keywords", keywords or None),
                                  ("abstract", abstract_region or None)) if not value
     ]
     canonical = ""
     if family != "generic":
-        sources = [manuscript.block_region(b).decode("utf-8") for b in (title_block, keywords_block) if b]
+        sources = [manuscript.block_region(b).decode("utf-8")
+                   for b in (title_block, keywords_block, highlights_block) if b]
         if sources:
             canonical = "\\iffalse\n% canonical blocks, kept verbatim; the mapped front matter below is derived from them\n" \
                         + "".join(sources) + "\\fi\n"
@@ -1657,22 +1995,20 @@ def _front_matter(family: str, manuscript: Manuscript, report: dict) -> tuple:
         parts.append("\\begin{frontmatter}\n")
         if title:
             parts.append(f"\\title{{{title}}}\n")
-        if names:
-            parts.append(f"\\author{{{names}}}\n")
-        if affiliations:
-            parts.append("\\address{" + " \\\\ ".join(affiliations) + "}\n")
+        if parsed:
+            parts.append(_elsarticle_authors(parsed))
         parts.append(abstract_env)
+        if highlights:
+            parts.append("\\begin{highlights}\n" + "".join(f"\\item {item}\n" for item in highlights)
+                         + "\\end{highlights}\n")
         if keywords:
             parts.append("\\begin{keyword}\n" + " \\sep ".join(keywords) + "\n\\end{keyword}\n")
         parts.append("\\end{frontmatter}\n")
     elif family == "ieeetran":
         if title:
             parts.append(f"\\title{{{title}}}\n")
-        if names:
-            block = f"\\IEEEauthorblockN{{{names}}}"
-            if affiliations:
-                block += "\n\\IEEEauthorblockA{" + " \\\\ ".join(affiliations) + "}"
-            parts.append(f"\\author{{{block}}}\n")
+        if parsed:
+            parts.append(_ieeetran_authors(parsed))
         parts.append("\\maketitle\n")
         parts.append(abstract_env)
         if keywords:
@@ -1680,10 +2016,8 @@ def _front_matter(family: str, manuscript: Manuscript, report: dict) -> tuple:
     else:  # llncs
         if title:
             parts.append(f"\\title{{{title}}}\n")
-        if names:
-            parts.append(f"\\author{{{names}}}\n")
-        if affiliations:
-            parts.append("\\institute{" + " \\and ".join(affiliations) + "}\n")
+        if parsed:
+            parts.append(_llncs_authors(parsed))
         parts.append("\\maketitle\n")
         if abstract_region:
             keywords_line = ("\\keywords{" + " \\and ".join(keywords) + "}\n") if keywords else ""
@@ -1702,15 +2036,17 @@ _REFERENCES_LINE_RE = re.compile(
 )
 
 
-def _back_matter_parts(manuscript: "Manuscript") -> tuple:
+def _back_matter_parts(manuscript: "Manuscript", moved: frozenset = frozenset()) -> tuple:
     """`(declarations_text, appendices_text)`: every back-matter block, each
     once and byte for byte, split into the declarations that precede the
     references (the AI-use declaration last) and the appendices that follow
     them. The canonical span between the first and last declaration is kept
     whole -- glue and inner headings included -- when it already holds them
     in that order and nothing else (no other block, no reference list);
-    otherwise the blocks are joined a blank line apart."""
-    blocks = sorted(manuscript.section_blocks(BACK_SECTION), key=lambda b: b["begin"]["start"])
+    otherwise the blocks are joined a blank line apart. Blocks in `moved`
+    (the highlights a class sets in its front matter) are left out."""
+    blocks = sorted((b for b in manuscript.section_blocks(BACK_SECTION) if b["id"] not in moved),
+                    key=lambda b: b["begin"]["start"])
     appendices = [b for b in blocks if b["id"] in APPENDIX_BLOCKS]
     declarations = [b for b in blocks if b["id"] not in APPENDIX_BLOCKS]
     wanted = ([b for b in declarations if b["id"] != AI_USE_BLOCK]
@@ -1800,6 +2136,20 @@ def build(paper_dir: Path, slug: str, clock=_clock) -> dict:
     # ahead of the back matter and the bibliography
     cut = next((i for i, item in enumerate(ordered) if item[0] in ("references", BACK_SECTION)), len(ordered))
     ordered[cut:cut] = [(s, None) for s in extra_kept]
+    # a section the canonical file opens with a `\subsection` line (no
+    # `\section` of its own) is nested in the section before it, so it
+    # travels right after that section instead of after the venue's own
+    for sid in [s for s in content if s in extra_kept]:
+        heading = manuscript.headings.get(sid)
+        if heading is None or _SECTION_COMMAND_RE.match(heading):
+            continue
+        before = content[:content.index(sid)]
+        parent = next((s for s in reversed(before) if any(item[0] == s for item in ordered)), None)
+        if parent is None:
+            continue
+        ordered = [item for item in ordered if item[0] != sid]
+        at = next(i for i, item in enumerate(ordered) if item[0] == parent)
+        ordered.insert(at + 1, (sid, None))
     # Back matter renders after the conclusions and before the references,
     # for every venue; appendices follow the references
     # (`sections/10-back-matter.md`, "Placement follows the venue") -- the
@@ -1807,8 +2157,9 @@ def build(paper_dir: Path, slug: str, clock=_clock) -> dict:
     references_entry = next((item for item in ordered if item[0] == "references"), ("references", None))
     back_entry = next((item for item in ordered if item[0] == BACK_SECTION), (BACK_SECTION, None))
     ordered = [item for item in ordered if item[0] not in ("references", BACK_SECTION)]
-    back_written = any(b["written"] for b in manuscript.section_blocks(BACK_SECTION))
-    declarations_text, appendices_text = _back_matter_parts(manuscript) if back_written else ("", "")
+    moved = frozenset([HIGHLIGHTS_BLOCK]) if moved_highlights(family, manuscript) else frozenset()
+    back_written = any(b["written"] for b in manuscript.section_blocks(BACK_SECTION) if b["id"] not in moved)
+    declarations_text, appendices_text = _back_matter_parts(manuscript, moved) if back_written else ("", "")
     if declarations_text:
         ordered.append(back_entry)
     ordered.append(references_entry)
