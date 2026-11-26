@@ -39,6 +39,13 @@ const ACHIEVED_RESULT = /\b(?:outperform(?:s|ed)|beats|beat|surpass(?:es|ed)|ach
  */
 const SOURCE_REFERENCE_HEADING = "Reference Sources";
 
+/**
+ * The change header every successor renders after the reference sources. It ends the
+ * reference-sources span: the quoted sources carry level-2 headings of their own (the data
+ * paper's `## Structure`, `## Provenance`, ...), so the next level-2 heading cannot.
+ */
+const CHANGE_HEADING = "Changes";
+
 /** Where the data paper and dataset guidance live, and the one source that bounds every claim in this document. */
 const DATA_PAPER = "guidance/data-paper";
 
@@ -120,7 +127,7 @@ export const profile: DeliberationDomainProfile = {
 		// against the newer one. The block is its own resolved span each version, and the
 		// receipt chain is where the full history lives.
 		changeHeader: {
-			heading: "Changes",
+			heading: CHANGE_HEADING,
 			// The FULL block, its own heading line included, and ending in a blank line:
 			// `document-index.ts` folds the trailing blank line into a heading's span, so a
 			// render that stopped one newline short would not fill the span it replaces and
@@ -138,12 +145,17 @@ export const profile: DeliberationDomainProfile = {
 		detectConflicts: (candidateText) => {
 			const conflicts: { id: string; sourceName: string; claim: string; evidence: string }[] = [];
 			const seen = new Set<string>();
-			// Inside `## <SOURCE_REFERENCE_HEADING>` until the next level-2 heading: the
-			// verbatim source fragments v1 rendered, which every successor carries.
+			// From `## <SOURCE_REFERENCE_HEADING>` until `## <CHANGE_HEADING>` or the end: the
+			// verbatim source fragments v1 rendered, with their own level-2 headings, which
+			// every successor carries.
 			let inReferenceSources = false;
 			for (const line of candidateText.split("\n")) {
 				const evidence = line.replace(/\s+/gu, " ").trim();
-				if (/^## /u.test(evidence)) inReferenceSources = evidence.slice(3).trim() === SOURCE_REFERENCE_HEADING;
+				if (/^## /u.test(evidence)) {
+					const heading = evidence.slice(3).trim();
+					if (heading === SOURCE_REFERENCE_HEADING) inReferenceSources = true;
+					else if (heading === CHANGE_HEADING) inReferenceSources = false;
+				}
 				if (inReferenceSources) continue;
 				if (!evidence || !ACHIEVED_RESULT.test(evidence)) continue;
 				const id = `claimed-result:${sha256(evidence).slice(0, 12)}`;
