@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.84.4
 
 - **`skeleton --frame` writes the canonical document frame of `paper/main.tex`.**
   `scaffold` wrote an empty `main.tex` and `skeleton` opened block markers
