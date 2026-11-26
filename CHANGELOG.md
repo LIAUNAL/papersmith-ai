@@ -29,6 +29,26 @@ number is `0`, breaking changes can still arrive without a major bump.
 - **`write` refuses a body block draft that carries a section heading**
   (`DRAFT_SECTION_HEADING`). Back-matter declarations keep their own
   `\section*`; a `\subsection` stays free.
+- **The `papersmith.yaml` reader keeps every key after a list of mappings.** An
+  `authors:` list of `- name: ...` items with nested keys ended the parse silently, so
+  `paper_writing.roles` was dropped and `resolve` refused `RESOLVER_ROLE_EMPTY`. A list of
+  mappings now reads as a list of dicts, and any line the reader cannot place refuses
+  `PAPERSMITH_CONFIG_UNREADABLE` naming that line instead of a partial read.
+- **`venue build` maps the revealed author block into the class's own commands.** The
+  minipage of the revealed-author template was split across `\author{\begin{minipage}...}` and
+  `\address{...\end{minipage}}`, invalid LaTeX, and the e-mails, ORCID and corresponding-author
+  lines landed in `\address`. The block is now parsed (with or without the minipage, wrapped
+  affiliation lines joined) into elsarticle `\author[affN]`, `\ead`, `\cortext`, `\fntext` and
+  `\address[affN]` (IEEEtran and llncs take their own equivalents); the article fallback keeps the
+  block verbatim. A block it cannot place refuses `TITLE_BLOCK_UNPARSEABLE`.
+- **elsarticle highlights go in the `highlights` environment.** The `bm-highlights` itemize is set
+  inside the front matter as `\begin{highlights}...\end{highlights}`, no longer as a
+  `\paragraph{Highlights}` among the declarations; a block without an itemize refuses
+  `HIGHLIGHTS_UNPARSEABLE`.
+- **`venue build` keeps the heading lines the canonical file writes between blocks.** A
+  `\subsection{Limitations}\label{sec:limitations}` opening the limitations blocks was dropped and
+  replaced by a numbered `\section{Limitations}`; every `\section`/`\subsection` line is now kept
+  as written, and a section opening with a `\subsection` travels after the section before it.
 
 ## 0.84.3
 
