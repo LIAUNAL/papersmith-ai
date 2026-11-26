@@ -340,3 +340,28 @@ class FrontMatterCompileTests(FrontMatterCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreambleHookTests(unittest.TestCase):
+    """`build_preamble` keeps the hooks a journal requirement needs (continuous
+    line numbers: `\\usepackage{lineno}` plus `\\AtBeginDocument{\\linenumbers}`),
+    and still drops what it does not recognise."""
+
+    def _kept(self, preamble: str) -> tuple:
+        from types import SimpleNamespace
+        kept, _skipped, dropped = paper_venue.build_preamble(SimpleNamespace(preamble=preamble), "elsarticle")
+        return kept, dropped
+
+    def test_at_begin_document_and_linenumbers_are_kept(self) -> None:
+        kept, dropped = self._kept(
+            "\\documentclass{article}\n\\usepackage{lineno}\n\\AtBeginDocument{\\linenumbers}\n\\linenumbers\n"
+        )
+        self.assertIn("\\usepackage{lineno}", kept)
+        self.assertIn("\\AtBeginDocument{\\linenumbers}", kept)
+        self.assertIn("\\linenumbers", kept)
+        self.assertEqual(dropped, [])
+
+    def test_an_unknown_statement_is_still_dropped(self) -> None:
+        kept, dropped = self._kept("\\documentclass{article}\n\\usepackage{amsmath}\n\\onehalfspacing\n")
+        self.assertIn("\\usepackage{amsmath}", kept)
+        self.assertEqual(dropped, ["\\onehalfspacing"])

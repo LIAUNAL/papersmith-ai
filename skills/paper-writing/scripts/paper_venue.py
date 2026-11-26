@@ -1717,6 +1717,9 @@ _KEPT_COMMANDS = (
     "usepackage", "RequirePackage", "newcommand", "renewcommand", "providecommand",
     "DeclareMathOperator", "newtheorem", "theoremstyle", "def", "newenvironment", "hypersetup",
     "geometry", "graphicspath",
+    # Hooks a journal requirement needs in the preamble, e.g. continuous line
+    # numbers (Energy and Buildings): `\AtBeginDocument{\linenumbers}`.
+    "AtBeginDocument", "AtEndPreamble", "linenumbers", "modulolinenumbers",
 )
 _STATEMENT_RE = re.compile(r"^\\(?P<command>[A-Za-z]+)\*?")
 

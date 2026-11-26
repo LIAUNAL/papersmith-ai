@@ -11,6 +11,14 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **`venue build` keeps the preamble hooks a journal requirement needs.** The build copies the
+  canonical preamble statement by statement and dropped `\AtBeginDocument{\linenumbers}`, so the
+  continuous line numbers Energy and Buildings asks for never reached the venue file although
+  `\usepackage{lineno}` did. `\AtBeginDocument`, `\AtEndPreamble`, `\linenumbers` and
+  `\modulolinenumbers` are now kept; anything else unrecognised is still dropped and reported.
+
 ## 0.84.4
 
 - **`skeleton --frame` writes the canonical document frame of `paper/main.tex`.**
