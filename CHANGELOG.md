@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.84.5
 
 - **`venue build` keeps the preamble hooks a journal requirement needs.** The build copies the
   canonical preamble statement by statement and dropped `\AtBeginDocument{\linenumbers}`, so the
