@@ -134,6 +134,7 @@ import paper_translate  # noqa: E402 -- manuscript-translation-es T2: the `trans
 import paper_place  # noqa: E402 -- figure-and-table-quality T2 (S2-S4): the print-quality gate `place` runs before copying a measured figure (text layer, background, margins, in-figure title, printed font floor)
 import paper_review  # noqa: E402 -- the final judge's rounds, read by the dashboard's panel
 import paper_reorder  # noqa: E402 -- daprosero-backlog S6.4 (#184 item 4): `reorder` moves canonical back-matter blocks into the order `verify`'s back-matter-order check expects
+import paper_frame  # noqa: E402 -- paper-frame-venue-front-matter S2: `skeleton --frame` writes the canonical document frame around the blocks; `write` reuses its heading check (`DRAFT_SECTION_HEADING`)
 import paper_coherence  # noqa: E402 -- daprosero-backlog T5: `verify`'s caption and coherence checks; imported for the roster derivation and ModuleCompletenessTests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_core" / "implementation"))
@@ -652,6 +653,8 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "PLAN_HASH_MISMATCH": INVOCATION_DEFECT,
     "STATEMENT_EMPTY": INVOCATION_DEFECT,
     "PLAN_NOT_APPROVED": WORK_STATE,
+    "TITLE_BLOCK_UNPARSEABLE": WORK_STATE,
+    "HIGHLIGHTS_UNPARSEABLE": WORK_STATE,
     # --- manuscript-translation-es: the `translate` verb group
     # (paper_translate.py). `PAPER_ABSENT`, `BLOCK_ABSENT`,
     # `BLOCK_HAND_EDITED`, `BLOCK_ID_MALFORMED`, `CONTENT_CARRIES_MARKER`,
@@ -688,6 +691,13 @@ REFUSAL_CLASSIFICATION: dict[str, str] = {
     "RUBRIC_LINE_UNKNOWN": WORK_STATE,
     # --- reorder (paper_reorder.py): no single place to move a block to ---
     "REORDER_LAYOUT_AMBIGUOUS": WORK_STATE,
+    # --- paper-frame-venue-front-matter S2: `skeleton --frame` writes the
+    # canonical document frame (paper_frame.py), and `write` refuses a body
+    # draft carrying a section heading (paper_write.py) ---------------------
+    "FRAME_OUTSIDE_TEXT": WORK_STATE,
+    "FRAME_BLOCK_CARRIES_HEADING": WORK_STATE,
+    "FRAME_BLOCK_UNDECLARED": WORK_STATE,
+    "DRAFT_SECTION_HEADING": WORK_STATE,
 }
 
 
@@ -939,6 +949,7 @@ def _skeleton_excluded_ids(corpus, *, related_work: bool, dataset_in: str) -> se
 
 def build_skeleton(
     paper_dir: Path, sections_dir: Path, *, related_work: str | None, dataset_in: str | None,
+    frame: bool = False,
 ) -> dict:
     """`skeleton`'s own logic, taking `paper_dir`/`sections_dir` directly —
     the same separation `compute_phases`/`compute_readiness_report` keep
@@ -961,8 +972,18 @@ def build_skeleton(
     refuses `SKELETON_ALREADY_DECIDED` (work-state) naming both what disk
     already records and what was requested. Already-opened ids are skipped
     — idempotent, never re-opened, never re-asked.
+
+    `frame` (`--frame`, `odd/tasks/paper-frame-venue-front-matter.md` S2)
+    then writes the canonical document frame around the blocks
+    (`paper_frame.frame_paper`), the one explicit writer of bytes outside
+    the blocks; without it this function writes through `open_block` alone,
+    exactly as before. On a paper that already has blocks, `--frame` without
+    the two answers opens nothing and only frames: the decisions are already
+    on disk. A paper with no block still needs both answers.
     """
     if related_work is None or dataset_in is None:
+        if frame and paper_block.read_status(paper_dir)["blocks"]:
+            return {"opened": [], "frame": paper_frame.frame_paper(paper_dir, sections_dir)}
         missing = [
             flag for flag, value in (
                 ("--related-work", related_work), ("--dataset-in", dataset_in),
@@ -1012,6 +1033,9 @@ def build_skeleton(
         opened_ids.add(qualified_id)
         opened.append(qualified_id)
 
+    if frame:
+        return {"relatedWork": related_work_flag, "datasetPlacement": requested_placement,
+                "opened": opened, "frame": paper_frame.frame_paper(paper_dir, sections_dir)}
     return {
         "relatedWork": related_work_flag,
         "datasetPlacement": requested_placement,
@@ -1024,6 +1048,7 @@ def cmd_skeleton(args: argparse.Namespace) -> dict:
     sections_dir = paper_contract.resolve_sections_dir(args.sections)
     return build_skeleton(
         paper_dir, sections_dir, related_work=args.related_work, dataset_in=args.dataset_in,
+        frame=bool(getattr(args, "frame", False)),
     )
 
 
@@ -4058,6 +4083,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_skeleton.add_argument(
         "--dataset-in", default=None, choices=("materials", "experimental-setup"),
         help="where the dataset is described; asked once",
+    )
+    p_skeleton.add_argument(
+        "--frame", action="store_true", default=False,
+        help="also write the canonical document frame around the blocks (preamble, \\begin{document}, "
+        "one \\section{...}\\label{sec:...} line per body section outside the blocks, the back-matter "
+        "heading, \\bibliography, \\end{document}); block bytes and digests never change. On a paper "
+        "that already has blocks the two answers may be omitted. A file already framed is left alone; "
+        "refuses FRAME_OUTSIDE_TEXT, FRAME_BLOCK_CARRIES_HEADING, FRAME_BLOCK_UNDECLARED",
     )
 
     p_order = sub.add_parser("order", help="derive the writing order from the block graph")

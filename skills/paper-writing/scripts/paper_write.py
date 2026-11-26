@@ -29,6 +29,7 @@ import paper_audit  # noqa: E402
 import paper_bindings  # noqa: E402
 import paper_block  # noqa: E402
 import paper_evidence  # noqa: E402
+import paper_frame  # noqa: E402
 import paper_language  # noqa: E402
 import paper_latex  # noqa: E402
 import paper_verify  # noqa: E402
@@ -176,6 +177,23 @@ def check_lead_ins(block_id: str, latex: str) -> None:
         )
 
 
+def check_body_headings(block_id: str, latex: str) -> None:
+    """Refuse `DRAFT_SECTION_HEADING` for a body block draft that carries a
+    `\\section{`/`\\section*{` line: the frame writes every body heading
+    outside the blocks (`paper_frame`), so a heading inside a block prints
+    twice in the canonical file and in every venue build. Back-matter blocks
+    are exempt; the venue may give a declaration a section of its own."""
+    hits = paper_frame.heading_lines(block_id, latex)
+    if hits:
+        lines = ", ".join(f"line {number}: {text[:60]!r}" for number, text in hits[:5])
+        raise Refused(
+            "DRAFT_SECTION_HEADING",
+            f"{block_id} is a body block and carries a section heading ({lines}); the section's "
+            "\\section line lives outside the blocks (skeleton --frame writes it). Drop the heading "
+            "from the draft; a \\subsection stays free",
+        )
+
+
 def _stage_language(paper_dir: Path, draft: dict) -> dict:
     """Spec S4 (`odd/tasks/manuscript-polish-0-54.md`): the manuscript is
     English unless the paper declares another language, and no draft
@@ -249,6 +267,7 @@ def write_block(
         raise Refused("AUDIT_UNREADABLE", "audit_account must be a dict with list 'verdicts'")
     language = _stage_language(paper_dir, draft)
     check_lead_ins(contract.block_id, draft["latex"])
+    check_body_headings(contract.block_id, draft["latex"])
     bindings = _stage_evidence_audit(contract, draft)
 
     key = _attempt_key(contract)

@@ -194,11 +194,12 @@ def _redact(text: str) -> str:
 # `papersmith.yaml` stays readable by a human editor with comments, so this
 # is deliberately NOT a general YAML parser (no flow style, no anchors, no
 # multi-document streams) -- only what this repository's own config file
-# ever uses: nested mappings, scalar strings, and block lists of scalar
-# strings, indentation-delimited. `paper-writing` stays stdlib-only
-# end to end (`SKILL.md`); pulling in a YAML library for one small,
-# self-authored config block would cost the "no third-party dependency"
-# property for the whole skill just to read six lines.
+# ever uses: nested mappings, scalar strings, block lists of scalar
+# strings, and block lists of mappings (`- key: value` items whose nested
+# keys sit under the first key), indentation-delimited. `paper-writing`
+# stays stdlib-only end to end (`SKILL.md`); pulling in a YAML library for
+# one small, self-authored config block would cost the "no third-party
+# dependency" property for the whole skill just to read six lines.
 
 def _strip_comment(line: str) -> str:
     return _COMMENT_RE.sub("", line).rstrip()
@@ -215,12 +216,31 @@ def _scalar(text: str):
     return text
 
 
-def _parse_block(lines: list[str], start: int, indent: int):
+#: A list item whose content opens a mapping: an unquoted key, a colon,
+#: then a space or the end of the line (`- https://x` stays a scalar).
+_ITEM_MAPPING_RE = re.compile(r"^[A-Za-z0-9_][\w.-]*\s*:(?:\s|$)")
+
+
+def _parse_block(lines: list[str], start: int, indent: int, numbers: list[int] | None = None):
+    """`(value, next index)` of the block at `indent` from `lines[start]`.
+    It stops at the first line it does not own; `parse_yaml_subset` refuses
+    whatever remains, so a stop is never a silent partial read. A list item
+    that opens a mapping is rewritten in place (`- ` becomes two spaces) and
+    parsed as the mapping at `indent + 2`; `lines` is the caller's own copy."""
+    def where(index: int) -> str:
+        return f"line {numbers[index]}" if numbers else f"line {index + 1}"
+
     if start < len(lines) and lines[start].lstrip().startswith("- "):
         items = []
         i = start
         while i < len(lines) and _indent(lines[i]) == indent and lines[i].lstrip().startswith("- "):
-            items.append(_scalar(lines[i].lstrip()[2:]))
+            content = lines[i].lstrip()[2:]
+            if _ITEM_MAPPING_RE.match(content.lstrip()):
+                lines[i] = " " * (indent + 2) + content.lstrip()
+                value, i = _parse_block(lines, i, indent + 2, numbers)
+                items.append(value)
+                continue
+            items.append(_scalar(content))
             i += 1
         return items, i
 
@@ -228,15 +248,15 @@ def _parse_block(lines: list[str], start: int, indent: int):
     i = start
     while i < len(lines) and _indent(lines[i]) == indent:
         line = lines[i].strip()
-        if ":" not in line:
-            raise ValueError(f"expected 'key: value' at: {line!r}")
+        if ":" not in line or line.startswith("- "):
+            raise ValueError(f"{where(i)}: expected 'key: value' at: {line!r}")
         key, _, rest = line.partition(":")
         key = key.strip()
         rest = rest.strip()
         if rest == "":
             j = i + 1
             if j < len(lines) and _indent(lines[j]) > indent:
-                value, i = _parse_block(lines, j, _indent(lines[j]))
+                value, i = _parse_block(lines, j, _indent(lines[j]), numbers)
             else:
                 value = {}
                 i = j
@@ -251,16 +271,24 @@ def _parse_block(lines: list[str], start: int, indent: int):
 
 
 def parse_yaml_subset(text: str) -> dict:
-    """Parses the constrained shape above. Raises `ValueError` on anything
-    it does not recognize -- fail closed, never a partial or best-effort
-    read of a config file this whole skill trusts."""
-    lines = [_strip_comment(raw) for raw in text.splitlines()]
-    lines = [ln for ln in lines if ln.strip() != ""]
-    if not lines:
+    """Parses the constrained shape above. Raises `ValueError` naming the
+    line on anything it does not recognize -- including any line the block
+    reader stops at and leaves unread (a deeper indentation it does not
+    own) -- fail closed, never a partial or best-effort read of a config
+    file this whole skill trusts."""
+    numbered = [(number, _strip_comment(raw)) for number, raw in enumerate(text.splitlines(), start=1)]
+    numbered = [(number, line) for number, line in numbered if line.strip() != ""]
+    if not numbered:
         return {}
-    value, _ = _parse_block(lines, 0, 0)
+    numbers = [number for number, _ in numbered]
+    lines = [line for _, line in numbered]
+    value, stop = _parse_block(lines, 0, 0, numbers)
     if not isinstance(value, dict):
         raise ValueError("top level of the config must be a mapping")
+    if stop < len(lines):
+        raise ValueError(
+            f"line {numbers[stop]}: unexpected indentation or structure at {lines[stop].strip()!r}; "
+            "the reader stopped here and refuses to drop the rest of the file")
     return value
 
 

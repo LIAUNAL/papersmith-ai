@@ -1215,7 +1215,8 @@ _PAPER_MUTATING = (
         name="papersmith.paper_skeleton",
         title="Open the section skeleton",
         description=(
-            "Open every section/block id the two structural answers imply, empty, via open_block only."
+            "Open every section/block id the two structural answers imply, empty, via open_block only; "
+            "with frame, also write the canonical document frame outside the blocks."
         ),
         verb="skeleton",
         surface="paper",
@@ -1231,6 +1232,7 @@ _PAPER_MUTATING = (
                     "dataset_in", "--dataset-in", kind="enum",
                     choices=("materials", "experimental-setup"),
                 ),
+                Flag("frame", "--frame", kind="bool"),
             )
         ),
         build=_paper_builder(
@@ -1243,6 +1245,7 @@ _PAPER_MUTATING = (
                     "dataset_in", "--dataset-in", kind="enum",
                     choices=("materials", "experimental-setup"),
                 ),
+                Flag("frame", "--frame", kind="bool"),
             ),
         ),
         result_json=True,
