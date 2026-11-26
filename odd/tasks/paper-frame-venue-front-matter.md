@@ -10,10 +10,11 @@ Objective: stop three defects found while building the Energy and Buildings pape
 ## Tasks
 | ID | Specs | Route | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| T1 | S2 | delegated (Writer trigger a: parallel with T2, disjoint surfaces; context backstop) | pending | |
-| T2 | S3, S4 | delegated (Writer trigger a: parallel with T1) | pending | |
-| T3 | S1 | inline | pending | merge, full suite, release 0.84.4 (version files, CHANGELOG, README pin, ?v= tokens, tag, gh release) |
+| T1 | S2 | delegated (Writer trigger a: parallel with T2, disjoint surfaces; context backstop) | done | 7f9abd24 (skeleton --frame, paper_frame.py, DRAFT_SECTION_HEADING; 23 tests RED->GREEN) |
+| T2 | S3, S4 | delegated (Writer trigger a: parallel with T1) | done | 38b3a1a6, 9601ed56 (YAML list of mappings fail-closed; elsarticle/IEEEtran/llncs author mapping, highlights env, heading lines kept; 23 tests RED->GREEN) |
+| T3 | S1 | inline | done (release 0.84.4) | merge, full suite, release 0.84.4 (version files, CHANGELOG, README pin, ?v= tokens, tag, gh release) |
 
 ## Log
 - L1 (2026-11-26): «entocnes debemos ajustar algo en papersmith? si si ajustalo en papersmith, push y release para que no ocurra en futuroa proyectos»
 - L2 (2026-11-26): evidence from Paper_EEIA: reviewJorge/paper/main.tex keeps the frame and body \section lines outside the blocks (hand-written); Paper_EEIA's frame was never written; first elsarticle build invalid (duplicate headings, no packages, author minipage split, highlights as \paragraph); paper_resolve dropped paper_writing.roles after authors:. The ingestion setup was checked and is not a defect (scripts/setup_env.py ships in the workspace).
+- L3 (2026-11-26): merged both units (CHANGELOG conflict: both entries kept); roster pin 246 -> 248; MCP paper_skeleton exposes --frame (docs/mcp.md). Full suite: 12045 passed, 18 skipped, 3 failed: version hygiene (expected before the bump), ProbeReportedFactsRosterTests (passes alone: parallel artefact), slot_queues golden job-folder-with-timing-three-units (fails on v0.84.3 too: pre-existing). Known limits: open --at-end on a framed paper lands after \end{document} (use --after); the heading guard is in write only.
