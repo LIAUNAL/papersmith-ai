@@ -88,13 +88,17 @@ const conflictOnPlannedWork = DOMAIN.sourceAuthority.detectConflicts(
     '# Experiments\\n\\nThe run will report accuracy for the adapted model against the source-only baseline.\\n');
 // The \`## <sourceReferenceHeading>\` section holds verbatim fragments of the data paper
 // rendered at v1 and carried into every successor: the source quoting itself is not the
-// plan asserting an outcome. Detection resumes at the next level-2 heading.
+// plan asserting an outcome. Detection resumes at the change header.
 const QUOTED = 'Measurements were obtained from a nearby weather station.';
 const referenceHeading = DOMAIN.artifact.sourceReferenceHeading;
 const conflictInReferenceSources = DOMAIN.sourceAuthority.detectConflicts(
     \`# Experiments\\n\\n## \${referenceHeading}\\n\\n\${QUOTED}\\n\\n### Data paper\\n\\n\${QUOTED} Again.\\n\`);
 const conflictInExperiment = DOMAIN.sourceAuthority.detectConflicts(
     \`# Experiments\\n\\n## Experiment [exp:E1] Station\\n\\n\${QUOTED}\\n\`);
+// A quoted source carries its own level-2 headings (the data paper's Structure heading, for
+// example), so the section runs on past them until the change header, as v1 lays it out.
+const conflictUnderQuotedHeading = DOMAIN.sourceAuthority.detectConflicts(
+    \`# Experiments\\n\\n## \${referenceHeading}\\n\\n### guidance/data-paper/campus.md\\n\\n## Structure\\n\\n\${QUOTED}\\n\\n## Provenance\\n\\n\${QUOTED} Again.\\n\`);
 const conflictAfterReferenceSources = DOMAIN.sourceAuthority.detectConflicts(
     \`# Experiments\\n\\n## \${referenceHeading}\\n\\n\${QUOTED}\\n\\n## Changes\\n\\nThe adapted model outperforms every baseline.\\n\`);
 
@@ -122,6 +126,7 @@ console.log(JSON.stringify({
     conflictOnAchievedResult,
     conflictOnPlannedWork,
     conflictInReferenceSources,
+    conflictUnderQuotedHeading,
     conflictInExperiment,
     conflictAfterReferenceSources,
     richAtoms: preservation.atoms(RICH).size,
@@ -255,6 +260,8 @@ test('the data paper quoted under the reference-sources heading is not a source-
     const result = await loaded();
     assert.deepEqual(result.conflictInReferenceSources, [],
         'a verbatim data-paper fragment inside the reference-sources section must not raise SOURCE_AUTHORITY_CONFLICT');
+    assert.deepEqual(result.conflictUnderQuotedHeading, [],
+        'a quoted source keeps its own level-2 headings; the section ends at the change header, not at them');
     assert.equal(result.conflictInExperiment.length, 1, JSON.stringify(result.conflictInExperiment));
     assert.match(result.conflictInExperiment[0].evidence, /obtained from a nearby weather station/);
     assert.equal(result.conflictAfterReferenceSources.length, 1, JSON.stringify(result.conflictAfterReferenceSources));
