@@ -11,6 +11,25 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **`skeleton --frame` writes the canonical document frame of `paper/main.tex`.**
+  `scaffold` wrote an empty `main.tex` and `skeleton` opened block markers
+  only, so nothing wrote the preamble, `\begin{document}`, the section
+  headings, the bibliography lines or `\end{document}`; a redactor then put the
+  body `\section` lines inside the blocks and `venue build` printed every
+  heading twice with no packages loaded. `--frame` writes that frame once:
+  one `\section{<Title>}\label{sec:<id>}` line per body section outside the
+  blocks, titles and order taken from the section contracts, the back matter
+  before `\bibliography` and the appendices after it. An existing frameless
+  paper gets it with `skeleton --frame` alone; blocks move whole and keep
+  their bodies and digests. It refuses `FRAME_OUTSIDE_TEXT`,
+  `FRAME_BLOCK_CARRIES_HEADING` (naming each body block that carries its own
+  heading) and `FRAME_BLOCK_UNDECLARED`, writing nothing.
+- **`write` refuses a body block draft that carries a section heading**
+  (`DRAFT_SECTION_HEADING`). Back-matter declarations keep their own
+  `\section*`; a `\subsection` stays free.
+
 ## 0.84.3
 
 - **The whole reference-sources section of an experimental protocol is

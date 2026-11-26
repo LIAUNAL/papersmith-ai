@@ -9,7 +9,11 @@ description: "Trigger: create or re-enter the paper/ tree; write one named block
 is delimited by two LaTeX-comment marker lines carrying its id and a sha256
 digest of its own body; this engine never rewrites a byte outside the block
 it was asked to change, and proves that on every call rather than assuming
-it — before a single byte reaches disk.
+it — before a single byte reaches disk. The one documented exception is the
+document frame: `skeleton --frame` writes the preamble, `\begin{document}`,
+the section headings, the bibliography lines and `\end{document}` around the
+blocks of a frameless file, once, moving blocks whole and proving that every
+block keeps its body and digest.
 
 ## What this skill ships today
 
@@ -110,7 +114,7 @@ copy can never silently replace newer prose.
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `scaffold` | Creates `paper/main.tex`, `paper/refs.bib`, `paper/Figures/`, `paper/.gitkeep` if absent. Idempotent — a second run never touches an existing byte, hand edits included | `PAPER_OUTSIDE_REPOSITORY`, `PAPER_NOT_A_DIRECTORY`, `SCAFFOLD_ENTRY_WRONG_TYPE` |
+| `scaffold` | Creates `paper/main.tex` (empty), `paper/refs.bib`, `paper/Figures/`, `paper/.gitkeep` if absent. Idempotent — a second run never touches an existing byte, hand edits included. The document frame is written by `skeleton --frame`, not here | `PAPER_OUTSIDE_REPOSITORY`, `PAPER_NOT_A_DIRECTORY`, `SCAFFOLD_ENTRY_WRONG_TYPE` |
 | `status` | Read-only block table: id, digest, byte region, per block | `PAPER_ABSENT`, `TEX_UNDECODABLE`, `MARKER_MALFORMED`, `BLOCK_DUPLICATED`, `BLOCK_UNPAIRED`, `BLOCK_NESTED` |
 | `open --block <id> (--after <id> \| --at-end)` | Installs an EMPTY begin/end pair at the named position. Never writes content — the first write to a new block is always `open` then `substitute` | adds `BLOCK_DUPLICATED`, `ANCHOR_ABSENT`, `OPEN_POSITION_REQUIRED`, `OPEN_POSITION_CONFLICT` |
 | `substitute --block <id> (--body <path\|-> \| --adopt) [--expect-digest <sha256>]` | Replaces one block's body, or (`--adopt`) accepts the on-disk body as the new baseline without changing it. `--expect-digest` is the block digest `status` listed when you read it; the write refuses when the block's recorded digest has moved since | adds `BLOCK_ABSENT`, `BLOCK_HAND_EDITED`, `BLOCK_CHANGED_SINCE_READ`, `CONTENT_CARRIES_MARKER`, `NOTHING_TO_ADOPT`, `SUBSTITUTE_MODE_REQUIRED`, `ADOPT_BODY_CONFLICT`, `SUBSTITUTION_NOT_LOCAL`, `TEX_MOVED` |
@@ -428,12 +432,12 @@ that, and only that: it opens each non-excluded id through the existing
 
 ```bash
 .venv/bin/python skills/paper-writing/scripts/paper_cli.py skeleton \
-    --related-work yes --dataset-in materials
+    --related-work yes --dataset-in materials --frame
 ```
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `skeleton --related-work yes\|no --dataset-in materials\|experimental-setup [--sections <dir>] [--paper <dir>]` | Opens every `sections/*.md` block id the two answers imply, empty, skipping ids already opened | `SKELETON_ANSWER_REQUIRED`, `SKELETON_ALREADY_DECIDED`, `DATASET_PLACEMENT_CONFLICT` |
+| `skeleton --related-work yes\|no --dataset-in materials\|experimental-setup [--frame] [--sections <dir>] [--paper <dir>]` | Opens every `sections/*.md` block id the two answers imply, empty, skipping ids already opened. With `--frame`, then writes the canonical document frame around the blocks (below); on a paper that already has blocks, `--frame` alone (no answers) only frames | `SKELETON_ANSWER_REQUIRED`, `SKELETON_ALREADY_DECIDED`, `DATASET_PLACEMENT_CONFLICT`; with `--frame`, `FRAME_OUTSIDE_TEXT`, `FRAME_BLOCK_CARRIES_HEADING`, `FRAME_BLOCK_UNDECLARED` |
 
 **Two structural decisions, asked exactly once.** Whether the manuscript
 carries a dedicated Related Work section, and whether the dataset is
@@ -453,6 +457,38 @@ genuine conflict the inference cannot resolve one way — it refuses
 `DATASET_PLACEMENT_CONFLICT` rather than silently picking a winner.
 Already-opened ids are skipped, so a repeated `skeleton` call with the same
 answers is idempotent.
+
+**The document frame: `skeleton --frame`.** Without the flag `skeleton`
+writes through `open_block` alone and the file holds markers only, which no
+venue build can typeset. `--frame` writes, once, the frame every later stage
+reads (`paper_frame.py`): the canonical review preamble (`article`, one
+column, English, `natbib`; empty `\title`/`\author`/`\date` defaults the
+title block overrides), `\begin{document}`, the title block, `\maketitle`,
+the abstract blocks inside `\begin{abstract}`, the keywords block, then one
+`\section{<Title>}\label{sec:<id>}` line per body section OUTSIDE the
+blocks, right before that section's first block, `\section*{Back matter}`
+before the declarations (the AI-use declaration last),
+`\bibliographystyle{unsrtnat}` and `\bibliography{refs}`, the appendices,
+and `\end{document}`; the `declarations`/`provenance` regions follow
+unchanged. Sections follow the contracts' `position` and each section's
+blocks the header's own block order, never `order`'s writing order, which
+interleaves sections. Each title is the contract's `# ` heading (a
+`(<kind> line)` suffix dropped). Only blocks already in `main.tex` are placed:
+a section with none (Related Work under `--related-work no`) gets no heading.
+
+An existing paper whose blocks were opened without a frame obtains it the
+same way, `skeleton --frame`: every block moves whole, its body and digest
+unchanged (proven in memory before the write, which keeps the one-deep
+pre-image). A file that already has a `\begin{document}` outside the blocks
+is left alone. The frame refuses, writing nothing:
+`FRAME_OUTSIDE_TEXT` when the frameless file holds text outside every block
+and region (it cannot know where that text goes), `FRAME_BLOCK_CARRIES_HEADING`
+when a body block carries its own `\section` line — the refusal names every
+such block; rewrite each without the heading (moving the line out would
+change the block's bytes and digest), then frame — and
+`FRAME_BLOCK_UNDECLARED` for a block no contract declares. Blocks opened after
+the frame need `open --after <id>`; `--at-end` would land after
+`\end{document}`.
 
 ## The paper's own decisions: declarations and provenance
 
@@ -1348,6 +1384,7 @@ A document with a single section (an ingested dataset page) claims that section;
 | Situation | Action |
 | --- | --- |
 | `write` refuses `DRAFT_NOT_ENGLISH` | The draft carries Spanish prose (the refusal names each line) — redraft it in English; only a paper that declares another main language in `main.tex` (babel/polyglossia) is written in it. No attempt is spent |
+| `write` refuses `DRAFT_SECTION_HEADING` | A body block's draft carries a `\section{…}` or `\section*{…}` line; the refusal names each line. The section heading lives outside the blocks (`skeleton --frame` writes it), so drop it from the draft; a `\subsection` stays free. Back-matter blocks are exempt: the venue may give a declaration a section of its own. No attempt is spent and `main.tex` is untouched |
 | `write` refuses `DRAFT_BOLD_LEAD_IN` | A draft of the introduction or the experimental set-up opens a paragraph or a list item on bold, a `{\bf …}` group, a run-in `\paragraph{…}` or a description label (`\item[…]`); the refusal names each line. Open the paragraph with a sentence that carries the transition from the previous one, and name a contribution item in plain text. Table cells and in-sentence emphasis are free. No attempt is spent, and `humanize --apply` refuses the same draft |
 | `write` refuses `DRAFT_PLACEHOLDER_TEXT` | The draft still carries `por definir`, `TODO`, `TBD`, `FIXME` or `\todo` — write the content, or leave the block unwritten. No attempt is spent |
 | `write` refuses `SECTION_BINDING_ABSENT` | Run `separate --proposal <path>` naming a whole cut for the missing claim's lineage, then the exact `bind` invocation the settled cut licenses |
@@ -1514,7 +1551,7 @@ sentence without a citation (`future-work-uncited`).
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `write --section <id> --block <id> --draft <path> --audit <path> [--evidence <path>] [--style <path>] [--guidance <dir>] [--transcript <path>] [--grounding <path>] [--expect-digest <sha256>]` | With `--expect-digest`, first refuses `BLOCK_CHANGED_SINCE_READ` when the block's recorded digest is no longer the one read, and checks it again at `substitute`. Before any draft/audit byte is read: refuses if this block's own phase wave is not yet writable, then refuses if this block's own section citation folder is not fully ready, then runs packet assembly for this block. Then reconciles the already-drafted, already-audited block against its real contract, evidence set and mode; substitutes on success, reports fired bullets on a first failure, refuses on exhaustion. `--style` records the sampler's account as `R` and runs the eight-token tripwire against the styled draft before `substitute`. For a `transposition`-mode block with at least one resolved bound section, `check_source_section_verbatim` then runs against the same draft, after the style tripwire and before `substitute`. `--grounding` records the section-grounding-auditor's account and reconciles it against every subject sentence, after the verbatim check and before `substitute` | `BLOCK_CHANGED_SINCE_READ`, `PHASE_NOT_READY`, `CITATION_FOLDER_ABSENT`, `CITATION_NOT_INGESTED`, `CITATION_FOLDER_UNCLASSIFIED`, `GUIDANCE_MARKDOWN_UNREADABLE`, `MODE_ABSENT`, `DRAFT_NOT_ENGLISH`, `DRAFT_PLACEHOLDER_TEXT`, `DRAFT_BOLD_LEAD_IN`, `EVIDENCE_SET_REQUIRED`, `UNBOUND_SENTENCE`, `BINDING_ORPHANED`, `EVIDENCE_ID_UNKNOWN`, `FACT_NOT_LICENSED`, `DECLARATION_NOT_LICENSED`, `STRUCTURAL_CARRIES_CLAIM`, `DECLARATION_UNDECLARED`, `DECLARATION_VALUE_ABSENT`, `DECLARATION_CARRIES_CLAIM`, `MODE_VIOLATION`, `DISQUALIFIERS_ABSENT`, `VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`, `AUDIT_EXHAUSTED`, `SPAN_NOT_IN_SOURCE`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, `GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`, `GROUNDING_VERDICT_MISSING`, `SECTION_UNSUPPORTED_CLAIM` |
+| `write --section <id> --block <id> --draft <path> --audit <path> [--evidence <path>] [--style <path>] [--guidance <dir>] [--transcript <path>] [--grounding <path>] [--expect-digest <sha256>]` | With `--expect-digest`, first refuses `BLOCK_CHANGED_SINCE_READ` when the block's recorded digest is no longer the one read, and checks it again at `substitute`. Before any draft/audit byte is read: refuses if this block's own phase wave is not yet writable, then refuses if this block's own section citation folder is not fully ready, then runs packet assembly for this block. Then reconciles the already-drafted, already-audited block against its real contract, evidence set and mode; substitutes on success, reports fired bullets on a first failure, refuses on exhaustion. `--style` records the sampler's account as `R` and runs the eight-token tripwire against the styled draft before `substitute`. For a `transposition`-mode block with at least one resolved bound section, `check_source_section_verbatim` then runs against the same draft, after the style tripwire and before `substitute`. `--grounding` records the section-grounding-auditor's account and reconciles it against every subject sentence, after the verbatim check and before `substitute` | `BLOCK_CHANGED_SINCE_READ`, `PHASE_NOT_READY`, `CITATION_FOLDER_ABSENT`, `CITATION_NOT_INGESTED`, `CITATION_FOLDER_UNCLASSIFIED`, `GUIDANCE_MARKDOWN_UNREADABLE`, `MODE_ABSENT`, `DRAFT_NOT_ENGLISH`, `DRAFT_PLACEHOLDER_TEXT`, `DRAFT_BOLD_LEAD_IN`, `DRAFT_SECTION_HEADING`, `EVIDENCE_SET_REQUIRED`, `UNBOUND_SENTENCE`, `BINDING_ORPHANED`, `EVIDENCE_ID_UNKNOWN`, `FACT_NOT_LICENSED`, `DECLARATION_NOT_LICENSED`, `STRUCTURAL_CARRIES_CLAIM`, `DECLARATION_UNDECLARED`, `DECLARATION_VALUE_ABSENT`, `DECLARATION_CARRIES_CLAIM`, `MODE_VIOLATION`, `DISQUALIFIERS_ABSENT`, `VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`, `AUDIT_EXHAUSTED`, `SPAN_NOT_IN_SOURCE`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, `GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`, `GROUNDING_VERDICT_MISSING`, `SECTION_UNSUPPORTED_CLAIM` |
 
 **The phase gate stops the write path, it does not merely report it.**
 Unit 6 wired `PHASE_NOT_READY` onto the read-only `phases` verb alone;
