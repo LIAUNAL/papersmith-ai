@@ -8999,8 +8999,13 @@ class RefusalRosterTests(unittest.TestCase):
         242 -> 246 (paper-frame-venue-front-matter S2): `skeleton --frame`
         refuses FRAME_OUTSIDE_TEXT, FRAME_BLOCK_CARRIES_HEADING and
         FRAME_BLOCK_UNDECLARED, and `write` refuses a body draft carrying a
-        section heading (DRAFT_SECTION_HEADING)."""
-        self.assertEqual(len(reachable_paper_refusal_codes()), 246)
+        section heading (DRAFT_SECTION_HEADING).
+
+        246 -> 248 (paper-frame-venue-front-matter S3): `venue build` refuses a
+        title block it cannot map into the class's author commands
+        (TITLE_BLOCK_UNPARSEABLE) and an elsarticle highlights block with no
+        itemize (HIGHLIGHTS_UNPARSEABLE)."""
+        self.assertEqual(len(reachable_paper_refusal_codes()), 248)
 
 
 class ObjectiveNorthTests(unittest.TestCase):

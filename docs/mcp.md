@@ -250,7 +250,7 @@ and auto-approve sensibly.
 | `papersmith.paper_write` | judge an already-drafted, already-audited block | — | ✅ | — |
 | `papersmith.paper_place` | place an already-measured figure's PDF | — | — | — |
 | `papersmith.paper_validate` | the citation gate: submit one verdict, write on success | — | ✅ | — |
-| `papersmith.paper_skeleton` | open the empty section/block structure from two structural decisions | — | — | — |
+| `papersmith.paper_skeleton` | open the empty section/block structure from two structural decisions; `frame` also writes the canonical document frame outside the blocks | — | — | — |
 | `papersmith.paper_bind` | record which source sections feed one block's bindable requirement, or reopen a binding | — | — | — |
 | `papersmith.paper_mark_revisions` | record a source root's revision rule | — | — | — |
 | `papersmith.paper_mark_class` | record a `guidance/` folder's class | — | — | — |
