@@ -3520,12 +3520,20 @@ def cmd_place(args: argparse.Namespace) -> dict:
     `Requirement: Data-Figure Boundary`). Before the copy,
     `paper_place.gate` refuses a figure that would print badly (S2-S4 of
     `odd/tasks/figure-and-table-quality.md`); a compliant figure places
-    exactly as before."""
+    exactly as before. With a built venue, `venueWarnings` lists each venue
+    whose page the figure prints badly on (`paper_place.venue_warnings`)."""
     paper_dir = paper_scaffold.resolve_paper_dir(args.paper)
     paper_place.gate(paper_dir, Path(args.pdf), Path(args.provenance))
-    return paper_figure.place_figure(
+    # venue-figures-and-content-tracking S2: the same measurement on every
+    # built venue's page, as warnings beside the canonical verdict; absent
+    # when no venue is built, never a refusal
+    warnings = paper_place.venue_warnings(paper_dir, Path(args.pdf), Path(args.provenance))
+    result = paper_figure.place_figure(
         paper_dir, args.figure_id, Path(args.pdf), Path(args.provenance),
     )
+    if warnings is not None:
+        result["venueWarnings"] = warnings
+    return result
 
 
 def cmd_figure(args: argparse.Namespace) -> dict:

@@ -14,7 +14,9 @@ Nine verbs (`VERBS`), each returning one dict that `paper_cli.py` prints:
     plan          plan.md            the agent's adjustment plan; resets approval
     approve       approval.json      the operator's words, bound to the plan hash
     build         main.tex           the venue's own file; canonical blocks
-                  (+ build.json)     transposed byte for byte, markers included
+                  (+ build.json)     transposed byte for byte, markers included;
+                                     every included figure measured on the
+                                     venue's page (`figure_print`)
     status/list                      the state machine, read-only
 
 The canonical `paper/main.tex` and `sections/` are inputs here, never outputs:
@@ -24,7 +26,8 @@ valid. Text changes the plan calls for are not made here at all -- they go
 through `write` (redactor -> contract-auditor -> `write --draft --audit`),
 one block at a time, after `approve`.
 
-Standard library only; the one subprocess seam (`kpsewhich`) lives in
+Standard library only (the figure measurement `build` reports is
+`paper_place`'s, read through `pypdfium2` when it is installed); the one subprocess seam (`kpsewhich`) lives in
 `paper_latex.py`, the sole module this skill lets spawn a process.
 """
 from __future__ import annotations
@@ -2071,6 +2074,17 @@ def _back_matter_parts(manuscript: "Manuscript", moved: frozenset = frozenset())
     return declarations_text, appendices_text
 
 
+def _figure_print(paper_dir: Path, slug: str) -> dict:
+    """Every figure the venue file just written includes, measured on the
+    venue's own page (`paper_place.venue_figure_report`: its body size and
+    text width): text below 0.70 x the venue body, or a figure wider than
+    its text, is a finding with the remedy. Never fails the build.
+    `paper_place` imports this module, so it is imported here, on use."""
+    import paper_place  # noqa: WPS433  (paper_place imports paper_venue)
+
+    return paper_place.venue_figure_report(paper_dir, slug)
+
+
 def build(paper_dir: Path, slug: str, clock=_clock) -> dict:
     directory = _require_venue(paper_dir, slug)
     requirements_path = directory / "requirements.json"
@@ -2214,6 +2228,7 @@ def build(paper_dir: Path, slug: str, clock=_clock) -> dict:
             )
     output_path = directory / "main.tex"
     _atomic_write(output_path, encoded)
+    figure_print = _figure_print(paper_dir, slug)
 
     manifest = {
         "schema": 1, "slug": slug, "built_at": clock(),
@@ -2227,6 +2242,7 @@ def build(paper_dir: Path, slug: str, clock=_clock) -> dict:
                      "appendices_after_references": bool(appendices_text)},
         "preamble": {"skipped": skipped, "dropped": dropped},
         "front_matter": front_report, "bibliography_style": bst, "notes": notes,
+        "figure_print": figure_print,
     }
     _write_json(directory / "build.json", manifest)
     compile_env = (
@@ -2238,7 +2254,7 @@ def build(paper_dir: Path, slug: str, clock=_clock) -> dict:
         "output_sha256": manifest["output_sha256"], "document_class": class_name, "family": family,
         "sections": manifest["sections"], "preamble": manifest["preamble"],
         "front_matter": front_report, "plan_required": blockers > 0, "compile_env": compile_env,
-        "notes": notes,
+        "notes": notes, "figure_print": figure_print,
     }
 
 
