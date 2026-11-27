@@ -11,6 +11,37 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **Applied-AI papers show illustrative results before performance.** The experimental line's
+  results contract gains a required block, `rd-illustrative`, before the general task. Before any
+  aggregate metric (error, R², accuracy and the like) it shows what the novelty does at its basic
+  stages:
+  - the improved representation: imshow maps or plots of internal quantities for a
+    physics-informed network, a transformer or a new architecture;
+  - for a new loss or regularizer, how it converges and how its terms interact;
+  - for time series, regression and similar tasks, prediction examples on the toy set and the
+    most relevant real or semi-synthetic dataset: the input window and the estimate against the
+    target and the most relevant comparators, with a confidence or variability band (model-native,
+    Monte Carlo or Monte Carlo dropout);
+  - for classification and clustering, latent spaces at key points (UMAP, t-SNE or similar),
+    confusion matrices and ROC curves.
+
+  The experimental set-up declares the illustrative instruments (examples, comparators, band
+  method, embedding points), and an item that does not apply is named with its reason. The general
+  task's share of the section moves from 40-66 % to 35-55 %. The Spanish contract copies, the
+  dashboard's writing template and its block guide follow.
+- **The experiment flow plans and records them.** The experimental-deliberation protocol declares
+  the illustrative artefacts in each experiment's expected report. Experimental-implementation
+  records their raw material under `Results/illustrative/` and the loss-term histories. The
+  experiments-reviewer reports a declared illustration with no record as a major finding.
+- **Six more chart helpers in `ps_figures`:** `forecast_plot`, `loss_terms_plot`, `heatmap_plot`,
+  `embedding_plot`, `confusion_matrix_plot` and `roc_plot`, drawn from given arrays in the house
+  style.
+- **The reviewer and the redactor follow.** The paper-reviewer reads Results that open on aggregate
+  metrics without the illustrations as a Quality and Clarity weakness, and the redactor drafts
+  `rd-illustrative` first.
+
 ## 0.85.1
 
 - **Figures are measured against every built venue, not only the canonical layout.** A venue
