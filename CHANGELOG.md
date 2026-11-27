@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.86.0
 
 - **Applied-AI papers show illustrative results before performance.** The experimental line's
   results contract gains a required block, `rd-illustrative`, before the general task. Before any
