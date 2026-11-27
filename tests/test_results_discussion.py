@@ -593,10 +593,12 @@ class ScaffoldTest(unittest.TestCase):
         self.assertEqual(data["next_steps"], [])
         self.assertEqual(data["novelty"], {"claim": "", "verdict": "pending", "evidence": [], "rationale": ""})
         self.assertEqual(data["hypotheses"], [
-            {"id": "H1", "experiment": "E1", "statement": "The hybrid model beats the baseline, with `p < 0.05`.",
+            # No proposal sky in this workspace: every hypothesis is unmapped (board-follows-iteration S3).
+            {"id": "H1", "experiment": "E1", "proposal_hypotheses": [],
+             "statement": "The hybrid model beats the baseline, with `p < 0.05`.",
              "metric": "", "test": "", "criterion": "Balanced accuracy at least 0.85.", "observed": "",
              "evidence": [], "verdict": "pending", "rationale": ""},
-            {"id": "H2", "experiment": "E2", "statement": "Entanglement helps.",
+            {"id": "H2", "experiment": "E2", "proposal_hypotheses": [], "statement": "Entanglement helps.",
              "metric": "", "test": "", "criterion": "", "observed": "",
              "evidence": [], "verdict": "pending", "rationale": ""},
         ])

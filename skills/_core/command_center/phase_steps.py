@@ -20,6 +20,10 @@ placeholder specification:
 * ``judge_review``: the paper-reviewer's valid ``contribution_type`` in
   ``.papersmith/model_spec.json``.
 
+Where both hold the ideas, the latest revision's overlay gives their identity
+and the specification their enrichment (``idea_sync.current_novelty``), so a
+pillar or hypothesis the latest revision dropped is no longer counted.
+
 A step is ``LOCKED`` while the one before it has not passed, ``ACTIVE`` when it
 is unlocked and its evidence is missing, and ``PASS`` once its own evidence
 exists and the steps before it passed. Read-only, bounded and never raises.
@@ -31,7 +35,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from . import math_view, model_spec
+from . import idea_sync, math_view, model_spec
 
 #: The five steps in their one order; each requires the one before it.
 STEP_IDS: tuple[str, ...] = ("problem_pillars", "hypotheses", "mathematics", "sota_citations", "judge_review")
@@ -93,6 +97,12 @@ def _evidence(root: Path) -> dict[str, Any]:
         text = math_view._read(proposal, root) or ""
         sky = _json(proposal.with_suffix(".sky.json"), root)
     sky = sky if isinstance(sky, dict) else {}
+    # The latest revision gives the ideas' identity, the specification their
+    # enrichment (idea_sync.current_novelty), as /api/model and the citations.
+    found, _refusal = idea_sync.identity(sky) if sky else (None, None)
+    current = idea_sync.current_novelty(novelty, sky)
+    novelty = current if isinstance(current, dict) else novelty
+    from_sky = {key: bool(found and found[key]) for key in ("pillars", "hypotheses", "problem_tree")}
     system = sky.get("system") if isinstance(sky.get("system"), dict) else {}
     planets = system.get("planets") if isinstance(system.get("planets"), list) else []
     sky_problem = any(isinstance(p, dict) and p.get("slot") == "problem" and _text(p.get("label"))
@@ -101,21 +111,21 @@ def _evidence(root: Path) -> dict[str, Any]:
     tree = novelty.get("problem_tree") if isinstance(novelty.get("problem_tree"), dict) else {}
     central = tree.get("central") if isinstance(tree.get("central"), dict) else {}
     problem = _text(central.get("text")) or _text(novelty.get("problem_statement"))
+    sky_rel = proposal.with_suffix(".sky.json").relative_to(root).as_posix() if proposal else ""
     if problem:
-        sources["problem"] = SPEC_REL
+        sources["problem"] = sky_rel if from_sky["problem_tree"] else SPEC_REL
     elif sky_problem:
         problem = True
     pillars = _items(novelty.get("pillars"), "name", "summary")
     if pillars:
-        sources["pillars"] = SPEC_REL
+        sources["pillars"] = sky_rel if from_sky["pillars"] else SPEC_REL
     else:
         pillars = _items(sky.get("pillars"), "label", "detail")
     hypotheses = _items(novelty.get("hypotheses"), "title", "statement")
     if hypotheses:
-        sources["hypotheses"] = SPEC_REL
+        sources["hypotheses"] = sky_rel if from_sky["hypotheses"] else SPEC_REL
     else:
         hypotheses = _items(sky.get("hypotheses"), "statement")
-    sky_rel = proposal.with_suffix(".sky.json").relative_to(root).as_posix() if proposal else ""
     for key, found in (("problem", problem), ("pillars", pillars), ("hypotheses", hypotheses)):
         if found and key not in sources:
             sources[key] = sky_rel

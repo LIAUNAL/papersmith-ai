@@ -4,10 +4,15 @@ then say where the project stands.
 ``smith ui`` runs :func:`refresh_artifacts` once in the background when the
 server starts (``--no-refresh`` skips it), and the topbar's "Update board"
 button runs it again through ``POST /api/board/refresh``. Only local, keyless
-generators run here: the SOTA atlas page, the atlas manuscript layer, the
-manuscript graph, the novelty graph's viewer copy and the wiring health. What an
-agent writes (the proposal sky, the journal ranks that need the network) is not
-regenerated; the summary reports what is still owed instead.
+steps run here: the ideas sync, the SOTA atlas page, the atlas manuscript layer,
+the manuscript graph, the novelty graph's viewer copy and the wiring health. The
+ideas sync runs first (``idea_sync.py``): it brings the pillars, hypotheses and
+problem tree of ``.papersmith/model_spec.json`` to the latest proposal revision's
+sky overlay, retiring what that revision dropped, so the graphs after it draw
+the current iteration; its change report is the summary's ``ideas``. What an
+agent writes (the proposal sky itself, the enrichment of each idea, the journal
+ranks that need the network) is not regenerated; the summary reports what is
+still owed instead.
 
 Each generator is isolated: one that raises is reported as ``failed`` and the
 others still run. Everything they write lands in watched folders, so the live
@@ -19,10 +24,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
-from . import atlas_build, atlas_manuscript, manuscript_graph, novelty_graph
+from . import atlas_build, atlas_manuscript, idea_sync, manuscript_graph, novelty_graph
 
 #: The artifacts a refresh regenerates, in the order it runs them.
-ARTIFACT_IDS = ("atlas", "atlas_manuscript", "manuscript_graph", "novelty_graph", "health")
+ARTIFACT_IDS = ("ideas", "atlas", "atlas_manuscript", "manuscript_graph", "novelty_graph", "health")
 
 #: The cross-cutting audit runs beside every phase, so it is never "the
 #: current phase" a project is in.
@@ -33,6 +38,19 @@ DETAIL_MAX = 300
 
 def _entry(artifact: str, state: str, detail: str = "") -> dict[str, Any]:
     return {"id": artifact, "state": state, "detail": str(detail or "")[:DETAIL_MAX]}
+
+
+#: The change report fields the summary carries for the ideas sync.
+IDEAS_REPORT_KEYS = ("state", "detail", "revision", "previous_revision", "added", "pruned", "changed",
+                     "unchanged", "kept", "written", "contribution_type_stale")
+
+
+def _ideas(root: Path) -> dict[str, Any]:
+    result = idea_sync.sync(root)
+    state = {"synced": "ok", "unchanged": "ok"}.get(result["state"], result["state"])
+    entry = _entry("ideas", state, result.get("detail", ""))
+    entry["report"] = {key: result.get(key) for key in IDEAS_REPORT_KEYS if key in result}
+    return entry
 
 
 def _atlas(root: Path) -> dict[str, Any]:
@@ -76,8 +94,9 @@ def refresh_artifacts(root: Path | str, *,
                       health: Callable[[], Any] | None = None) -> list[dict[str, Any]]:
     """Regenerate each artifact of :data:`ARTIFACT_IDS`; one ``{id, state,
     detail}`` per artifact, ``state`` being ``ok``, ``skipped`` (its input is
-    not there yet) or ``failed``. ``health`` re-measures the wiring health
-    (the server passes its cached measure, forced)."""
+    not there yet) or ``failed``; the ``ideas`` entry adds its change
+    ``report``. ``health`` re-measures the wiring health (the server passes its
+    cached measure, forced)."""
     root = Path(root).expanduser().resolve()
 
     def _health(_: Path) -> dict[str, Any]:
@@ -86,7 +105,7 @@ def refresh_artifacts(root: Path | str, *,
         health()
         return _entry("health", "ok", "wiring health re-measured")
 
-    steps = {"atlas": _atlas, "atlas_manuscript": _atlas_manuscript,
+    steps = {"ideas": _ideas, "atlas": _atlas, "atlas_manuscript": _atlas_manuscript,
              "manuscript_graph": _manuscript_graph, "novelty_graph": _novelty_graph,
              "health": _health}
     results = []
@@ -110,7 +129,9 @@ def summarize(status: dict[str, Any],
     ``current`` is the first non-transversal phase that has not passed (``None``
     when all have), ``missing`` its sub-phases that have not passed, ``blocked``
     the phases still locked behind a phase or a gate, ``open_gates`` the gates
-    not passed yet and ``failed_gates`` the failed ones. ``tone`` is ``alert``
+    not passed yet and ``failed_gates`` the failed ones. ``ideas`` is the ideas
+    sync's change report (added, pruned, changed and unchanged ids, the revision,
+    ``contribution_type_stale``), ``None`` without a refresh. ``tone`` is ``alert``
     when a gate failed, ``warn`` when an artifact failed to regenerate, ``done``
     when every phase passed and ``info`` otherwise.
     """
@@ -153,6 +174,8 @@ def summarize(status: dict[str, Any],
         "open_gates": open_gates,
         "failed_gates": failed_gates,
         "failed_artifacts": failed_artifacts,
+        "ideas": next((item.get("report") for item in artifacts or []
+                       if item.get("id") == "ideas" and isinstance(item.get("report"), dict)), None),
         "phases_completed": sum(1 for phase in fases if phase.get("status") == "PASS"),
         "phases_total": len(fases),
         "gates_passed": sum(1 for gate in gates if gate.get("status") == "PASS"),
@@ -161,4 +184,4 @@ def summarize(status: dict[str, Any],
     }
 
 
-__all__ = ["ARTIFACT_IDS", "TRANSVERSAL_STAGES", "refresh_artifacts", "summarize"]
+__all__ = ["ARTIFACT_IDS", "IDEAS_REPORT_KEYS", "TRANSVERSAL_STAGES", "refresh_artifacts", "summarize"]

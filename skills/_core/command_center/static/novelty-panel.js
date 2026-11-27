@@ -2,7 +2,9 @@
  * novelty-panel.js: Novelty & Findings Assessment Panel and Decision Gate.
  *
  * Renders the 4 core subsections:
- *   1. Hypothesis vs Empirical Evidence matrix (tests, metrics, verdicts), followed by
+ *   1. Hypothesis vs Empirical Evidence matrix (tests, metrics, verdicts) of the
+ *      current protocol, under proposal hypothesis ids, then the products that
+ *      answer an older protocol, shown apart as superseded, followed by
  *      the paper-reviewer's contribution type for the findings, with the
  *      button that launches that judge (a stage's approval waits for it).
  *   2. Novelty Assessment & Scientific Sobriety vs SOTA (claims, limits, unsupported findings).
@@ -241,6 +243,24 @@
       </section>`;
   }
 
+  // The products whose discussion answers an older protocol than the latest:
+  // shown apart, never counted in the matrix, the claims or the rigor audit.
+  function supersededSection(data) {
+    const old = data.superseded || [];
+    if (!old.length) return '';
+    const current = (data.protocol || {}).current || '';
+    const rows = old.map((d) => `<li data-superseded-product="${esc(d.product)}"><strong>${esc(d.product)}</strong> · ${esc(d.stage)} · <code>${esc(d.protocol || t('novelty.superseded.noProtocol', 'no protocol recorded'))}</code></li>`).join('');
+    return `
+      <section data-fold="novelty:superseded" data-fold-title="novelty.superseded.title" id="noveltySuperseded" class="panel" style="margin-bottom: 1.5rem;">
+        <div class="panel__header">
+          <div class="panel__title">${esc(t('novelty.superseded.title', 'Superseded products'))}</div>
+          <span class="panel__meta">${esc(String(old.length))}</span>
+        </div>
+        <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0.5rem;">${esc(t('novelty.superseded.desc', '').replace('{protocol}', current))}</p>
+        <ul style="font-size:0.85rem; margin:0.5rem 0 0; padding-left:1.1rem;">${rows}</ul>
+      </section>`;
+  }
+
   function renderNoveltyPanel(data) {
     const root = document.getElementById('noveltyRoot');
     if (!root) return;
@@ -360,7 +380,7 @@
         const vBadge = VERDICT_BADGES[h.verdict] || `<span class="badge">${esc(h.verdict)}</span>`;
         html += `
           <tr>
-            <td><strong>${esc(h.id)}</strong></td>
+            <td><strong>${esc(h.id)}</strong>${h.unmapped ? `<div><span class="badge badge--sm badge--warn" data-unmapped="true" title="${esc(t('novelty.hypotheses.unmappedWhy', ''))}">${esc(t('novelty.hypotheses.unmapped', 'unmapped'))}</span></div>` : (h.discussion_id && h.discussion_id !== h.id ? `<div style="font-size:0.72rem; color:var(--text-muted);">${esc(t('novelty.hypotheses.discussionId', 'discussion {id}').replace('{id}', h.discussion_id))}</div>` : '')}</td>
             <td><span class="badge badge--sm">${esc(h.stage || 'full')}</span></td>
             <td>
               <div>${esc(h.statement)}</div>
@@ -386,6 +406,7 @@
         </div>
       </section>
     `;
+    html += supersededSection(data);
 
     // contribution type the paper-reviewer read from the checked findings
     const ct = data.contribution_type;
@@ -397,7 +418,7 @@
         </div>
         ${ct && CONTRIBUTION_TYPE_KEYS[ct.type] ? `
           <div style="margin-top:0.75rem; font-size:0.9rem; line-height:1.5;">
-            <span class="badge">${esc(t(CONTRIBUTION_TYPE_KEYS[ct.type], ct.type))}</span>
+            <span class="badge">${esc(t(CONTRIBUTION_TYPE_KEYS[ct.type], ct.type))}</span>${ct.stale ? ` <span class="badge badge--warn" data-contribution-stale="true" title="${esc(t('contribution.staleWhy', ''))}">${esc(t('contribution.stale', 'stale'))}</span>` : ''}
             <p style="margin-top:0.5rem;"><strong>${esc(t('contribution.why', 'Why:'))}</strong> ${esc(ct.why)}</p>
             ${window.ContributionAffinity ? window.ContributionAffinity.html(ct) : ''}
           </div>` : `

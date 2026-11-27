@@ -68,9 +68,13 @@ to 100>, "why": <one sentence, at most 300 characters>}}}`. The affinity says
 how well the work fits each type read through its definition in "Reading the
 criteria through the contribution type" below: score all five, give each its
 own reason naming what fits or is missing, and give the chosen type the
-highest score. `proposal-deliberation` writes that object into
-`.papersmith/model_spec.json`, and the dashboard's Concept Map & Model tab
-shows it right after the hypotheses.
+highest score. Name the revision you judged (`rNN` of
+`proposals/research-concept-<slug>-rNN.md`) beside the object, never inside it:
+`proposal-deliberation` writes the object into `.papersmith/model_spec.json` and
+records that revision next to it as `contribution_type_revision`, so the board
+flags the type stale once a newer revision lands; a stale type is judged again
+on the current revision. The dashboard's Concept Map & Model tab shows it right
+after the hypotheses.
 
 ## Findings mode — after the hypotheses are checked against the results
 
@@ -85,7 +89,11 @@ accepted proposal for what was promised. A central hypothesis the evidence
 reports `not_supported` with a deeper analysis behind it points to `Negative
 Results`; an idea shown to work only at pilot scale points to `Concept &
 Feasibility`. Return `contribution_type: {"type", "why", "affinity"}` in the
-same shape as proposal mode, the `why` quoting the verdict ids that decide it. You never
+same shape as proposal mode, the `why` quoting the verdict ids that decide it, and
+name beside it the protocol the discussion answers (its `protocol` field,
+`experiments/experiments-<slug>-vNN.md`): the caller records it next to the
+object as `contribution_type_protocol`, never inside it. The board flags a type
+whose protocol is not the latest as stale, and a stale type is judged again. You never
 write the file: the skill that handed it to you writes the object into the
 discussion's top level and re-runs `check`, and the dashboard's Novelty &
 Findings tab shows it right after the hypotheses matrix. Every other field of
@@ -688,7 +696,8 @@ Return, always and in this order:
   quoted evidence, plus a `pertinence`, `novelty`, `coherence` and
   `adjusted_novelty_concordance` block with one entry per claim and its quotes.
   In proposal mode and findings mode, `state` also carries the
-  `contribution_type` object `{"type", "why", "affinity"}` exactly as the caller writes it;
+  `contribution_type` object `{"type", "why", "affinity"}` exactly as the caller writes it,
+  with the revision (proposal mode) or protocol (findings mode) it judged;
   in findings mode it carries only that object.
 - **`round`** — only when you reviewed the whole paper, the same review as one
   JSON object the caller records with `paper_cli.py review --input <file>`
