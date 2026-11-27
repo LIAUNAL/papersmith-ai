@@ -104,6 +104,17 @@
       </article>`;
   }
 
+  // A stored acceptance that is not English: shown as written, and named,
+  // with the command that records it again in English.
+  function languageNotice(notice) {
+    if (!notice) return '';
+    return `<p class="pt-error" role="status" data-pt-language-notice>${esc(t('paperType.languageNotice', {
+      file: notice.file || '.papersmith/plausibility.json',
+      fields: list(notice.fields).join(', '),
+      command: notice.command || '',
+    }))}</p>`;
+  }
+
   function html(view) {
     const catalogue = list(view && view.catalogue);
     const accepted = view && view.plausibility;
@@ -132,7 +143,7 @@
     const idea = String(accepted.idea || '');
     return `${error}${note}<div class="pt-head">
         <p class="pt-idea"><strong>${esc(t('paperType.idea'))}</strong> ${esc(idea.length > 400 ? `${idea.slice(0, 400)}…` : idea)}</p>
-        <p class="panel__meta">${esc(t('paperType.acceptedBy', { by: accepted.accepted_by || '', at: accepted.accepted_at || '' }))}</p>
+        <p class="panel__meta">${esc(t('paperType.acceptedBy', { by: accepted.accepted_by || '', at: accepted.accepted_at || '' }))}</p>${languageNotice(view.language_notice)}
         <p class="pt-suggestion">${esc(suggestion)}</p>${agreedLine}${stale}
         <div class="pt-actions">
           <button type="button" class="btn btn--sm" data-pt-action="rescore">${esc(t('paperType.rescore'))}</button>

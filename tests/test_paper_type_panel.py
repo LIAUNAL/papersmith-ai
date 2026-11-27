@@ -113,6 +113,23 @@ class PanelRenderTests(unittest.TestCase):
         self.assertIn("Acordado: Estudio observacional y de medición (Estudio observacional), por op", html)
         self.assertIn("La idea cambió después de acordar el tipo", html)
 
+    def test_a_language_notice_names_the_fields_and_the_command_in_the_dashboard_language(self) -> None:
+        # board-language-consistency S3: a stored acceptance that is not English is named, shown as written.
+        command = 'python skills/_core/paper_types/paper_type_cli.py accept --root . --by "<operator>"'
+        data = view()
+        data["language_notice"] = {"expected": "en", "file": ".papersmith/plausibility.json",
+                                   "fields": ["idea", "accepted_by"], "command": command}
+        english = run(data)["html"]
+        self.assertIn("The accepted idea (.papersmith/plausibility.json) is not written in English "
+                      "(fields: idea, accepted_by).", english)
+        self.assertIn("record it again in English with: python skills/_core/paper_types/paper_type_cli.py "
+                      "accept --root . --by &quot;&lt;operator&gt;&quot;", english)
+        self.assertIn("data-pt-language-notice", english)
+        self.assertIn("Encuestamos 368", english, "the idea is shown as written")
+        spanish = run(data, lang="es")["html"]
+        self.assertIn("La idea aceptada (.papersmith/plausibility.json) no está escrita en inglés", spanish)
+        self.assertNotIn("data-pt-language-notice", run(view())["html"])
+
     def test_no_accepted_idea_offers_phase_two(self) -> None:
         empty = {"catalogue": registry.load(), "plausibility": None, "decision": None, "line": "experimental"}
         out = run(empty, steps=[{"action": "go-plausibility"}])

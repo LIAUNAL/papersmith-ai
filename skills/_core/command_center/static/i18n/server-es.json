@@ -1117,6 +1117,7 @@
   "SOTA candidates found; the plausibility report awaits the operator's acceptance": "Candidatos SOTA encontrados; el reporte de plausibilidad espera la aceptación del operador",
   "No plausibility report accepted yet (/plausibility)": "Aún no hay un reporte de plausibilidad aceptado (/plausibility)",
   "Plausibility accepted by {by}; the paper type awaits the operator's agreement (/paper-type)": "Plausibilidad aceptada por {by}; el tipo de paper espera el acuerdo del operador (/paper-type)",
+  "{detail} (the accepted idea in {file} is not written in English: {fields}; re-record it with {command})": "{detail} (la idea aceptada en {file} no está escrita en inglés: {fields}; vuelve a registrarla con {command})",
   "The agreed paper type belongs to an earlier idea: agree it again (/paper-type)": "El tipo de paper acordado pertenece a una idea anterior: acuérdalo de nuevo (/paper-type)",
   "The agreed paper type ({type}) is not this workspace's line ({kind})": "El tipo de paper acordado ({type}) no es la línea de este workspace ({kind})",
   "Paper type {type} agreed with no variant: the variant chooses the reporting checklist (/paper-type)": "Tipo de paper {type} acordado sin variante: la variante elige la lista de verificación del reporte (/paper-type)",

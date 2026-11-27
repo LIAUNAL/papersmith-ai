@@ -130,6 +130,10 @@ When the operator approves it, record the approval with `smith idea approve`
 handoff` prints the same `/plausibility <draft>` again later. Show that line
 to the operator: typing it, or pressing **Launch plausibility** in the Idea
 tab, is the operator's decision. Never run `/plausibility` on the operator's behalf.
+The approved draft is English, like the whole brief: once plausibility is
+accepted, `/paper-type` records this same text in `.papersmith/plausibility.json`
+(`paper_type_cli.py accept` without `--idea-file` takes it), so the dashboard
+shows an English idea on an English board.
 
 ## Rules
 

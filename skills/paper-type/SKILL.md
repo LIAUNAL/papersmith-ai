@@ -23,15 +23,32 @@ type stays on its line, as before.
 ## Step 1 — the accepted idea, on disk
 
 If `.papersmith/plausibility.json` does not hold the idea the operator just
-accepted, record it, with a delimiter that does not occur in the idea:
+accepted, record it. The record is English, like every artifact under
+`.papersmith/`, whatever language the conversation is in: the dashboard shows
+it as written, so a Spanish record shows Spanish on an English board.
+
+- `--by` takes the operator's name or role (for example `--by operator`),
+  never a quote of the operator's words.
+- When the idea came from `/idea-shaping`, its approved draft
+  (`.papersmith/idea_brief.json` `draft.text`, the text `smith idea handoff`
+  prints) is the English idea: omit `--idea-file` and `accept` takes it.
 
 ```bash
-python skills/_core/paper_types/paper_type_cli.py accept --root . --by "<operator>" --idea-file - <<'IDEA_EOF_4c1e'
-<the idea, verbatim>
+python skills/_core/paper_types/paper_type_cli.py accept --root . --by "<operator name or role>"
+```
+
+- Otherwise pass the accepted idea in English (translate the operator's words
+  faithfully, keeping every claim), with a delimiter that does not occur in it:
+
+```bash
+python skills/_core/paper_types/paper_type_cli.py accept --root . --by "<operator name or role>" --idea-file - <<'IDEA_EOF_4c1e'
+<the accepted idea, in English>
 IDEA_EOF_4c1e
 ```
 
-`accept` also scores the idea. Otherwise score it again (the pool may have
+`accept` refuses an idea or a `--by` that reads as Spanish prose
+(`IDEA_NOT_ENGLISH`, `OPERATOR_NOT_ENGLISH`) and writes nothing; the message
+names the English draft to use. `accept` also scores the idea. Otherwise score it again (the pool may have
 changed): `python skills/_core/paper_types/paper_type_cli.py score --root .`.
 Read the catalogue with `python -m skills._core.paper_types.registry list`.
 
@@ -91,7 +108,13 @@ Read its `layout`:
 - **Non-interactive runs** (`claude -p`, `pi -p`, scheduled jobs): record and
   score, report the suggestion, never agree.
 - When the idea changes after an agreement, `score` marks it `agreed_stale`:
-  bring the type back to the operator.
+  bring the type back to the operator. Re-recording a Spanish acceptance in
+  English changes the idea, so it does the same.
+- **English records.** `plausibility.json`, `paper_type.json` and the
+  `--rationale` are English whatever the conversation's language; only the
+  conversation with the operator follows their language. The Paper type panel
+  and the board's plausibility step flag a stored acceptance that is not
+  English and name the command that records it again.
 
 ## When a delegated agent cannot be spawned
 
@@ -111,9 +134,9 @@ answer is exactly one JSON object:
 
 ```json
 {
-  "reply": "<one-sentence summary for the operator, in their language>",
+  "reply": "<one-sentence summary for the operator, in the board language>",
   "types": [{"type": "<id>", "fit": "strong | partial | weak | none", "variant": "<id or empty>",
-             "relation": "<one sentence relating the type to the idea, in the operator's language>"}],
+             "relation": "<one sentence relating the type to the idea, in the board language>"}],
   "suggested": "<type id or empty>",
   "variant": "<variant id or empty>",
   "rationale": "<why, citing the idea>",
@@ -121,4 +144,7 @@ answer is exactly one JSON object:
 }
 ```
 
-`types` lists every catalogue type once, in catalogue order.
+`types` lists every catalogue type once, in catalogue order. The panel shows
+`reply` and `relation`, so they are written in the board language the request
+names (`lang`), and in English, the board's default, when it names none; never
+in the language the operator happens to write in.

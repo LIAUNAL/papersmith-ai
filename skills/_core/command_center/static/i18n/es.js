@@ -1096,6 +1096,7 @@ window.PAPERSMITH_I18N.es = {
   "paperType.stale": "La idea cambió después de acordar el tipo: acuérdalo de nuevo.",
   "paperType.idea": "Idea aceptada:",
   "paperType.acceptedBy": "Aceptada por {by} el {at}",
+  "paperType.languageNotice": "La idea aceptada ({file}) no está escrita en inglés (campos: {fields}). El dashboard muestra los archivos del workspace tal como están escritos; regístrala de nuevo en inglés con: {command}",
   "paperType.rescore": "Puntuar de nuevo",
   "paperType.discuss": "Discutir con el agente",
   "paperType.readFailed": "No se pudo leer el tipo de paper: {error}",

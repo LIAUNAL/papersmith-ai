@@ -3662,7 +3662,10 @@ hands over here), or whenever the operator asks which kind of paper to build
 (`/paper-type`). It ships to every workspace.
 
 **How it runs.** It records the accepted idea in `.papersmith/plausibility.json`
-(`paper_type_cli.py accept --by`, which also scores it) or scores it again
+(`paper_type_cli.py accept --by`, which also scores it; without `--idea-file` it
+records the approved English idea brief draft, and it refuses an idea or a
+`--by` that reads as Spanish prose with `IDEA_NOT_ENGLISH` or
+`OPERATOR_NOT_ENGLISH`, writing nothing) or scores it again
 (`paper_type_cli.py score`): a deterministic 0-100 match per type of the
 catalogue (`skills/_core/paper_types/paper_types.json`, eight types: applied
 AI, review, observational and measurement, experiment or intervention,

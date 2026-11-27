@@ -121,7 +121,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from . import lines, phase_actions, review_board
+from . import lines, model_spec, phase_actions, review_board
 from . import state_extractor as _ex
 from .phase_actions import _command, _prompt, _redirect, _requires
 
@@ -376,7 +376,7 @@ def _plausibility_type(ctx: Context) -> dict[str, Any]:
         status = type_status = "PASS"
         detail = (f"Paper type {agreed['type']} ({agreed['variant']}) agreed by {agreed['by'] or '?'}"
                   if agreed["variant"] else f"Paper type {agreed['type']} agreed by {agreed['by'] or '?'}")
-    return {"status": status, "detail": detail, "subfases": [
+    return {"status": status, "detail": model_spec.with_acceptance_notice(detail, accepted), "subfases": [
         ("SOTA scouting (sota-pool/candidates.json)", "PASS" if pool else "PENDING",
          "About 25 SOTA references scouted by /plausibility"),
         ("Plausibility accepted (operator)", "PASS" if accepted else "PENDING",

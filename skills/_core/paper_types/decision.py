@@ -2,7 +2,10 @@
 
 * ``.papersmith/plausibility.json``: the idea the operator accepted at the end
   of plausibility, who accepted it and when, the hash of the SOTA pool it was
-  judged against, and the top references carried to ingestion.
+  judged against, and the top references carried to ingestion. It is English
+  like every artifact under ``.papersmith/``: ``paper_type_cli.py accept``
+  refuses Spanish prose and, without ``--idea-file``, takes the approved English
+  idea brief draft (``approved_draft``).
 * ``.papersmith/paper_type.json``: the deterministic scores of every catalogue
   type for that idea, the suggested type and its confidence, and, once the
   operator agrees one (``smith kind set``, paper-type-lines S5), the agreed
@@ -107,6 +110,24 @@ def read(root: Path) -> dict[str, Any]:
     return {"plausibility": _read(root / PLAUSIBILITY), "paper_type": _read(root / PAPER_TYPE)}
 
 
+def approved_draft(root: Path) -> str | None:
+    """The approved English idea brief draft (``.papersmith/idea_brief.json``
+    ``draft.text``, through the idea phase's ``handoff``), or ``None`` while
+    there is no approved draft."""
+    from ..idea import brief, draft  # only the CLI asks; the board never imports the idea engine here
+
+    try:
+        line = draft.handoff(root)
+    except brief.IdeaError as error:
+        if error.code == "DRAFT_NOT_APPROVED":
+            return None
+        refused = DecisionError(str(error))
+        refused.code = error.code  # BRIEF_UNREADABLE
+        raise refused from error
+    text = line[len(draft.COMMAND):].strip()
+    return text or None
+
+
 def record_acceptance(root: Path, idea: str, *, by: str, top5: list[str] | None = None) -> dict:
     idea = str(idea or "").strip()
     by = str(by or "").strip()
@@ -183,5 +204,5 @@ def agree(root: Path, type_id: str, *, by: str, variant: str | None = None, rati
     return {**record, "line": line, "layout": layout}
 
 
-__all__ = ["AgreeError", "DecisionError", "agree", "current_line", "PAPER_TYPE", "PLAUSIBILITY", "compute", "pool_sha256", "pool_text", "read",
+__all__ = ["AgreeError", "DecisionError", "agree", "approved_draft", "current_line", "PAPER_TYPE", "PLAUSIBILITY", "compute", "pool_sha256", "pool_text", "read",
            "record_acceptance", "record_scores"]
