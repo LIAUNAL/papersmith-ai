@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.85.1
 
 - **Figures are measured against every built venue, not only the canonical layout.** A venue
   can set a larger body than the canonical paper (Energy and Buildings: 12 pt against 11 pt),
