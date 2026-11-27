@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.84.6
 
 - **The accepted idea on the board is English.** `paper_type_cli.py accept` now takes the
   approved English idea brief draft (`.papersmith/idea_brief.json` `draft.text`) when
