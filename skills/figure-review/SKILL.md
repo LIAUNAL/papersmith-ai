@@ -69,8 +69,12 @@ or the call):
 
 - `numeric-text` — a row of words carrying a value (`acc = 0.93`, `n = 120`,
   `87.5%`) or an isolated decimal or percentage not aligned with two other
-  numbers the way tick labels are (`NUMERIC_TEXT_IN_FIGURE`): values belong
-  in the prose or a table, not the picture.
+  numbers the way tick labels are (`NUMERIC_TEXT_IN_FIGURE`): a value is
+  shown first by a data figure's own marks (a bar's height, a point with its
+  interval, read off the axis), then stated in the prose, and only then
+  listed in a table; never printed as text inside the picture. This follows
+  paper-writing's figures-over-tables rule for Methods and Results (about
+  60 % figures and 40 % tables, `verify`'s `figure-table-balance`).
 - `width-share` — every figure and table float printed under 90 % of
   `\textwidth` (`NARROW_FLOAT`). A figure's width is its widest row of
   graphics or minipages in `main.tex`; a table's is its declared width

@@ -122,7 +122,14 @@ Fill the fields in this order, with these exact labels.
      experiments? appropriate methods? complete work or work in progress?
      honest about its own weaknesses?
    - *Clarity*: well written and organised? enough detail for an expert to
-     reproduce the results? Give constructive suggestions.
+     reproduce the results? Give constructive suggestions. Read the
+     figure-to-table ratio of Methods and Results (target 60/40, figures to
+     tables): a Results or Methods section that is table-heavy where a
+     figure would show the comparison, distribution or trend is a weakness to
+     report, naming the table and the figure that would replace it. A table
+     of values a reader looks up exactly (settings, hyperparameters, dataset
+     or hardware characteristics) is not. A caption longer than four lines is
+     a clarity weakness: "A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text."
    - *Significance*: would others use or build on it? does it solve a hard
      task better than prior work, or advance understanding demonstrably?
    - *Originality*: new insights, tasks, methods, or a well-argued novel

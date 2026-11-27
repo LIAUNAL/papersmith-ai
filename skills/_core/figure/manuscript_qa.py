@@ -454,8 +454,9 @@ def table_shape_findings(tex_text: str) -> list[dict]:
             findings.append({"kind": "table-shape", "page": None, "line": text.count("\n", 0, match.start()) + 1,
                              "object": "table", "columns": columns, "rows": len(rows),
                              "snippet": " ".join(rows[0].split())[:80] if rows else "",
-                             "advice": "two columns or two rows: draw the values as a bar or pie chart, "
-                                       "or state them in the sentence"})
+                             "advice": "two columns or two rows: draw the values as a data figure "
+                                       "(a bar or pie chart, a dot plot), or state them in the sentence; "
+                                       "keep a table only for values a reader looks up exactly"})
     return findings
 
 

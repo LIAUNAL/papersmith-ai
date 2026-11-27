@@ -12,7 +12,9 @@ and one advisory beside them (spec S2 of `odd/tasks/daprosero-backlog.md`):
 
     numeric-text      values printed inside the figure (a score in a panel
                       title, an isolated value annotation): they duplicate
-                      the prose and belong in the text or a table. Aligned
+                      the prose and belong first in the data figure's own
+                      marks (a bar, a point with its interval), then in the
+                      prose, then in a table. Aligned
                       tick labels are not values. Reported, never a failure.
 
 The PDF is read through `skills/_core/figure/print_scale.py` (imported,

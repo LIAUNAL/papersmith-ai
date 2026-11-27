@@ -2003,6 +2003,21 @@ rather than pretended-secure). A missing `.sty` refuses
 `LATEX_PACKAGE_ABSENT` and spends nothing: redrawing cannot fix an absent
 package.
 
+**Figures over tables.** Every line's Methods and Results contracts carry
+the same rule: "Figures over tables. In Methods and Results, present comparisons, distributions, trends, effects with their intervals and time series as data figures (line, bar, dot-and-whisker or forest, violin or box plots, heat maps) or diagrams. Keep a table only for values a reader must look up exactly (settings, hyperparameters, dataset, participant or hardware characteristics, metadata) or when the venue requires one. Among the floats of Methods and Results, aim at about 60 % figures and 40 % tables." A data figure is drawn by the run script, not by
+`render` (stop A below refuses a diagram that plots data), with the chart
+helpers in `skills/experimental-implementation/assets/kit/ps_figures.py`,
+beside `apply_style` and `save_figure`:
+`interval_plot(ax, labels, estimates, low, high, *, reference=None)` for a
+dot-and-whisker or forest plot, `grouped_bars(ax, groups, series, *,
+errors=None)`, `distribution_plot(ax, samples, *, kind="violin")` (violin or
+box) and `line_plot(ax, x, series, *, bands=None)`. The PDF it saves enters
+the paper through `place`. `verify` measures the balance
+(`figure-table-balance`).
+
+**Captions are short.** "A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text." `verify` counts the words of every caption
+(`caption-length`): at most four lines (checked as at most 70 words).
+
 **The data-figure boundary, measured, not assumed.** Stop A
 (`paper_figure.scan_data_boundary`) refuses `DIAGRAM_PLOTS_DATA`
 pre-compile on a plotting package, a `\begin{axis}`, an external table
@@ -2326,8 +2341,9 @@ a stop, not a workaround.
 
 Ten contracts state obligations that span two sections. A finished
 `paper/main.tex` can satisfy every section alone and still be incoherent
-across them — `verify` is a read-only report over seven checks: five
-cross-section couplings, citation integrity, and contract currency. It
+across them — `verify` is a read-only report over five cross-section
+couplings, citation integrity, contract currency, and the checks listed
+below. It
 never writes a byte, under any input, including every refusal path, and it
 never repairs anything it finds — `skill-audit`'s own shape, reused here.
 
@@ -2339,7 +2355,7 @@ never repairs anything it finds — `skill-audit`'s own shape, reused here.
 | Verb | What it does | Refuses |
 | --- | --- | --- |
 | `couplings --file <path\|->` | Validates a JSON couplings record's shape and writes it WHOLE, atomically, to `paper/couplings.json` — never merged with what was there before | `COUPLINGS_INPUT_UNREADABLE`, `COUPLINGS_RECORD_MALFORMED` |
-| `verify [--sections <dir>]` | Read-only report: `contribution-list`, `chain`, `gap`, `artefacts`, `future-work`, `citations`, `contract-currency`, `figure-semantics`, `language`, `references` (every cited key has a record in `.paper-writing/references.json`; a missing record fails, while `not_found` and `unreachable` pass with a note in `limits`, so an abstract is never required; a cited key with no title on disk (`not_found`, `unreachable`) or no abstract also lands in the report's top-level `warnings` as `CITED_SOURCE_WITHOUT_TITLE` or `CITED_SOURCE_WITHOUT_ABSTRACT` with its keys: visible, never a failure, so offline work is never blocked; three more advisory `warnings` screen the citations lexically: `CITED_MORE_THAN_ONCE` (only when `couplings.json` declares `citation_policy.cite_once`; each repeated key with its count), `QUOTE_SHARES_NO_TERM_WITH_CLAIM` (an evidence record judged `holds` whose quote shares no content term with its claim; its `records` name the block) and `SOURCE_SHARES_NO_TERM_WITH_PAPER` (a cited source whose title and abstract share no content term with the paper's title, abstract and declared contributions: possibly off-field). A flagged citation may still be right; correct the quote or the source, or keep it knowingly — the final judge reads it either way); plus, under its own `structure` key, `back-matter-order` (every declaration block above the `\bibliography` line, appendices below it; `unmeasured` `NO_BIBLIOGRAPHY` when there is none), `own-paragraph` (every block whose section contract opens a paragraph with it — the introduction's paragraphs 2–7, the related-work panorama, closing and synthesis pointer, the limitations' failure-mode paragraph, the conclusions' findings and future-work blocks, and every declaration — opens a paragraph of its own, never running into the block before them; `write` and `humanize --apply` open those bodies on a blank line) and `appendix-length` (an appendix whose estimated printed extent is one page or less fails, naming `materials-and-methods` or `experimental-setup` as where its content belongs), which `clean` also requires to pass | `DECLARATION_RECORD_ABSENT` |
+| `verify [--sections <dir>]` | Read-only report: `contribution-list`, `chain`, `gap`, `artefacts`, `future-work`, `citations`, `contract-currency`, `figure-semantics`, `language`, `references` (every cited key has a record in `.paper-writing/references.json`; a missing record fails, while `not_found` and `unreachable` pass with a note in `limits`, so an abstract is never required; a cited key with no title on disk (`not_found`, `unreachable`) or no abstract also lands in the report's top-level `warnings` as `CITED_SOURCE_WITHOUT_TITLE` or `CITED_SOURCE_WITHOUT_ABSTRACT` with its keys: visible, never a failure, so offline work is never blocked; three more advisory `warnings` screen the citations lexically: `CITED_MORE_THAN_ONCE` (only when `couplings.json` declares `citation_policy.cite_once`; each repeated key with its count), `QUOTE_SHARES_NO_TERM_WITH_CLAIM` (an evidence record judged `holds` whose quote shares no content term with its claim; its `records` name the block) and `SOURCE_SHARES_NO_TERM_WITH_PAPER` (a cited source whose title and abstract share no content term with the paper's title, abstract and declared contributions: possibly off-field). A flagged citation may still be right; correct the quote or the source, or keep it knowingly — the final judge reads it either way), `figure-table-balance` (the figure environments, `figure` and `figure*`, against the table environments, `table`, `table*` and `longtable`, inside the blocks of the Methods and Results sections — `materials-and-methods`, `experimental-setup`, `results-and-discussion`, `methods`, `results`, `discussion`, `data-records`, `technical-validation`, `hardware-description`, `validation-characterization`, read off the `<section>.<id>` block markers; passes when figures / (figures + tables) is at least 0.6, fails below, and passes with no table at all (figures only, or no float), the counts saying which; a manuscript whose markers name no section is counted over the body before the back matter, said in `limits`; the evidence names both counts, the ratio, the threshold and the blocks counted), `caption-length` (the words of every `\caption[short]{long}` in `main.tex`, its long title read brace-balanced: commands are stripped while their text arguments keep their words, `\ref`, `\cite` and `\label` count as no word, and an inline math span counts as one; a caption must be at most four lines (checked as at most 70 words), so one over 70 words fails, naming its label or its first five words with its count; no caption at all passes with `max_words` 0; a supplement's captions are not read, said in `limits`); plus, under its own `structure` key, `back-matter-order` (every declaration block above the `\bibliography` line, appendices below it; `unmeasured` `NO_BIBLIOGRAPHY` when there is none), `own-paragraph` (every block whose section contract opens a paragraph with it — the introduction's paragraphs 2–7, the related-work panorama, closing and synthesis pointer, the limitations' failure-mode paragraph, the conclusions' findings and future-work blocks, and every declaration — opens a paragraph of its own, never running into the block before them; `write` and `humanize --apply` open those bodies on a blank line) and `appendix-length` (an appendix whose estimated printed extent is one page or less fails, naming `materials-and-methods` or `experimental-setup` as where its content belongs), which `clean` also requires to pass | `DECLARATION_RECORD_ABSENT` |
 
 **`contribution-list` holds only the blocks that enumerate.** A block that
 requires the contributions fact and names at least one declared contribution
@@ -2356,7 +2372,7 @@ or `unmeasured` — `unmeasured` is never folded into `pass`. Two new modules
 carry this: `paper_coupling_evidence.py` (every disk read `verify`
 performs — named to avoid colliding with `paper_evidence.py`, the
 claim<->source evidence module `no-claim-without-a-source-that-holds-it`
-already ships) and `paper_verify.py` (the eight pure checks and the report
+already ships) and `paper_verify.py` (the pure checks and the report
 they assemble; an AST lock and an executed before/after content manifest
 both hold it, and `paper_coupling_evidence.py`, to writing nothing).
 

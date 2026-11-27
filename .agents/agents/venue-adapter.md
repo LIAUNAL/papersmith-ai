@@ -78,6 +78,9 @@ fill a gap with what other journals of the publisher ask. The fields:
   the bibliography and `back-matter` where it wants the declarations.
 - `limits` — `abstract_words`, `keywords`, `title_words`, `main_text_words`,
   `pages`, `figures`, `tables`, `references`, each `{min?, max?, quote, url}`.
+  The venue's own limits on figures and tables always win over smith's
+  figures-over-tables rule (about 60 % figures and 40 % tables among the
+  floats of Methods and Results); quote them exactly.
 - `declarations_required` — `[{id, quote, url}]` with ids such as
   `author-contributions`, `funding`, `data-availability`, `conflicts`, `ethics`,
   `acknowledgments`, `code-availability`.
@@ -120,6 +123,12 @@ by cutting what, add a data-availability statement stating what), the section
 contract that will govern the rewrite, and what the operator must decide. A
 plan item that adds a section or a statement the manuscript has no facts for is
 a question to the operator, not a draft.
+
+When the venue caps figures or tables, the cap wins. When it allows it, a plan
+that moves, merges or drops floats keeps the figures-over-tables balance of
+Methods and Results (about 60 % figures, 40 % tables, `verify`'s
+`figure-table-balance`): a float that must go is a table before it is a data
+figure, and a table that a figure can show is redrawn rather than kept.
 
 Iterate. The operator reads the plan, asks for changes, and you revise the
 text; every revision is a new plan with a new hash, and a new plan voids the

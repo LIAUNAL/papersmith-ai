@@ -1,4 +1,4 @@
-"""paper_verify: eight pure checks over a `paper_coupling_evidence.Evidence`,
+"""paper_verify: the pure checks over a `paper_coupling_evidence.Evidence`,
 and the report they assemble into (`the-couplings-hold-or-they-do-not`).
 
 Every function below is a pure function of an already-built `Evidence`
@@ -10,7 +10,7 @@ report, never repair.
 
 `CHECKS` is one closed roster (contribution-list, chain, gap, artefacts,
 future-work, citations, contract-currency, figure-semantics, language,
-references); `language` reads a scan the caller hands in (`run(..., language=)`)
+references, figure-table-balance, caption-length); `language` reads a scan the caller hands in (`run(..., language=)`)
 and `references` the sidecar's records (`run(..., references=)`); `run()` is
 held to producing
 exactly one report object per member, in both directions
@@ -31,7 +31,7 @@ carried forward into a second live vocabulary.
 
 Public surface:
 
-    CHECKS               -> the seven check ids, in report order
+    CHECKS               -> the check ids, in report order
     UNMEASURED_REASONS   -> every reason a check can report `unmeasured` for
     item_lines(body: bytes) -> list[str]  -- every `\\item ...` line's text,
                              stripped, in document order (`a-fact-is-
@@ -83,6 +83,8 @@ CHECKS: tuple[str, ...] = (
     "figure-semantics",
     "language",
     "references",
+    "figure-table-balance",
+    "caption-length",
 )
 
 #: Every reason a check's `unmeasured_reason` may carry. Closed: a check
@@ -1041,6 +1043,210 @@ def check_appendix_length(evidence, *, optional_block_ids: frozenset = frozenset
     )
 
 
+#: The sections whose floats `figure-table-balance` counts: every line's
+#: Methods and Results/Discussion (`odd/tasks/figures-over-tables.md`, S3).
+#: Applied-AI experimental: materials and methods, the experimental set-up
+#: (its Methods part) and results and discussion; review, observational,
+#: lab-simulation, experiment-intervention and qualitative: methods, results
+#: and the discussion that reads them; data resource: methods, data records and technical validation;
+#: hardware: hardware description and validation/characterization. A section
+#: id names the same section in every line that has it, so the union needs
+#: no line lookup (this module reads no manifest, no `sections_dir`).
+FIGURE_TABLE_SECTIONS: frozenset = frozenset({
+    "materials-and-methods", "experimental-setup", "results-and-discussion",
+    "methods", "results", "discussion", "data-records", "technical-validation",
+    "hardware-description", "validation-characterization",
+})
+#: The share of figures among the floats of those sections at or above which
+#: the check passes: about 60 % figures and 40 % tables.
+FIGURE_SHARE = 0.6
+_FIGURE_FLOAT_RE = re.compile(rb"\\begin\{figure\*?\}")
+_TABLE_FLOAT_RE = re.compile(rb"\\begin\{(?:table\*?|longtable\*?)\}")
+_LINE_COMMENT_RE = re.compile(rb"(?<!\\)%[^\n]*")
+_BODY_STOP_RE = re.compile(
+    rb"^%% paper-writing block back-matter\.[A-Za-z0-9._-]+ begin\b"
+    rb"|^[ \t]*\\appendix\b"
+    rb"|^[ \t]*\\(?:bibliography\{|begin\{thebibliography\}|printbibliography\b)"
+    rb"|^[ \t]*\\end\{document\}", re.M)
+_BEGIN_DOCUMENT_RE = re.compile(rb"\\begin\{document\}")
+
+
+def _count_floats(body: bytes) -> tuple[int, int]:
+    body = _LINE_COMMENT_RE.sub(b"", body)
+    return len(_FIGURE_FLOAT_RE.findall(body)), len(_TABLE_FLOAT_RE.findall(body))
+
+
+def check_figure_table_balance(evidence, *, optional_block_ids: frozenset = frozenset()) -> dict:
+    """`figure-table-balance` (`odd/tasks/figures-over-tables.md`, S3): among
+    the floats of Methods and Results, about 60 % are data figures. Counts
+    the figure environments (`figure`, `figure*`) and the table environments
+    (`table`, `table*`, `longtable`) inside the blocks of the sections in
+    `FIGURE_TABLE_SECTIONS`, commented lines left out; passes when
+    figures / (figures + tables) >= `FIGURE_SHARE`, and fails below. With no
+    table there is nothing to violate: figures only, or no float at all,
+    passes, the counts saying which.
+
+    The section map is read from the block markers themselves: a manuscript
+    `write` builds names each block `<section>.<id>`. When no marker outside
+    the back matter carries a section, the map cannot be resolved, and the
+    check counts the body instead -- from `\\begin{document}` to the first
+    back-matter block, `\\appendix`, reference list or `\\end{document}` --
+    and says so in `limits`.
+
+    `optional_block_ids` is accepted, unused, only for call-uniformity."""
+    data = evidence.main_tex_bytes
+    markers = [(m.group(1).decode("ascii"), m) for m in _ANY_BEGIN_RE.finditer(data)]
+    resolved = any("." in block_id and not block_id.startswith("back-matter.") for block_id, _ in markers)
+    figures = tables = 0
+    counted: list = []
+    limits: list = []
+    if resolved:
+        for block_id, begin in markers:
+            if "." not in block_id or block_id.split(".", 1)[0] not in FIGURE_TABLE_SECTIONS:
+                continue
+            end = re.compile(rb"^%% paper-writing block " + re.escape(block_id.encode("ascii")) + rb" end",
+                             re.M).search(data, begin.end())
+            if end is None:
+                continue
+            found = _count_floats(data[begin.end():end.start()])
+            figures, tables = figures + found[0], tables + found[1]
+            counted.append(block_id)
+        origin = "main.tex blocks of the Methods and Results sections"
+    else:
+        start = _BEGIN_DOCUMENT_RE.search(data)
+        start_at = start.end() if start else 0
+        stop = _BODY_STOP_RE.search(data, start_at)
+        figures, tables = _count_floats(data[start_at:stop.start() if stop else len(data)])
+        origin = "main.tex body before the back matter"
+        limits.append("no block marker names its section, so the whole body before the back matter "
+                      "was counted instead of the Methods and Results sections")
+    total = figures + tables
+    ratio = round(figures / total, 3) if total else None
+    verdict = "fail" if total and figures / total < FIGURE_SHARE else "pass"
+    return _entry(
+        "figure-table-balance", classification="mechanical", verdict=verdict,
+        sides=[{"name": "figure and table environments", "source": "derived", "origin": origin},
+               {"name": "figure share", "source": "derived", "origin": f"{FIGURE_SHARE} of the floats"}],
+        evidence={"figures": figures, "tables": tables, "ratio": ratio, "threshold": FIGURE_SHARE,
+                  "scope": "sections" if resolved else "body", "blocks": counted},
+        limits=limits, unmeasured_reason=None,
+    )
+
+
+#: The most words a caption may hold: four lines of a single-column caption
+#: at about 17 words per line, with room for the terse decoded entries a
+#: `caption_decodes: true` contract asks for (`odd/tasks/figures-over-tables.md`, S6). "A figure or table caption
+#: is at most four lines: a title that says what the float shows, plus the
+#: one definition a reader needs to read it. Notation and further definitions
+#: go in a table note below the table or in the text."
+CAPTION_WORDS = 70
+_CAPTION_RE = re.compile(r"\\caption(?![A-Za-z@])\*?\s*")
+#: Cross-references, citations and labels print a number or a key, never a
+#: word of the caption's own prose: each counts as no word.
+_NO_WORD_COMMAND_RE = re.compile(
+    r"\\(?:label|ref|eqref|autoref|cref|Cref|pageref|nameref|cite[A-Za-z]*|nocite)\*?"
+    r"(?:\s*\[[^\]]*\])*\s*\{[^{}]*\}")
+_CAPTION_MATH_RE = re.compile(r"\$\$.*?\$\$|\$[^$]*\$|\\\(.*?\\\)|\\\[.*?\\\]", re.S)
+_CAPTION_COMMAND_RE = re.compile(r"\\[A-Za-z@]+\*?|\\.")
+_CAPTION_LABEL_RE = re.compile(r"\\label\s*\{([^{}]*)\}")
+_FLOAT_END_RE = re.compile(r"\\end\{(?:figure|table|longtable)\*?\}|\\caption(?![A-Za-z@])")
+_MATH_WORD = "\x00"
+_CAPTION_SPACES = str.maketrans("{}~", "   ")
+
+
+def _closing(text: str, index: int, opening: str, closing: str) -> int | None:
+    """The index just past the `closing` that balances the `opening` at
+    `index`, skipping escaped characters and nested braces; `None` when it
+    never closes."""
+    depth = braces = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\":
+            index += 2
+            continue
+        if opening == "[" and char in "{}":
+            braces += 1 if char == "{" else -1
+        elif braces == 0 and char == opening:
+            depth += 1
+        elif braces == 0 and char == closing:
+            depth -= 1
+            if depth == 0:
+                return index + 1
+        index += 1
+    return None
+
+
+def caption_words(caption: str) -> int:
+    """The words of one caption's printed text. A math span (`$...$`,
+    `\\(...\\)`, `\\[...\\]`, `$$...$$`) is one word; `\\label`, `\\ref`-like
+    commands and `\\cite`-like commands are none; every other command is
+    stripped while the text of its arguments keeps its words (`\\emph{x}` is
+    `x`). A word is a whitespace-separated run holding a letter or digit."""
+    text = _CAPTION_MATH_RE.sub(f" {_MATH_WORD} ", caption)
+    text = _NO_WORD_COMMAND_RE.sub(" ", text)
+    text = _CAPTION_COMMAND_RE.sub(" ", text)
+    text = text.translate(_CAPTION_SPACES)
+    return sum(1 for token in text.split() if token == _MATH_WORD or any(c.isalnum() for c in token))
+
+
+def _captions(text: str) -> list:
+    """Every `\\caption[short]{long}` in `text` as `(long title, label)`: the
+    long title read brace-balanced, the label the one inside the caption or,
+    failing that, the first one after it before the float ends."""
+    found = []
+    for match in _CAPTION_RE.finditer(text):
+        index = match.end()
+        if text.startswith("[", index):
+            index = _closing(text, index, "[", "]")
+            if index is None:
+                continue
+            while index < len(text) and text[index].isspace():
+                index += 1
+        if not text.startswith("{", index):
+            continue
+        end = _closing(text, index, "{", "}")
+        if end is None:
+            continue
+        body = text[index + 1:end - 1]
+        label = _CAPTION_LABEL_RE.search(body)
+        if label is None:
+            stop = _FLOAT_END_RE.search(text, end)
+            label = _CAPTION_LABEL_RE.search(text, end, stop.start() if stop else len(text))
+        found.append((body, label.group(1).strip() if label else None))
+    return found
+
+
+def check_caption_length(evidence, *, optional_block_ids: frozenset = frozenset()) -> dict:
+    """`caption-length` (`odd/tasks/figures-over-tables.md`, S6): no figure or
+    table caption runs past four lines. Counts the words of every
+    `\\caption` in `main.tex` (commented lines left out) by `caption_words`,
+    and fails when one exceeds `CAPTION_WORDS`; no caption at all is
+    a pass with `max_words` 0: there is nothing to violate. Each offending
+    caption is named by its label, or by its first five words when it has
+    none.
+
+    The supplement is not covered: `Evidence` carries `main.tex` alone, and
+    this module reads no disk, so `limits` says so on every report.
+
+    `optional_block_ids` is accepted, unused, only for call-uniformity."""
+    text = _LINE_COMMENT_RE.sub(b"", evidence.main_tex_bytes).decode("utf-8", errors="replace")
+    counted = [(body, label, caption_words(body)) for body, label in _captions(text)]
+    limits = ["only main.tex is covered: a supplement's captions are not read"]
+    over = []
+    for body, label, count in counted:
+        if count > CAPTION_WORDS:
+            name = label or " ".join(_CAPTION_COMMAND_RE.sub(" ", body).translate(_CAPTION_SPACES).split()[:5])
+            over.append({"caption": name, "words": count})
+    return _entry(
+        "caption-length", classification="mechanical", verdict="fail" if over else "pass",
+        sides=[{"name": "caption words", "source": "derived", "origin": "main.tex \\caption{...}"},
+               {"name": "four lines", "source": "derived", "origin": f"{CAPTION_WORDS} words"}],
+        evidence={"captions": len(counted), "max_words": max((count for _, _, count in counted), default=0),
+                  "limit": CAPTION_WORDS, "over_limit": over},
+        limits=limits, unmeasured_reason=None,
+    )
+
+
 _STRUCTURE_FUNCTIONS = {"back-matter-order": check_back_matter_order,
                         "own-paragraph": check_own_paragraph,
                         "appendix-length": check_appendix_length}
@@ -1058,6 +1264,8 @@ _CHECK_FUNCTIONS = {
     "figure-semantics": check_figure_semantics,
     "language": check_language,
     "references": check_references,
+    "figure-table-balance": check_figure_table_balance,
+    "caption-length": check_caption_length,
 }
 assert set(_CHECK_FUNCTIONS) == set(CHECKS), "every CHECKS member needs exactly one function, and the reverse"
 
