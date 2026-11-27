@@ -1,3 +1,7 @@
+#@ Lines that start with `#@` never reach the rendered file. The research-content
+#@ section below comes in two variants and `generators.render_gitignore_block`
+#@ renders one: `private` by default, `tracked` when papersmith.yaml sets
+#@ `track_research_content: true`. Everything above the first variant is shared.
 # papersmith workspace — generated files and local state
 .micromamba/
 .venv/
@@ -29,6 +33,7 @@ kaggle-inbox/*
 .agents/skills
 .pi/npm/
 
+#@ research-content: private
 # Research content: the folder travels, its contents stay home. Every entry
 # here mirrors this framework's own root .gitignore — a workspace is meant to
 # reach the same "structure versioned, content local" contract this repo
@@ -60,6 +65,43 @@ sota-pool/*
 # that state embeds and hashes the very revisions the lines above keep local:
 # it is content, and committing it publishes them. The same skills move
 # revisions and their sidecars to `backup/<folder>/` when reconciling a base.
+.proposal-deliberation/
+.experimental-deliberation/
+.study-protocol-deliberation/
+backup/proposals/
+backup/experiments/
+backup/protocol/
+#@ research-content: tracked
+# Research content, tracked: this workspace set `track_research_content: true`
+# in papersmith.yaml, so its papers, proposals, experiments, guidance and
+# protocol are versioned with the structure, and only what a build or a run
+# regenerates stays local. Set it to false (or remove it) and run
+# `smith upgrade` to return to the private block.
+# LaTeX build products, wherever a paper or venue build sits under paper/.
+paper/**/*.aux
+paper/**/*.log
+paper/**/*.out
+paper/**/*.fdb_latexmk
+paper/**/*.fls
+paper/**/*.synctex.gz
+paper/**/*.blg
+paper/**/*.spl
+paper/**/*.toc
+paper/**/*.lof
+paper/**/*.lot
+# paper-writing's backups of a file it rewrote.
+paper/.paper-writing/*.before-*
+# Captured stdout/stderr of logged analyses may hold participant-level values.
+analysis/streams/
+# Destination repositories carry their own git: they stay out of this one even
+# when tracking. `kaggle-inbox/` (worker returns) stays ignored above.
+implementations/*
+!implementations/.gitkeep
+# The plausibility graph pool travels as its JSON; `atlas.html` inlines the
+# whole 3D viewer bundle and is rebuilt from `atlas.json`, so it stays local.
+sota-pool/atlas.html
+# Engine state stays local: each deliberation skill's sidecar holds receipts and
+# permanent locks of this machine's runs, and `backup/` holds superseded bases.
 .proposal-deliberation/
 .experimental-deliberation/
 .study-protocol-deliberation/

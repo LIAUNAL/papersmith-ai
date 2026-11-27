@@ -4,6 +4,13 @@ title: {{title_yaml}}
 topic: {{topic_yaml}}
 venue_target: "unspecified"
 
+# false keeps research content local: the workspace .gitignore versions the
+# folders of paper/, proposals/, experiments/, guidance/ and protocol/, never
+# their contents. true versions that content too and ignores only build
+# products (LaTeX aux/log files, __pycache__, paper-writing backups). Run
+# `smith upgrade` after changing it to rewrite the .gitignore block.
+track_research_content: false
+
 skills:
   - paper-ingestion
   - proposal-deliberation

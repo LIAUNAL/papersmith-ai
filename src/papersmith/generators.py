@@ -979,6 +979,8 @@ def context_for_workspace(workspace: Path) -> dict[str, Any]:
         "tools": ", ".join(config["active_tools"]),
         "agents": _agents_block(workspace),
         **({"paper_kind": config["paper_kind"]} if config.get("paper_kind") else {}),
+        **({"track_research_content": True} if yaml.get("track_research_content") is True
+           else {}),
     }
 
 
@@ -1028,12 +1030,44 @@ def _context_with_defaults(context: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+#: The research-content variants ``gitignore.tpl`` carries, each opened by its
+#: ``#@ research-content: <variant>`` line. ``private`` keeps research content
+#: local (the default); ``tracked`` versions it and ignores only build products,
+#: for a workspace whose ``papersmith.yaml`` sets ``track_research_content: true``.
+GITIGNORE_VARIANTS = ("private", "tracked")
+
+
+def render_gitignore_block(ctx: dict[str, Any]) -> str:
+    """The managed ``.gitignore`` block's body for ``ctx``'s setting.
+
+    The template's shared lines, then the research-content variant the
+    workspace chose. Lines starting with ``#@`` are template notes and the
+    variant openers: they never reach the rendered file.
+    """
+    sections: dict[str | None, list[str]] = {None: []}
+    current: str | None = None
+    for line in render_package_template("gitignore.tpl", ctx).splitlines(keepends=True):
+        if line.startswith("#@"):
+            note = line[2:].strip()
+            if note.startswith("research-content:"):
+                current = note.partition(":")[2].strip()
+                if current not in GITIGNORE_VARIANTS or current in sections:
+                    raise UserError(f"gitignore.tpl: unknown or repeated variant {current!r}")
+                sections[current] = []
+            continue
+        sections[current].append(line)
+    if any(variant not in sections for variant in GITIGNORE_VARIANTS):
+        raise UserError(f"gitignore.tpl must carry the variants {GITIGNORE_VARIANTS}")
+    variant = "tracked" if ctx.get("track_research_content") is True else "private"
+    return "".join(sections[None] + sections[variant])
+
+
 def render_files(workspace: Path, context: dict[str, Any] | None = None,
                  tools: list[str] | tuple[str, ...] = ALL_TOOLS, *,
                  warnings: list[str] | None = None) -> dict[str, str]:
     ctx = _context_with_defaults(context or context_for_workspace(workspace))
     rendered: dict[str, str] = {".gitignore": (
-        f"{MANAGED_BLOCK_BEGIN}\n{render_package_template('gitignore.tpl', ctx)}{MANAGED_BLOCK_END}\n")}
+        f"{MANAGED_BLOCK_BEGIN}\n{render_gitignore_block(ctx)}{MANAGED_BLOCK_END}\n")}
     templates = {
         "claude": ("CLAUDE.md", "claude.md.tpl"),
         "opencode": ("OPENCODE.md", "opencode.md.tpl"),

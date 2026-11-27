@@ -105,6 +105,12 @@ smith upgrade ~/papers/sparse-ae
 It only touches files the framework manages — never `guidance/`,
 `proposals/`, `paper/`, `experiments/`, `implementations/`, `kaggle-inbox/`,
 `papersmith.yaml`, `package.json`, `README.md` or the `.env*` files.
+It renders the managed `.gitignore` block from `papersmith.yaml`'s
+`track_research_content`: `false` (the default) keeps research content local,
+`true` versions `paper/`, `proposals/`, `experiments/`, `guidance/` and
+`protocol/` and ignores only their build products (see the README's workspace
+layout). Changing the setting takes effect at the next `smith upgrade`, in
+either direction; until then `audit --check-drift` reports the block.
 A section contract in `sections/` that the workspace edited (its bytes differ
 from the copy the manifest records) is kept and reported as
 `Kept edited contract: <path>`; `status` lists it as drift, and `--force`

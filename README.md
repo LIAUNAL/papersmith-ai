@@ -1370,6 +1370,20 @@ folder is versioned, the content never is. The tutors' threads and the pages
 you upload to them (`.papersmith/math-tutor/`, `.papersmith/experiments-tutor/`)
 are ignored too: they are yours.
 
+To version the research itself, so a clone can build the paper, set
+`track_research_content: true` in `papersmith.yaml` and run `smith upgrade`.
+The managed `.gitignore` block then tracks `paper/`, `proposals/`,
+`experiments/`, `guidance/` and `protocol/` with their contents, and the JSON
+of `sota-pool/`. It still ignores what a build or a run regenerates: LaTeX
+build products under `paper/` (`*.aux`, `*.log`, `*.out`, `*.fdb_latexmk`,
+`*.fls`, `*.synctex.gz`, `*.blg`, `*.spl`, `*.toc`, `*.lof`, `*.lot`),
+`__pycache__/`, paper-writing's `paper/.paper-writing/*.before-*` backups and
+`sota-pool/atlas.html`. It also keeps ignoring the local state listed above,
+`implementations/*` (each holds its own git repository), `kaggle-inbox/*`,
+`analysis/streams/`, and the deliberation engines' sidecar state. Set it back
+to `false` (the default) and run `smith upgrade` to restore the private block.
+`smith audit --check-drift` reports the block as drift until that upgrade runs.
+
 ### `papersmith.yaml` — the configuration you will actually touch
 
 The file comes with three example targets and three execution profiles. The

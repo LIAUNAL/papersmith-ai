@@ -11,6 +11,26 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **Figures are measured against every built venue, not only the canonical layout.** A venue
+  can set a larger body than the canonical paper (Energy and Buildings: 12 pt against 11 pt),
+  so a figure that passes `place` could print below the 0.70 x body floor in the journal
+  version. `venue build` now measures every figure the venue manuscript includes, placed data
+  figures and rendered diagrams, at the width its `\includegraphics` sets and against that
+  venue's body size and text width, and records each one below the floor or wider than the
+  text under `figure_print` in its output and `build.json`, with the size to redraw at. `place`
+  adds the same measurement per built venue as `venueWarnings`. Nothing new refuses; the
+  canonical gate is unchanged.
+- **A workspace can opt in to versioning its research content.** By default a workspace keeps
+  research content local ("structure versioned, content local"), so a new figure or supplement
+  source under `paper/` never reached the repository. `track_research_content: true` in
+  `papersmith.yaml` makes the managed `.gitignore` block version `paper/`, `proposals/`,
+  `experiments/`, `guidance/` and `protocol/`. LaTeX build products, `*.before-*` backups,
+  `sota-pool/atlas.html`, `implementations/*` and engine state stay ignored. `smith upgrade`
+  rewrites the block either way. The default block is byte-identical to 0.85.0, new
+  workspaces declare the key as `false`, and a non-boolean value is refused.
+
 ## 0.85.0
 
 - **Figures over tables in Methods and Results, for every paper line.** Each line's Methods and
