@@ -40,6 +40,7 @@
 
   // Literal keys, so the catalogue test can see each one.
   const ARTIFACT_LABELS = {
+    ideas: () => t('board.artifact.ideas'),
     atlas: () => t('board.artifact.atlas'),
     atlas_manuscript: () => t('board.artifact.atlas_manuscript'),
     manuscript_graph: () => t('board.artifact.manuscript_graph'),
@@ -89,6 +90,16 @@
     if (current && current.cli_command) lines.push(t('board.nextCommand', { command: current.cli_command }));
     if ((summary.failed_gates || []).length) lines.push(t('board.failedGates', { gates: names(summary.failed_gates) }));
     if ((summary.open_gates || []).length) lines.push(t('board.openGates', { gates: names(summary.open_gates) }));
+    const ideas = summary.ideas;
+    if (ideas && ideas.revision) {
+      const count = (list) => (Array.isArray(list) ? list.length : 0);
+      lines.push(t('board.ideasSynced', {
+        revision: ideas.revision, added: count(ideas.added), pruned: count(ideas.pruned),
+        changed: count(ideas.changed),
+      }));
+      if (count(ideas.pruned)) lines.push(t('board.ideasRetired', { list: ideas.pruned.join(', ') }));
+      if (ideas.contribution_type_stale) lines.push(t('board.contributionTypeStale'));
+    }
     const by = (state) => artifacts.filter((a) => a.state === state).map((a) => artifactLabel(a.id));
     const ok = by('ok'), skipped = by('skipped'), failed = by('failed');
     if (ok.length) lines.push(t('board.artifactsOk', { list: ok.join(', ') }));

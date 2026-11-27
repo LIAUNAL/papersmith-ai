@@ -198,6 +198,26 @@ publish stretch, which has no `Write`) from that revision and the pillars and
 hypotheses discussed, and name the revision in `trl`. Without the file the tab
 shows a neutral placeholder built from `papersmith.yaml`.
 
+**The latest revision is the identity of the ideas; the file is their
+enrichment.** After every published revision, sync the file instead of
+hand-copying the pillars and hypotheses:
+
+```bash
+python skills/_core/command_center/idea_sync.py --root .            # --dry-run to preview
+```
+
+It takes from the revision's `.sky.json` overlay the pillar ids and names, the
+hypothesis ids, statements, pillar links and experiments (and the problem tree,
+when the overlay carries a `problem_tree`). It keeps what you wrote on each
+surviving id (`title`, `summary`, `status`, `evidence`...), moves an id the
+revision dropped to `novelty.retired` with the last revision that held it, and
+records `novelty.source_revision`. It prints what it added, pruned, renamed or
+restated; a second run changes nothing. The dashboard's "Update board" runs the
+same sync. Then refresh the enrichment of what changed: a restated or new
+hypothesis needs its `title`, `status` and `evidence` rewritten for this
+revision, never carried over from an older protocol. A file synced from an older
+revision is shown as stale, never as current.
+
 **It is written in English**, like every artifact, whatever language the
 deliberation was held in. The dashboard shows the file as written; its language
 selector translates the dashboard's own labels, never this file. A file whose
@@ -224,6 +244,7 @@ and asks for this rewrite.
                      "status": "...", "evidence": "..."}]
   },
   "contribution_type": {"type": "Theory", "why": "<one to three sentences>"},
+  "contribution_type_revision": "r02",
   "conceptual_map": {
     "layers": [{"name": "Layer 1: ...", "color": "#38bdf8", "tag": "...",
                  "description": "...", "nodes": [{"name": "...", "desc": "..."}]}]
@@ -280,10 +301,15 @@ proposed, hand the revision to the `paper-reviewer` agent in its proposal mode
 `Use-Inspired`, `Concept & Feasibility`, `Negative Results`; `why` is one to
 three sentences, at most 600 characters, naming what decides it; `affinity` scores
 each of the five types from 0 to 100 with a reason of at most 300 characters, the
-chosen type on top. The Concept
-Map & Model tab shows it right after the hypotheses; a missing or malformed
-object shows as not classified yet. Re-classify whenever an accepted revision
-changes a hypothesis, an equation or the claimed novelty. This is Phase 4's
+chosen type on top. Record the revision it was classified from in
+`contribution_type_revision` (`r02`), beside the object, never inside it. The
+Concept Map & Model tab shows it right after the hypotheses; a missing or
+malformed object shows as not classified yet, and one whose
+`contribution_type_revision` predates the latest revision (or, once the file was
+synced, is missing) is flagged stale (`contribution_type_stale`). Re-classify
+whenever an accepted revision changes a hypothesis, an equation or the claimed
+novelty: when `idea_sync.py` reports an added, pruned or restated hypothesis,
+hand the revision to the `paper-reviewer` again and refresh both fields. This is Phase 4's
 last step: the dashboard's "Launch the judge-reviewer" button asks for it, and
 Phase 5 stays locked until the type is recorded.
 

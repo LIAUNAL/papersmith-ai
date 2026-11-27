@@ -9,9 +9,11 @@ references of the SOTA pool and says how each one supports it:
 
 The ideas are read from the workspace, never from this file:
 
-- pillars and hypotheses from ``.papersmith/model_spec.json`` (``novelty``), or
-  the latest revision's ``.sky.json`` overlay when the specification has none;
-  an idea without an ``id`` takes its position (``P1``, ``H1``);
+- pillars and hypotheses from the latest revision's ``.sky.json`` overlay
+  (their identity) over ``.papersmith/model_spec.json`` (``novelty``, their
+  enrichment), as ``command_center/idea_sync.py`` merges them; the
+  specification's own lists when the overlay carries none, and the overlay's raw
+  lists when neither does; an idea without an ``id`` takes its position (``P1``, ``H1``);
 - layers from ``concept_map`` or ``conceptual_map`` in that specification;
 - equations from the ``\\tag{N}`` display blocks of the latest revision, the
   same blocks ``command_center/math_view.py`` counts;
@@ -50,7 +52,8 @@ and experiments keep the plain rule, so a foundational reference stays citable
 there. What ``tree_findings`` reports owes under the proposal stage as
 ``tree:<node>: <reason>``, so Phase 4's citations step stays open on it.
 
-Read-only, bounded and never raises. This module has no dependencies, so the
+Read-only, bounded and never raises. This module has no package dependencies
+(it loads ``idea_sync.py`` by path, stdlib only, as it is loaded), so the
 gates and the dashboard load it by path; the two small parsers below stay here
 because ``math_view`` and ``experiments_view`` belong to the dashboard's
 package, and tests hold them to the same answers.
@@ -381,12 +384,39 @@ def _tree_ideas(novelty: dict[str, Any]) -> list[tuple[str, str]]:
     return found + [("cause", _id(item, "DC", n)) for n, item in enumerate(_listed(tree.get("causes"), "text"), 1)]
 
 
-def _ideas(root: Path) -> list[tuple[str, str]]:
-    """Every ``(kind, id)`` of the workspace, in the panels' order, each once."""
+def _idea_sync():
+    """``command_center/idea_sync.py``, loaded by path like this module."""
+    import importlib.util
+    import sys
+
+    name = "papersmith_idea_sync"
+    if name not in sys.modules:
+        path = Path(__file__).resolve().parents[1] / "command_center" / "idea_sync.py"
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except BaseException:
+            sys.modules.pop(name, None)
+            raise
+    return sys.modules[name]
+
+
+def _current(root: Path) -> tuple[dict[str, Any], dict[str, Any], Path | None, dict[str, Any]]:
+    """The specification, its ``novelty`` with the latest revision's identity
+    over the specification's enrichment, the latest revision and its overlay."""
     spec, novelty = _novelty(root)
     proposal = _latest(root / "proposals", root, _REVISION)
     sky = _json(proposal.with_suffix(".sky.json"), root) if proposal else None
     sky = sky if isinstance(sky, dict) else {}
+    current = _idea_sync().current_novelty(novelty, sky) if sky else novelty
+    return spec, current if isinstance(current, dict) else novelty, proposal, sky
+
+
+def _ideas(root: Path) -> list[tuple[str, str]]:
+    """Every ``(kind, id)`` of the workspace, in the panels' order, each once."""
+    spec, novelty, proposal, sky = _current(root)
     pillars = _listed(novelty.get("pillars"), "name", "summary") or _listed(sky.get("pillars"), "label", "detail")
     hypotheses = (_listed(novelty.get("hypotheses"), "title", "statement")
                   or _listed(sky.get("hypotheses"), "statement"))
@@ -622,7 +652,7 @@ def state(root: Path | str) -> dict[str, Any]:
             stage["owed"].append(key)
         else:
             stage["cited"] += 1
-    trees = tree_findings(_novelty(root)[1]) if stages["proposal"]["ideas"] else []
+    trees = tree_findings(_current(root)[1]) if stages["proposal"]["ideas"] else []
     stages["proposal"]["owed"] += trees
     return {"ideas": ideas, "stages": stages, "file_problems": file_problems, "trees": trees,
             "routes": routes(recorded, pool, [idea["key"] for idea in ideas])}

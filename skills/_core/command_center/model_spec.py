@@ -13,6 +13,12 @@ dashboard shows it as written: it is never translated nor dropped. A file whose
 prose reads as Spanish gets a ``language_notice`` naming the fields that do, so
 the panel can say so in the dashboard's language instead of passing it off as
 the English view. The detector is the manuscript's own (``paper_language``).
+
+The ideas follow the latest proposal revision: its sky overlay gives the ids,
+names, statements and links of the pillars, hypotheses and problem tree, and the
+file gives their enrichment (``idea_sync.current_novelty``). A file synced from
+an older revision is flagged ``stale`` with both revisions, never shown as
+current; ``idea_sync.py`` writes the sync.
 """
 
 import importlib.util
@@ -114,6 +120,26 @@ def _contribution_type():
     return sys.modules[name]
 
 
+def _follow_latest_revision(root: Path, spec: dict[str, Any]) -> None:
+    """The latest revision gives the ideas' identity, the file their enrichment
+    (``idea_sync.current_novelty``). A file synced from an older revision, or
+    never synced while a revision exists, carries ``stale`` and both revisions;
+    a ``contribution_type`` older than the revision, ``contribution_type_stale``."""
+    from . import idea_sync
+
+    proposal, sky = idea_sync.latest_overlay(root)
+    latest = idea_sync.revision_label(proposal)
+    fresh = idea_sync.freshness(spec, latest)
+    current = idea_sync.current_novelty(spec.get("novelty"), sky)
+    if isinstance(current, dict):
+        spec["novelty"] = current
+    if fresh["stale"]:
+        spec.update(stale=True, source_revision=fresh["source_revision"],
+                    latest_revision=fresh["latest_revision"])
+    if fresh["contribution_type_stale"]:
+        spec["contribution_type_stale"] = True
+
+
 def get_model_specification(root_path: Path | None = None) -> dict[str, Any]:
     """Return the structured specification of conceptual architecture,
     mathematical modeling, and proof-of-concept plan for a workspace."""
@@ -126,6 +152,8 @@ def get_model_specification(root_path: Path | None = None) -> dict[str, Any]:
             except Exception:
                 pass
             else:
+                if isinstance(spec, dict):
+                    _follow_latest_revision(root, spec)
                 notice = language_notice(spec) if isinstance(spec, dict) else None
                 if notice:
                     spec["language_notice"] = notice
@@ -135,6 +163,7 @@ def get_model_specification(root_path: Path | None = None) -> dict[str, Any]:
                         spec["contribution_type"] = kind
                     else:
                         del spec["contribution_type"]
+                        spec.pop("contribution_type_stale", None)
                 return spec
 
         yaml_file = root / "papersmith.yaml"
