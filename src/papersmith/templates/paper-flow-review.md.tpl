@@ -62,8 +62,9 @@ novelty, SOTA constellation).
    diagram (`paper/Figures/prisma-flow.svg`), `review_cli.py biblio` the
    counts per year and venue and the keyword co-occurrence
    (`review/biblio.json`), and the agent builds, with the operator, the
-   taxonomy of themes, the problem classes and one comparison table per theme
-   from `review/extraction.jsonl`. The methods' protocol flow diagram
+   taxonomy of themes, the problem classes and one evidence figure per theme
+   (an evidence map, a forest plot, or the studies charted by dimension), with
+   at most one comparison table, from `review/extraction.jsonl`. The methods' protocol flow diagram
    (`protocol-flow`, the PRISMA phases adapted to the topic, no counts) is
    drawn by the `diagram-author` agent, compiled with `paper_cli.py render`
    and checked with `/figure-review` before its block is written.

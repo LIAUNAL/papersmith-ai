@@ -80,7 +80,7 @@ CONSORT 2025 items 22 to 28, ARRIVE 2.0 items 3, 10 and 16. Every count comes fr
 The results report; interpretation, comparison with other studies and
 implications wait for the discussion.
 
-**Extent** 900–2200 words · the flow diagram or the unit table, one table of baseline characteristics, one table per outcome family
+**Extent** 900–2200 words · the flow diagram or the unit table, one table of baseline characteristics, one figure per outcome family (the effects with their 95% intervals as a dot-and-whisker or forest plot, or the outcome over time per group) · at least as many figures as tables
 
 ## Block `r-participant-flow` (variant `human-trial`, required there; optional otherwise)
 
@@ -137,7 +137,10 @@ effect with its 95% confidence interval, cited from the output of such an
 entry; for a binary outcome, both the absolute and the relative effect. The
 denominator of each analysis is stated and whether it was the analysis
 population the plan defined. A planned outcome that was not analysed is
-reported as not analysed, with the reason, never dropped.
+reported as not analysed, with the reason, never dropped. The effects of an
+outcome family are drawn as one dot-and-whisker or forest plot with their 95%
+intervals, and a repeated outcome as a line per group over time; their exact
+values go in the text, or in a table only when the venue requires one.
 
 ## Block `r-harms`
 
@@ -162,7 +165,7 @@ discussion or the conclusions.
 
 No paper of this line has been measured yet: the rules below carry the group's writing rules from the experimental and review lines to a trial or a controlled experiment, and the extent at the top of this contract stays the target. They read the records the line keeps: the locked protocol revision `protocol/study-protocol-<slug>-vNN.md` and `study/protocol.lock.json`, the ethics and registration records under `study/`, the operator's allocation record `study/allocation.json`, the data dictionaries and quality reports under `datasets/`, the analysis log `analysis/log.jsonl` and the flow counts `study/flow.json`.
 
-**Measured size.** None yet; a CONSORT results section of this extent opens on the flow figure, then the baseline table and one table per outcome family.
+**Measured size.** None yet; a CONSORT results section of this extent opens on the flow figure, then the baseline table and one figure per outcome family.
 
 **Human boundaries (every section of this line).**
 
@@ -178,6 +181,8 @@ No paper of this line has been measured yet: the rules below carry the group's w
 - **Transitions come from the relation between claims.** A stock connector (*In addition*, *Furthermore*, *Additionally*, *Moreover*) is the exception: never the same one twice within five sentences.
 - **No promotional adjectives.** *Revolutionary*, *transformative*, *pivotal*, *comprehensive*, *crucial*, *novel* say nothing a reader can check; state what the data show instead.
 - **A table has at least three columns and three rows.** A two-column or two-row table is a grid with nothing to cross: counts or measures across categories become a bar chart, the shares of one whole (at most six parts) a pie chart, and one or two values go in the sentence. The chart is drawn by a script from the study's records, its provenance recorded with `paper_cli.py figure provenance`, and placed with `paper_cli.py place`.
+- Figures over tables. In Methods and Results, present comparisons, distributions, trends, effects with their intervals and time series as data figures (line, bar, dot-and-whisker or forest, violin or box plots, heat maps) or diagrams. Keep a table only for values a reader must look up exactly (settings, hyperparameters, dataset, participant or hardware characteristics, metadata) or when the venue requires one. Among the floats of Methods and Results, aim at about 60 % figures and 40 % tables.
+- A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text.
 - **Every number comes from a record.** Counts from `study/flow.json` or the operator's unit table, estimates from the outputs of the analysis log, planned values (sample size, outcomes, analysis plan) from the locked protocol revision, never recounted or retyped by hand.
 
 ## Disqualifiers

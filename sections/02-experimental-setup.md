@@ -116,7 +116,7 @@
 ---
 # Experimental Set-Up
 
-**Extent** 800–3500 words · an optional preamble and two subsections
+**Extent** 800–3500 words · an optional preamble and two subsections · at least as many figures (the protocol, the input, the closing diagram) as tables
 **Carries** the whole evaluation protocol — data as used, metrics, compared methods, statistical test, ablation and sensitivity design, interpretability measures — and one closing diagram
 **Does not carry** any result
 
@@ -328,7 +328,7 @@ and its tables carry the architectures of each axis and the parameter values.
 
 The section closes on one diagram, and **it is the handoff to the results section**.
 What the reader must carry forward is the crossing, not the values: the values are
-looked up when needed, the crossing has to be held in mind to read a results table.
+looked up when needed, the crossing has to be held in mind to read a results figure or table.
 
 It shows:
 
@@ -385,6 +385,8 @@ document): never smaller, and never at the body size.
   values, its provenance recorded with `paper_cli.py figure provenance`, and
   placed with `paper_cli.py place`. Keep such a small table only when its
   cells are words no chart can carry.
+- Figures over tables. In Methods and Results, present comparisons, distributions, trends, effects with their intervals and time series as data figures (line, bar, dot-and-whisker or forest, violin or box plots, heat maps) or diagrams. Keep a table only for values a reader must look up exactly (settings, hyperparameters, dataset, participant or hardware characteristics, metadata) or when the venue requires one. Among the floats of Methods and Results, aim at about 60 % figures and 40 % tables.
+- A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text.
 
 ## LIA house style
 

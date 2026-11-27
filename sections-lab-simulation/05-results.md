@@ -66,7 +66,7 @@ GUM clause 7.2, paraphrased. Every value comes from a registered data file, an u
 The results report; interpretation, comparison with other studies and
 implications wait for the discussion.
 
-**Extent** 900–2200 words · the calibration table, one figure or table per observable, one uncertainty budget table per quantity of the primary observable
+**Extent** 900–2200 words · the calibration table, one figure per observable (its values across conditions with their expanded uncertainties as error bars, or a line over the parameter grid), one uncertainty budget table per quantity of the primary observable · at least as many figures as tables
 
 ## Block `r-calibration`
 
@@ -110,7 +110,10 @@ labels confirmatory support a confirmatory claim (`python
 skills/_core/empirical/analysis_cli.py status --root .`). A planned observable
 that was not measured or computed is reported as such, with the reason, never
 dropped, and the correlation between two output quantities used together is
-stated.
+stated. Each observable is drawn as a figure: its values across conditions with
+their expanded uncertainties as error bars, a line over the parameter grid, or
+a heat map over two parameters; a table carries an observable only when a reader
+must look up its values exactly.
 
 ## Block `r-uncertainty-budgets`
 
@@ -137,7 +140,7 @@ confirmatory claim in the abstract, the discussion or the conclusions.
 
 No paper of this line has been measured yet: the rules below carry the group's writing rules from the experimental and observational lines to a laboratory or simulation study, and the extent at the top of this contract stays the target. They read the records the line keeps: the locked protocol revision `protocol/study-protocol-<slug>-vNN.md` and `study/protocol.lock.json`, the instrument records `study/instruments.json`, the raw data registrations `study/measurements.json`, the uncertainty budgets `study/uncertainty/<quantity>.json` and the analysis log `analysis/log.jsonl`.
 
-**Measured size.** None yet; a laboratory or simulation results section of this extent opens on the calibration table, then one figure or table per observable and the budget tables.
+**Measured size.** None yet; a laboratory or simulation results section of this extent opens on the calibration table, then one figure per observable and the budget tables.
 
 **Human boundaries (every section of this line).**
 
@@ -154,6 +157,8 @@ No paper of this line has been measured yet: the rules below carry the group's w
 - **Transitions come from the relation between claims.** A stock connector (*In addition*, *Furthermore*, *Additionally*, *Moreover*) is the exception: never the same one twice within five sentences.
 - **No promotional adjectives.** *Revolutionary*, *transformative*, *pivotal*, *comprehensive*, *crucial*, *novel* say nothing a reader can check; state what the data show instead.
 - **A table has at least three columns and three rows.** A two-column or two-row table is a grid with nothing to cross: values across conditions become a plot with error bars, and one or two values go in the sentence. The plot is drawn by a script from the study's records, its provenance recorded with `paper_cli.py figure provenance`, and placed with `paper_cli.py place`.
+- Figures over tables. In Methods and Results, present comparisons, distributions, trends, effects with their intervals and time series as data figures (line, bar, dot-and-whisker or forest, violin or box plots, heat maps) or diagrams. Keep a table only for values a reader must look up exactly (settings, hyperparameters, dataset, participant or hardware characteristics, metadata) or when the venue requires one. Among the floats of Methods and Results, aim at about 60 % figures and 40 % tables.
+- A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text.
 - **Every number comes from a record.** Values and uncertainties from `study/uncertainty/<quantity>.json`, instrument data from `study/instruments.json`, fits and sweeps from the outputs of the analysis log, planned values (replicates, parameter grid, observables, analysis plan) from the locked protocol revision, never recounted or retyped by hand.
 
 ## Disqualifiers

@@ -116,7 +116,7 @@
 ---
 # Configuración Experimental
 
-**Extensión** 800–3500 palabras · un preámbulo opcional y dos subsecciones
+**Extensión** 800–3500 palabras · un preámbulo opcional y dos subsecciones · al menos tantas figuras (el protocolo, la entrada, el diagrama de cierre) como tablas
 **Contiene** todo el protocolo de evaluación — los datos tal como se usan, las métricas, los métodos comparados, la prueba estadística, el diseño de ablación y de sensibilidad, las medidas de interpretabilidad — y un diagrama de cierre
 **No contiene** ningún resultado
 
@@ -328,7 +328,7 @@ y sus tablas contienen las arquitecturas de cada eje y los valores de los parám
 
 La sección cierra con un diagrama, y **es el traspaso a la sección de resultados**.
 Lo que el lector debe llevar consigo es el cruce, no los valores: los valores se
-consultan cuando se necesitan, el cruce debe tenerse en mente para leer una tabla de resultados.
+consultan cuando se necesitan, el cruce debe tenerse en mente para leer una figura o una tabla de resultados.
 
 Muestra:
 
@@ -388,6 +388,8 @@ del cuerpo.
   procedencia se registra con `paper_cli.py figure provenance` y se coloca con
   `paper_cli.py place`. Conserve una tabla tan pequeña solo cuando sus celdas
   sean palabras que ninguna gráfica puede llevar.
+- Figuras antes que tablas. En Métodos y Resultados, presente las comparaciones, las distribuciones, las tendencias, los efectos con sus intervalos y las series de tiempo como figuras de datos (de líneas, de barras, de punto y bigote o de bosque, de violín o de caja, mapas de calor) o como diagramas. Conserve una tabla solo para los valores que el lector debe consultar con exactitud (configuraciones, hiperparámetros, conjunto de datos, características de los participantes o del hardware, metadatos) o cuando la revista exija una. Entre los flotantes de Métodos y Resultados, apunte a cerca de 60 % de figuras y 40 % de tablas.
+- La leyenda de una figura o una tabla tiene como máximo cuatro renglones: un título que dice qué muestra el flotante, más la única definición que el lector necesita para leerlo. La notación y las demás definiciones van en una nota debajo de la tabla o en el texto.
 
 ## Estilo de la casa LIA
 

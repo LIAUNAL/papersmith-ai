@@ -48,7 +48,7 @@ A reader learns here where to get the data and what they will find: the
 repository, the persistent identifier, the licence, the files, their formats
 and their variables.
 
-**Extent** 250–700 words · one table of files
+**Extent** 250–700 words · one table of files, with the folder structure as a diagram and the record counts per class, subject or split as a bar chart · at least as many figures as tables
 
 ## Block `dr-deposit`
 
@@ -67,7 +67,9 @@ the code's repository (code availability) is a separate place.
 The files are the deposited files, their formats, their sizes and how they are organized. One table of the deposited files or folders (name, format, size or record
 count, content), as the deposit record lists them by sha256 and
 `datasets/<slug>/qc.json` counts their rows and columns. Open, documented
-formats are named with their version.
+formats are named with their version. The folder structure is drawn as a
+diagram, and the record counts or sizes per class, subject or split as a bar
+chart from the same counts.
 
 ## Block `dr-dictionary`
 
@@ -95,6 +97,8 @@ No data descriptor of this line has been measured yet: the rules below carry the
 - **Transitions come from the relation between claims.** A stock connector (*In addition*, *Furthermore*, *Additionally*, *Moreover*) is the exception: never the same one twice within five sentences.
 - **No promotional adjectives.** *Revolutionary*, *transformative*, *pivotal*, *comprehensive*, *crucial*, *novel*, *large-scale* say nothing a reader can check; state the counts instead.
 - **A table has at least three columns and three rows.** A two-column or two-row table is a grid with nothing to cross: one or two values go in the sentence. A figure is drawn by a script from the resource's records, its provenance recorded with `paper_cli.py figure provenance`, and placed with `paper_cli.py place`.
+- Figures over tables. In Methods and Results, present comparisons, distributions, trends, effects with their intervals and time series as data figures (line, bar, dot-and-whisker or forest, violin or box plots, heat maps) or diagrams. Keep a table only for values a reader must look up exactly (settings, hyperparameters, dataset, participant or hardware characteristics, metadata) or when the venue requires one. Among the floats of Methods and Results, aim at about 60 % figures and 40 % tables.
+- A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text.
 - **Every number comes from a record.** Counts of files, records, participants and labels from `datasets/<slug>/qc.json` and the registry, variables and units from the dictionary, baseline scores from the outputs of the analysis log, planned values (sources, sample, annotation scheme, analysis plan) from the locked protocol revision, never recounted or retyped by hand.
 
 ## Disqualifiers

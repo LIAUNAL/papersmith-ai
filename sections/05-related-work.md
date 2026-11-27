@@ -321,9 +321,12 @@ its account:**
   column — when several works share a family and the grouping is itself the argument.
 
 **Cells are concise and exact:** a symbol (`\checkmark`, `--`, a partial mark) or at
-most three words. No sentence, no clause, no citation-only cell. The caption is the
-legend: it decodes every symbol and abbreviation the cells use, so the table reads
-without the body. The citation goes in the work's own cell, once.
+most three words. No sentence, no clause, no citation-only cell. The caption names
+what the table compares; a table note below the table is the legend: it decodes every
+symbol and abbreviation the cells use, so the table reads without the body. The
+citation goes in the work's own cell, once.
+
+- A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text.
 
 **It fits the text block.** `booktabs` rules and a `tabularx` at `\linewidth`, under
 the table rules of contracts 02 and 03 (*Tables stay inside the text block*): the same
@@ -441,7 +444,7 @@ same thing at different depths.
 - Fewer than 7 or more than 12 works in the synthesis table, the proposal's row not counted.
 - A family of this section with no row in the synthesis table.
 - A synthesis-table column not tied to a pillar, contribution or property the proposal declares, or one every row shares.
-- A sentence or clause as prose in a synthesis-table cell, or a symbol the caption does not decode.
+- A sentence or clause as prose in a synthesis-table cell, or a symbol neither the caption nor the table note decodes.
 - An artefact that appears before any reference to it, or that nothing references at
   all.
 - A citation used as a noun phrase.

@@ -159,7 +159,7 @@ REVIEW_ACTIONS: dict[str, dict[str, Any]] = {
             _prompt("/systematic-review", "Build the synthesis with the agent", [
                 "prisma counts the flow into review/prisma.json and flow draws the PRISMA 2020 flow diagram.",
                 "biblio writes the counts per year and venue and the keyword co-occurrence.",
-                "The agent builds with you the themes, the problem classes and one comparison table per theme from review/extraction.jsonl.",
+                "The agent builds with you the themes, the problem classes and one evidence figure per theme, with at most one comparison table, from review/extraction.jsonl.",
                 "When you accept the synthesis, you record it yourself (G-SYNTHESIS); the writing starts after it.",
             ], "E.g.: count the PRISMA flow, draw it and propose the themes.", optional=True, prefix="synthesize "),
             _command(f"{REVIEW_CLI} prisma", "Count the PRISMA flow", "Writes review/prisma.json from the records."),
@@ -299,7 +299,7 @@ _SECTION_TEXT: dict[str, tuple[str, str, bool]] = {
         "The protocol and its registration, the eligibility criteria, sources, search strategy, selection, data collection, risk of bias and synthesis methods, transcribed from review/.",
         "Every number and criterion comes from the review records; the protocol flow diagram draws them.", True),
     "06-results": (
-        "The study selection with its PRISMA flow diagram, the study characteristics, the risk of bias and a comparative thematic synthesis with one comparison table per theme.",
+        "The study selection with its PRISMA flow diagram, the study characteristics, the risk of bias and a comparative thematic synthesis with one evidence figure per theme and at most one comparison table.",
         "Answers the research questions of the introduction along the problem classes of the background.", True),
     "07-discussion": (
         "The principal findings revisited one by one, the other evidence, the challenges and directions as linked paragraphs, and the implications.",

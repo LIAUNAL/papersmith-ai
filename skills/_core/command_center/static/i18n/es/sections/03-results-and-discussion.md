@@ -97,7 +97,7 @@
 ---
 # Resultados y Discusión
 
-**Extensión** 1170–4150 palabras · de dos a cinco bloques de contenido, más las limitaciones al final
+**Extensión** 1170–4150 palabras · de dos a cinco bloques de contenido, más las limitaciones al final · al menos tantas figuras como tablas
 **Entrada** los resultados de los experimentos
 **Contiene** 3–12 figuras y 0–8 tablas — la sección del artículo con mayor densidad de artefactos
 **No contiene** un preámbulo, un artefacto de cierre ni una sola ecuación numerada
@@ -278,10 +278,14 @@ trabajo futuro.
 
 ## El tipo de artefacto sigue a la afirmación
 
-Una cuadrícula de números es una tabla. Un patrón espacial, temporal o espectral es una figura.
-Esta no es una preferencia de estilo: un bloque cuya afirmación es una comparación entre celdas
-lleva tablas y puede no llevar ninguna figura, mientras que un bloque cuya afirmación es un patrón
-lleva figuras y puede no llevar ninguna tabla.
+Una comparación, una distribución, una tendencia, un efecto con su intervalo y un patrón espacial,
+temporal o espectral son figuras: gráficos de punto y bigote o de bosque frente a las líneas base,
+barras agrupadas, gráficos de violín o de caja sobre las corridas, líneas sobre un barrido, mapas
+de calor sobre una cuadrícula de condiciones. Una cuadrícula de números sigue siendo una tabla solo
+cuando el lector debe consultar cada valor con exactitud, o cuando la revista exige una. Esta no es
+una preferencia de estilo: un bloque cuya afirmación es un patrón lleva figuras y puede no llevar
+ninguna tabla, y un bloque cuya afirmación es una comparación entre celdas lleva primero su figura
+y una tabla solo para los valores exactos que la acompañan.
 
 ## Citas
 
@@ -334,6 +338,8 @@ del cuerpo.
   procedencia se registra con `paper_cli.py figure provenance` y se coloca con
   `paper_cli.py place`. Conserve una tabla tan pequeña solo cuando sus celdas
   sean palabras que ninguna gráfica puede llevar.
+- Figuras antes que tablas. En Métodos y Resultados, presente las comparaciones, las distribuciones, las tendencias, los efectos con sus intervalos y las series de tiempo como figuras de datos (de líneas, de barras, de punto y bigote o de bosque, de violín o de caja, mapas de calor) o como diagramas. Conserve una tabla solo para los valores que el lector debe consultar con exactitud (configuraciones, hiperparámetros, conjunto de datos, características de los participantes o del hardware, metadatos) o cuando la revista exija una. Entre los flotantes de Métodos y Resultados, apunte a cerca de 60 % de figuras y 40 % de tablas.
+- La leyenda de una figura o una tabla tiene como máximo cuatro renglones: un título que dice qué muestra el flotante, más la única definición que el lector necesita para leerlo. La notación y las demás definiciones van en una nota debajo de la tabla o en el texto.
 
 ## Estilo de la casa LIA
 
@@ -367,8 +373,10 @@ explícita. Las subsecciones cierran con una síntesis *Taken together*; ninguna
 - **El mejor valor de cada columna va en negrita, y la leyenda lo dice**: *Bold marks
   the best result for each metric.*
 - **Una figura o tabla es el sujeto de su oración** (*Table 4 compares*, *As shown
-  in Figure 5,*), y su leyenda es un sintagma nominal seguido de una a tres oraciones
-  que explican los paneles, colores y abreviaturas — unas 30 a 60 palabras.
+  in Figure 5,*), y su leyenda es un sintagma nominal seguido de la única oración que el
+  lector necesita para leer los paneles, los colores o la negrita — como máximo cuatro
+  renglones, unas 60 palabras; las demás abreviaturas van en una nota debajo de la tabla
+  o en el texto.
 
 ## Entradas
 
@@ -424,7 +432,7 @@ explícita. Las subsecciones cierran con una síntesis *Taken together*; ninguna
 - Una pérdida concedida emparejada con una ganancia afirmada en lugar de una medida.
 - Una deficiencia justificada aquí y ausente de las limitaciones.
 - Una cita acreditada a un resultado.
-- Una tabla usada para un patrón, o una figura usada para una cuadrícula de comparación.
+- Una tabla usada para un patrón, o una tabla usada para una comparación que una figura podría llevar cuando ningún lector debe consultar sus valores con exactitud.
 - Las limitaciones ubicadas en cualquier lugar que no sea el final.
 - La interpretación de un resultado que ningún artefacto contiene.
 - Una comparación contra las líneas base sin prueba de significancia estadística.

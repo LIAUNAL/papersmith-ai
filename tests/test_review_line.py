@@ -226,7 +226,8 @@ class ReviewWritingRulesTests(unittest.TestCase):
     def test_the_results_are_a_comparative_synthesis(self) -> None:
         text = review_body("06-results.md")
         self.assertIn("compares at least two studies along one dimension", text)
-        self.assertIn("A comparison table per theme", text)
+        self.assertIn("An evidence figure per theme", text)
+        self.assertIn("at most one per theme", text)
         disqualifiers = text.split("\n## Disqualifiers\n", 1)[1]
         for rule in ("A citation as the subject of a sentence: *The paper by [n]*",
                      "Three or more consecutive sentences about one study.",

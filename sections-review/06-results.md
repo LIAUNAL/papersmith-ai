@@ -67,7 +67,7 @@ PRISMA 2020 items 16 to 22. Every count comes from review/prisma.json and every 
 The results are a comparative synthesis: they compare the included studies
 along named dimensions, never summarize them one by one.
 
-**Extent** 3000–6500 words · one comparison table per theme
+**Extent** 3000–6500 words · the PRISMA flow diagram, one evidence figure per theme (an evidence map, a forest plot, or the studies charted by dimension) and at most one comparison table per theme · at least as many figures as tables
 
 The whole review fits 45 single-column Elsevier pages (25 two-column), references
 included, about 11,000 words of body at 200 references; the results take the
@@ -89,7 +89,7 @@ another reason.
 ## Block `r-study-characteristics` (item 17)
 
 The distribution of the included studies by theme and by problem class (the
-background's open problems), as tables, and a table of the included studies
+background's open problems), as bar charts or an evidence map, and a table of the included studies
 (reference, year, venue, setting, method, data, evaluation, outcomes) from
 the extraction, in a supplementary file when it is long. When a study falls
 in several themes, the table says so and the text gives the number of
@@ -97,8 +97,8 @@ distinct studies, so that no table total reads as the included count.
 
 ## Block `r-risk-of-bias` (item 18)
 
-The appraisal of each included study (a table or a figure) and the overall
-pattern.
+The appraisal of each included study (a traffic-light or summary plot, or a
+table when the venue requires one) and the overall pattern.
 
 ## Block `r-bibliometrics` (optional)
 
@@ -137,11 +137,15 @@ same way:
    evidence supports: agreement, disagreement, or a gap (*These studies agree
    that …, but none evaluates …*). It carries a claim, never a restatement of
    the topic.
-4. **A comparison table per theme** (studies by dimensions), from
-   `review/extraction.jsonl`, referenced before it appears. A theme too small
-   for a table (two columns or two rows) carries its comparison as a bar or
-   pie chart, or in the text, under the table-shape rule below. Every value in a
-   table or the text is the extracted value, whose quote is on file.
+4. **An evidence figure per theme**, from `review/extraction.jsonl`: an
+   evidence map of the studies by approach and outcome, a forest plot when the
+   theme's effects share a measure, or the studies charted by dimension. A
+   comparison table (studies by dimensions) follows it only for the words a
+   reader looks up, at most one per theme. Each is referenced before it
+   appears. A theme too small for a table (two columns or two rows) carries its
+   comparison as a bar or pie chart, or in the text, under the table-shape rule
+   below. Every value in a figure, a table or the text is the extracted value,
+   whose quote is on file.
 
 Interpretation, recommendations and directions wait for the discussion.
 
@@ -161,6 +165,8 @@ Measured on the group's MDPI review A029 (Cardona-Álvarez, Álvarez-Meza and Ca
 - **Transitions come from the relation between claims.** A stock connector (*In addition*, *Furthermore*, *Additionally*, *Moreover*) is the exception: never the same one twice within five sentences. A029 opens 14 sentences with *In addition* and 16 with *Furthermore* or *Additionally*; that is the pattern to avoid.
 - **No promotional adjectives.** *Revolutionary*, *transformative*, *pivotal*, *comprehensive*, *crucial*, *novel* say nothing a reader can check; state what the evidence shows instead.
 - **A table has at least three columns and three rows.** A two-column or two-row table is a grid with nothing to cross: counts or measures across categories become a bar chart, the shares of one whole (at most six parts) a pie chart, and one or two values go in the sentence. The chart is drawn by a script from the review's records, its provenance recorded with `paper_cli.py figure provenance`, and placed with `paper_cli.py place`.
+- Figures over tables. In Methods and Results, present comparisons, distributions, trends, effects with their intervals and time series as data figures (line, bar, dot-and-whisker or forest, violin or box plots, heat maps) or diagrams. Keep a table only for values a reader must look up exactly (settings, hyperparameters, dataset, participant or hardware characteristics, metadata) or when the venue requires one. Among the floats of Methods and Results, aim at about 60 % figures and 40 % tables.
+- A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text.
 - **Every number comes from a record.** Counts from `review/prisma.json`, study values from `review/extraction.jsonl`, never recounted by hand.
 
 ## Disqualifiers
@@ -170,7 +176,7 @@ Measured on the group's MDPI review A029 (Cardona-Álvarez, Álvarez-Meza and Ca
 - Three or more consecutive sentences about one study.
 - A sub-theme paragraph that cites a single study, unless it says that this study is the only evidence.
 - A sub-theme without its closing synthesis sentence, or one that restates the topic (*These studies highlight the importance of …*).
-- A theme without its comparison table (or, for a theme too small for a table, its chart), or a table never referenced in the text.
+- A theme without its evidence figure (or, for a theme of one or two studies, its comparison in the text), a theme with more comparison tables than figures, or a figure or table never referenced in the text.
 - RQ notation anywhere in the results: an RQ label in a title, a sentence, a parenthesis or a table.
 - A subsection or sub-theme paragraph that starts from zero, with no link to the claim the previous one closed.
 - A value that is not in `review/extraction.jsonl`.
