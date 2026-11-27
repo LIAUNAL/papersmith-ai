@@ -99,6 +99,8 @@ def validate_papersmith_yaml(data: Any, *, require_compute: bool = True) -> dict
     for key in ("title", "topic", "venue_target"):
         if key in root:
             _string(root[key], key, required=False)
+    if "track_research_content" in root and not isinstance(root["track_research_content"], bool):
+        _fail("track_research_content", "must be boolean")
 
     if "skills" in root:
         _string_list(root["skills"], "skills", allowed=KNOWN_SKILLS)
