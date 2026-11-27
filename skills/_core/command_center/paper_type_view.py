@@ -9,6 +9,11 @@
 * ``rescore`` and ``agree`` are the panel's two writes, each an explicit
   operator click.
 
+The acceptance is English like every artifact under ``.papersmith/`` and is
+shown as written; one whose ``idea`` or ``accepted_by`` reads as Spanish adds a
+``language_notice`` (``model_spec.acceptance_notice``) that names those fields
+and the command that records the acceptance again in English.
+
 Labels are English; ``static/i18n/server-es.json`` holds their Spanish.
 """
 
@@ -18,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from ..paper_types import decision, registry
+from . import model_spec
 
 SUB_ID = "2.5"
 SUB_NAME = "Paper Type"
@@ -66,9 +72,13 @@ def view(root: Path) -> dict[str, Any]:
         catalogue_error = None
     except registry.RegistryError as exc:
         catalogue, catalogue_error = [], str(exc)
-    return {"catalogue": catalogue, "plausibility": accepted, "decision": record,
-            "line": decision.current_line(root), "subphase": subphase(root),
-            "error": error or catalogue_error}
+    out = {"catalogue": catalogue, "plausibility": accepted, "decision": record,
+           "line": decision.current_line(root), "subphase": subphase(root),
+           "error": error or catalogue_error}
+    notice = model_spec.acceptance_notice(accepted)
+    if notice:
+        out["language_notice"] = notice
+    return out
 
 
 def rescore(root: Path) -> dict[str, Any]:

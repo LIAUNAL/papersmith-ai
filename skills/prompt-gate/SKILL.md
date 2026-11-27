@@ -141,6 +141,12 @@ second full round.
   approves, edits, answers or says "launch as is".
 - **Do not over-engineer.** A prompt that passes is never rewritten; an improved
   prompt is not longer than it needs to be.
+- **What is stored or shown on the board is English.** This gate writes no
+  file, but the prompts it lets through feed skills that do, and every
+  artifact under `.papersmith/` stays English whatever the conversation's
+  language. In the agent conversation the alert follows the operator's
+  language (Step 3a); on the dashboard, the card's text follows the board
+  language (see the headless contract).
 
 ## Dashboard
 
@@ -179,7 +185,7 @@ the answer is exactly one JSON object:
 
 ```json
 {
-  "reply": "<one-sentence summary for the operator, in their language>",
+  "reply": "<one-sentence summary for the operator, in the board language>",
   "verdict": "improve | clarify",
   "issues": ["<issue worded for the operator>"],
   "improved_prompt": "<the improved prompt, or empty for clarify>",
@@ -190,4 +196,8 @@ the answer is exactly one JSON object:
 
 `improved_prompt` is required for `improve` (and for `clarify` once answers are
 given); `questions` is required for `clarify` before answers (1 to 4, each with
-2 to 4 options) and empty otherwise.
+2 to 4 options) and empty otherwise. The card shows every field, so `reply`,
+`issues`, `questions` and `improved_prompt` are written in the board language
+the request names (`Board language: en | es`), English when it names none,
+whatever language the operator wrote the prompt in; the improved prompt keeps
+every requirement of the original, translated, never dropped.

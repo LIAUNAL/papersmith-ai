@@ -220,8 +220,10 @@ class SuggestTests(FakeServerCase):
         self.assertIn("no como estado del arte", draft)
         self.assertIn("not as state of the art", banco_suggest.suggest(SIGNAL, "en")["draft"])
 
-    def test_an_unknown_language_falls_back_to_spanish(self) -> None:
-        self.assertEqual(banco_suggest.suggest(EEG, "fr")["draft"], banco_suggest.suggest(EEG, "es")["draft"])
+    def test_an_unknown_language_falls_back_to_english(self) -> None:
+        # board-language-consistency S4: English is the board's default language.
+        self.assertEqual(banco_suggest.suggest(EEG, "fr")["draft"], banco_suggest.suggest(EEG, "en")["draft"])
+        self.assertEqual(banco_suggest.suggest(EEG)["draft"], banco_suggest.suggest(EEG, "en")["draft"])
 
     def test_an_empty_bank_still_drafts_an_idea_with_the_keywords(self) -> None:
         for language, note in (("es", "no tiene trabajo relacionado"), ("en", "holds no related work")):
@@ -326,9 +328,14 @@ class SuggestEndpointTests(FakeServerCase):
         self.assertEqual(body["items"][0]["id"], "A001")
         self.assertIn("background", body["draft"])
 
-    def test_the_language_defaults_to_spanish(self) -> None:
+    def test_the_language_defaults_to_english(self) -> None:
+        # board-language-consistency S4: English is the board's default language.
         body = self.post({"keywords": EEG}).json()
-        self.assertIn("antecedente", body["draft"])
+        self.assertIn("background", body["draft"])
+        self.assertNotIn("antecedente", body["draft"])
+
+    def test_a_spanish_board_still_gets_a_spanish_draft(self) -> None:
+        self.assertIn("antecedente", self.post({"keywords": EEG, "language": "es"}).json()["draft"])
 
     def test_an_unavailable_bank_is_still_a_200(self) -> None:
         self.use({"FAKE_MCP_MODE": "crash"})

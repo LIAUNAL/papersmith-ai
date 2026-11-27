@@ -25,6 +25,9 @@ AI_IDEA = ("Current EEG classifiers lose accuracy across subjects. I propose a n
            "that outperforms the state-of-the-art baselines with a new deep learning algorithm.")
 SURVEY_IDEA = ("Encuestamos 368 jóvenes rurales de tres municipios de Caldas. Con una encuesta y regresión "
                "Probit estudiamos qué determina que la población joven permanezca en el campo.")
+#: The CLI records English only (board-language-consistency S2): its survey idea is the English one.
+SURVEY_IDEA_EN = ("We surveyed 368 rural young people in three municipalities of Caldas. With a survey and a "
+                  "probit regression we study what makes the young population stay in the countryside.")
 SIM_IDEA = ("We study spin reorientation in thin manganite films with Monte Carlo simulation of a Heisenberg "
             "Hamiltonian, sweeping anisotropy and thickness.")
 
@@ -222,7 +225,7 @@ class CliTests(unittest.TestCase):
 
     def test_accept_records_the_acceptance_then_scores_from_it(self) -> None:
         done = self.run_cli("accept", "--root", str(self.root), "--by", "operator", "--idea-file", "-",
-                            stdin=SURVEY_IDEA)
+                            stdin=SURVEY_IDEA_EN)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(json.loads(done.stdout)["suggested"], "observational-measurement")
         rescored = self.run_cli("score", "--root", str(self.root))  # no stdin: the accepted idea
@@ -268,7 +271,7 @@ class CliTests(unittest.TestCase):
         return json.loads(self.run_cli("agree", "--root", str(self.root), *extra).stdout)
 
     def test_agree_records_the_type_variant_and_operator(self) -> None:
-        self.run_cli("accept", "--root", str(self.root), "--by", "op", "--idea-file", "-", stdin=SURVEY_IDEA)
+        self.run_cli("accept", "--root", str(self.root), "--by", "op", "--idea-file", "-", stdin=SURVEY_IDEA_EN)
         out = self.agree("--type", "observational-measurement", "--variant", "observational", "--by", "op",
                          "--rationale", "own survey of rural youth")
         self.assertTrue(out["ok"], out)

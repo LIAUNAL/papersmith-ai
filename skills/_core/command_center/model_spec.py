@@ -39,6 +39,13 @@ def _spanish_detector():
     return module.is_spanish_prose
 
 
+def reads_spanish(text: str) -> bool:
+    """Whether ``text`` reads as Spanish prose (``paper_language.is_spanish_prose``);
+    ``False`` when the detector is absent."""
+    detector = _spanish_detector()
+    return bool(detector and detector(str(text or "")))
+
+
 def _strings(value: Any, path: str = "") -> Iterator[tuple[str, str]]:
     if isinstance(value, dict):
         for key, item in value.items():
@@ -59,6 +66,37 @@ def language_notice(spec: dict[str, Any], file: str = SPEC_REL) -> dict[str, Any
         return None
     fields = list(dict.fromkeys(path for path, text in _strings(spec) if detector(text)))
     return {"expected": "en", "file": file, "fields": fields} if fields else None
+
+
+ACCEPTANCE_REL = ".papersmith/plausibility.json"
+#: The command that records the acceptance again; without ``--idea-file`` it
+#: takes the approved English idea brief draft (``paper_type_cli.py``).
+RERECORD_COMMAND = 'python skills/_core/paper_types/paper_type_cli.py accept --root . --by "<operator>"'
+
+
+def acceptance_notice(accepted: dict[str, Any] | None) -> dict[str, Any] | None:
+    """``language_notice`` for the plausibility acceptance the board shows (its
+    ``idea`` and ``accepted_by``), with the command that re-records it."""
+    if not isinstance(accepted, dict):
+        return None
+    shown = {key: accepted.get(key) for key in ("idea", "accepted_by")}
+    notice = language_notice(shown, ACCEPTANCE_REL)
+    return {**notice, "command": RERECORD_COMMAND} if notice else None
+
+
+#: A board detail about a stored acceptance that is not English (server-es.json holds its Spanish).
+ACCEPTANCE_NOT_ENGLISH = ("{detail} (the accepted idea in {file} is not written in English: {fields}; "
+                          "re-record it with {command})")
+
+
+def with_acceptance_notice(detail: str, accepted: dict[str, Any] | None) -> str:
+    """``detail`` naming the acceptance's non-English fields and the command that
+    re-records it, or ``detail`` unchanged for an English (or absent) acceptance."""
+    notice = acceptance_notice(accepted)
+    if not notice:
+        return detail
+    return ACCEPTANCE_NOT_ENGLISH.format(detail=detail, file=notice["file"], fields=", ".join(notice["fields"]),
+                                         command=notice["command"])
 
 
 def _contribution_type():

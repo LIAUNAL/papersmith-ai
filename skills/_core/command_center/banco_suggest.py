@@ -26,7 +26,9 @@ a timeout or a protocol error answers ``{"available": False, "reason": ...}``.
 The draft is composed from the keywords and the matched items alone (no model
 call, no invented data); the items are the lab's own background, never state
 of the art. Its sentences are English templates; the Spanish ones live in
-``static/i18n/server-es.json`` like every other server string.
+``static/i18n/server-es.json`` like every other server string. The draft is
+written in the board language the caller passes (``es`` or ``en``); any other
+value, or none, is English, the board's default.
 """
 
 from __future__ import annotations
@@ -402,14 +404,14 @@ def _topics(items: list[dict[str, Any]], names: dict[str, str]) -> list[dict[str
     return [{"id": c, "name": names.get(c, c), "count": counts[c]} for c in ranked[:MAX_TOPICS]]
 
 
-def suggest(keywords: Any, language: str = "es", *, root: Path | str | None = None,
+def suggest(keywords: Any, language: str = "en", *, root: Path | str | None = None,
             timeout: float | None = None) -> dict[str, Any]:
     """Ranked items, topics and a proposed idea for the keywords.
 
     Raises ``KeywordsInvalid`` for bad keywords; answers
     ``{"available": False, "reason": ...}`` when the bank cannot be reached."""
     words = normalize_keywords(keywords)
-    lang = "en" if language == "en" else "es"
+    lang = "es" if language == "es" else "en"  # the board's default language is English
     session: _Session | None = None
     try:
         argv, extra_env = _launch(root)
@@ -481,7 +483,7 @@ def _cited(item: dict[str, Any], lang: str) -> str:
 
 
 def compose_draft(keywords: list[str], items: list[dict[str, Any]], topics: list[dict[str, Any]],
-                  lang: str = "es") -> str:
+                  lang: str = "en") -> str:
     """A deterministic idea of at least two sentences from the keywords and the
     matched items; it never states anything the bank did not return."""
     kws = _enumerate(keywords, lang)

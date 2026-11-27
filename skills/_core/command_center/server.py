@@ -3024,7 +3024,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         payload = payload if isinstance(payload, dict) else {}
         try:
             result = await asyncio.to_thread(
-                banco_suggest.suggest, payload.get("keywords"), str(payload.get("language") or "es"),
+                banco_suggest.suggest, payload.get("keywords"), str(payload.get("language") or "en"),
                 root=root_path)
         except banco_suggest.KeywordsInvalid as exc:
             return JSONResponse({"ok": False, "code": exc.code, "error": str(exc)}, status_code=422)

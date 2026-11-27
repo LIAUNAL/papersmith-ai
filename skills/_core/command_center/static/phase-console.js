@@ -291,7 +291,7 @@
   // own gate (skills/prompt-gate/SKILL.md) still applies there.
   const GATE_MARKER = '[prompt-gate: approved]';
   const gateRuns = {};
-  const gateLang = () => (window.i18n && window.i18n.getLanguage ? window.i18n.getLanguage() : 'es');
+  const gateLang = () => (window.i18n && window.i18n.getLanguage ? window.i18n.getLanguage() : 'en');
   const skillOf = (a) => String(a.slash || '').replace(/^\//, '');
 
   async function postJson(url, body) {

@@ -11,6 +11,25 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **The accepted idea on the board is English.** `paper_type_cli.py accept` now takes the
+  approved English idea brief draft (`.papersmith/idea_brief.json` `draft.text`) when
+  `--idea-file` is omitted, and refuses an idea or a `--by` that reads as Spanish prose
+  (`IDEA_NOT_ENGLISH`, `OPERATOR_NOT_ENGLISH`) with a message that names the English draft to
+  use; nothing is written on a refusal. An English acceptance works as before. The `paper-type`
+  skill tells the agent to record the approved draft and an operator name or role, never a quote.
+- **A stored acceptance that is not English is flagged.** The Paper type panel
+  (`/api/paper-type` `language_notice`) and the empirical board's plausibility step name the
+  fields of `.papersmith/plausibility.json` that read as Spanish and the command that records the
+  acceptance again in English. Re-recording changes the idea, so an agreed paper type turns
+  `agreed_stale`, as for any new idea.
+- **Board-shown agent text follows the board language.** The headless prompt reviewer and the
+  paper-type advisor contract write what the dashboard shows in the board language the request
+  names, English by default, instead of the operator's language. `/api/prompt/review`,
+  `/api/plausibility/suggest` and the phase console now default to English, the board's default;
+  a language the board passes still works.
+
 ## 0.84.5
 
 - **`venue build` keeps the preamble hooks a journal requirement needs.** The build copies the

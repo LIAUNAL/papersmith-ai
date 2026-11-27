@@ -110,7 +110,7 @@ DISPLAY_FIELDS: dict[str, frozenset[str]] = {
     ),
     "/api/phase/run": _paths("message", "error"),
     # The prompt gate's deterministic issues and the skill's needs; the
-    # reviewer's own text already comes in the operator's language.
+    # reviewer's own text already comes in the board language the request names.
     "/api/prompt/check": _paths("issues.message", "needs"),
     "/api/prompt/review": _paths("check.issues.message", "check.needs", "improved_check.issues.message",
                                  "improved_check.needs"),

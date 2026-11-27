@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """CLI for the paper-type decision (``decision.py``, ``score.py`` in this folder).
 
-    paper_type_cli.py accept --root . --by <operator> --idea-file <f|-> [--top5 <id> ...]
+    paper_type_cli.py accept --root . --by <operator> [--idea-file <f|->] [--top5 <id> ...]
     paper_type_cli.py score  --root . [--idea-file <f|->] [--dry-run]
     paper_type_cli.py agree  --root . --type <id> [--variant <id>] --by <operator> [--rationale <text>]
     paper_type_cli.py show   --root .
 
 ``accept`` records the plausibility acceptance (the idea read from
-``--idea-file``; ``-`` reads stdin) in ``.papersmith/plausibility.json`` and
-scores it; it reads the existing records and scores first, so a failure
-writes nothing. ``agree`` records the type (and variant) the operator agreed
+``--idea-file``, ``-`` reads stdin; without it, the approved English idea brief
+draft, ``.papersmith/idea_brief.json`` ``draft.text``) in
+``.papersmith/plausibility.json`` and scores it; it reads the existing records
+and scores first, so a failure writes nothing. The record is English like every
+artifact under ``.papersmith/``: an idea, or a ``--by``, that reads as Spanish
+prose is refused (``--by`` takes the operator's name or role, never a quote). ``agree`` records the type (and variant) the operator agreed
 for the scored idea and answers ``layout``: ``current``, ``switch:<line>``
 (``smith kind set`` moves the workspace) or ``planned`` (no flow yet). ``score`` scores the
 idea from ``--idea-file`` or, without it, the accepted one, and writes
@@ -17,7 +20,8 @@ idea from ``--idea-file`` or, without it, the accepted one, and writes
 only when asked with ``-``. Each verb prints one JSON object. A refusal prints
 ``{"ok": false, "error": <CODE>, "message": ...}`` and exits 1 (usage errors
 exit 2). Refusal codes: ``USAGE``, ``IDEA_ABSENT``, ``IDEA_UNREADABLE``,
-``OPERATOR_ABSENT``, ``RECORD_UNREADABLE``, ``SCORES_ABSENT``, ``SCORES_STALE``,
+``IDEA_NOT_ENGLISH``, ``OPERATOR_ABSENT``, ``OPERATOR_NOT_ENGLISH``,
+``BRIEF_UNREADABLE``, ``RECORD_UNREADABLE``, ``SCORES_ABSENT``, ``SCORES_STALE``,
 ``TYPE_UNKNOWN``, ``VARIANT_UNKNOWN``.
 """
 
@@ -38,9 +42,13 @@ from pathlib import Path
 
 if __package__ in (None, ""):  # run as a script: make `skills._core.paper_types` importable
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+    from skills._core.command_center import model_spec  # noqa: E402
     from skills._core.paper_types import decision  # noqa: E402
 else:
+    from ..command_center import model_spec
     from . import decision
+
+DRAFT = ".papersmith/idea_brief.json draft.text"
 
 
 def _out(payload: dict, code: int = 0) -> int:
@@ -66,16 +74,31 @@ def _idea(args: argparse.Namespace) -> str:
     return Path(args.idea_file).read_text(encoding="utf-8")
 
 
+def _not_english(root: Path, *, from_draft: bool) -> str:
+    """The refusal of a Spanish idea, naming the English draft to accept instead."""
+    head = "the accepted idea reads as Spanish prose; .papersmith/plausibility.json is English: "
+    if from_draft:
+        return head + f"rewrite the idea brief draft ({DRAFT}) in English and approve it again (`smith idea approve`)"
+    if decision.approved_draft(root):
+        return head + f"accept the approved English idea brief draft ({DRAFT}) by running accept without --idea-file"
+    return head + (f"pass the idea in English, or approve the English idea brief draft ({DRAFT}, "
+                   "`smith idea approve`) and run accept without --idea-file")
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = _Parser(prog="paper_type_cli.py", description="Paper-type decision: accept, score, show.")
+    parser = _Parser(prog="paper_type_cli.py", description="Paper-type decision: accept, score, agree, show.")
     sub = parser.add_subparsers(dest="verb", required=True)
     for name in ("accept", "score", "agree", "show"):
         verb = sub.add_parser(name)
         verb.error = parser.error  # type: ignore[method-assign]
         verb.add_argument("--root", default=".")
-        if name in ("accept", "score"):
+        if name == "accept":
+            verb.add_argument("--idea-file", help="the accepted English idea (- reads stdin); without it, "
+                                                  f"the approved English idea brief draft ({DRAFT})")
+        elif name == "score":
             verb.add_argument("--idea-file")
-    sub.choices["accept"].add_argument("--by", default="")
+    sub.choices["accept"].add_argument("--by", default="",
+                                       help="the operator's name or role, never a quote of their words")
     sub.choices["agree"].add_argument("--type", required=True)
     sub.choices["agree"].add_argument("--variant")
     sub.choices["agree"].add_argument("--by", default="")
@@ -97,8 +120,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.verb == "accept":
             if not str(args.by).strip():
                 return _refuse("OPERATOR_ABSENT", "name the operator who accepted the report with --by")
+            draft = None if args.idea_file else decision.approved_draft(root)
+            idea = idea if args.idea_file else (draft or "")
             if not idea.strip():
-                return _refuse("IDEA_ABSENT", "give the accepted idea with --idea-file <file> or --idea-file -")
+                return _refuse("IDEA_ABSENT", "give the accepted idea with --idea-file <file> or --idea-file -, "
+                                              f"or approve the English idea brief draft ({DRAFT}, "
+                                              "`smith idea approve`) and run accept without --idea-file")
+            if model_spec.reads_spanish(args.by):
+                return _refuse("OPERATOR_NOT_ENGLISH", "--by reads as Spanish prose; .papersmith/plausibility.json "
+                                                       "is English: give the operator's name or role (for example "
+                                                       "--by operator), never a quote of the operator's words")
+            if model_spec.reads_spanish(idea):
+                return _refuse("IDEA_NOT_ENGLISH", _not_english(root, from_draft=not args.idea_file))
             decision.read(root)  # a foreign record refuses here, before anything is written
             decision.compute(root, idea)  # score first: a failure leaves nothing half written
             accepted = decision.record_acceptance(root, idea, by=args.by, top5=args.top5)

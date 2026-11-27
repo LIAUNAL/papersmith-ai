@@ -18,7 +18,7 @@ there and none is repeated here.
 
 You begin **when the dashboard hands you a failed prompt**: the skill it is for,
 the operator's text verbatim, the deterministic check (`score`, `threshold`,
-`issues`, `needs`), the skill's input guide, the operator's language, and — on
+`issues`, `needs`), the skill's input guide, the board language, and — on
 the second call — the operator's answers to your questions. You end at **one
 JSON object** in the shape the skill's "Headless reviewer contract" declares —
 nothing after it, no file written, no skill launched. The operator decides in

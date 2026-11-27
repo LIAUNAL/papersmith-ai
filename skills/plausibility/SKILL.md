@@ -302,7 +302,9 @@ operator has to be able to say no and have that change what happens next.
 
 **After acceptance: the paper type.** Once the operator accepts, hand over to
 `/paper-type` (`skills/paper-type/SKILL.md`): it records the accepted idea in
-`.papersmith/plausibility.json`, scores it against smith's paper types and
+`.papersmith/plausibility.json` (in English, like every artifact under
+`.papersmith/`: the approved idea brief draft when there is one, never the
+operator's words in another language), scores it against smith's paper types and
 discusses with the operator which kind of paper to build. A workspace with no
 agreed type stays on its line, and an agreed applied-AI type keeps the
 experimental phases; another agreed type moves the workspace with `smith kind

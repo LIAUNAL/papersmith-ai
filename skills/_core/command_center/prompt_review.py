@@ -10,6 +10,10 @@ questions; called again with the operator's answers, it composes the prompt.
 Read only: nothing here writes the workspace or sends anything to an agent
 terminal. The operator launches from the card, and what the card launches
 carries ``prompt_gate.APPROVED_MARKER`` so the in-agent gate lets it through.
+
+The card shows the reviewer's answer, so it is written in the board language
+the request names (``language``, English when absent, as the board's own
+default is English), never in whatever language the operator typed.
 """
 
 from __future__ import annotations
@@ -53,8 +57,10 @@ FALLBACK = ("# Prompt Gate\n\nReview a phase prompt that failed the deterministi
 
 HEADLESS = ("You run headless inside the dashboard: the operator reads your JSON in the phase card and "
             "decides there. Return exactly one JSON object in the shape of the skill's Headless reviewer "
-            "contract. Write `reply`, `issues` and `questions` in the operator's language; write the "
-            "improved prompt in the language the operator wrote the original in. With answers, return "
+            "contract. The dashboard shows every field in the phase card: write `reply`, `issues`, "
+            "`questions` and the improved prompt in the board language the request names (`Board language`), "
+            "English when it names none, whatever language the operator wrote in; keep every requirement of "
+            "the original, translated, never dropped. With answers, return "
             "`improve` and the composed prompt; return `clarify` again only if an answer still leaves a gap "
             "the skill cannot start without.")
 
@@ -81,7 +87,8 @@ def system_prompt(root: Path) -> str:
     skill = _read(root, SKILL_DOC) or FALLBACK
     agent = _read(root, AGENT_DOC)
     parts = [part for part in (agent, skill) if part]
-    return "\n\n---\n\n".join(parts) + "\n\n---\n\n" + HEADLESS + "\n\n" + tutor.REPLY_LANGUAGE_RULE
+    # The board language closes the prompt: in this headless turn it outranks "reply in the human's language".
+    return ("\n\n---\n\n".join(parts) + "\n\n---\n\n" + tutor.REPLY_LANGUAGE_RULE + "\n\n" + HEADLESS)
 
 
 def skill_guide(skill: str) -> list[str]:
@@ -102,7 +109,7 @@ def build_prompt(skill: str, text: str, check: dict[str, Any], language: str,
     guide = "\n".join(f"- {line}" for line in skill_guide(name)) or "- (no dashboard guide; read the skill)"
     lines = [
         f"Skill: /{name} (its input rules: skills/{name}/SKILL.md)",
-        f"Operator language: {language}",
+        f"Board language: {language}",
         "",
         "Dashboard input guide for this skill:",
         guide,
@@ -177,7 +184,7 @@ def review(root: Path, payload: Any) -> dict[str, Any]:
     """Check, then (only on a failed check, or with answers) ask the reviewer."""
     skill, text, optional = validate(payload)
     payload = payload if isinstance(payload, dict) else {}
-    language = "en" if str(payload.get("language") or "es").lower().startswith("en") else "es"
+    language = "es" if str(payload.get("language") or "en").lower().startswith("es") else "en"
     answers = _answers(payload.get("answers"))
     check = prompt_gate.check(skill, text, optional=optional)
     base = {"ok": True, "skill": skill, "check": check}
