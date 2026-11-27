@@ -169,6 +169,7 @@ relative to the product folder `<Name>/`. One folder per experiment (`Results/e1
 | `Results/summary.json`, or `Results/<experiment>/summary.json` | The run's headline numbers | One JSON object; a `summary.json` deeper than one experiment folder is not read. |
 | `Results/significance*.json` | The significance table | A JSON list of objects with the keys `comparison`, `test`, `statistic`, `p_value`, `p_adjusted`, `correction`, `effect_size`, `effect_size_name`, `ci_low`, `ci_high`, `n` and `alpha`. |
 | `Results/significance*.json` (optional keys) | Which hypothesis a row tests | Each row may also carry `hypothesis` (the id in the protocol's hypothesis matrix) and `experiment` (its `[exp:E#]`); the panel reads and shows them, and the discussion's `significance:<comparison>` evidence resolves against the row's `comparison`. |
+| `Results/illustrative/**`, or `Results/<experiment>/illustrative/**` | The raw material of the illustrative results (see [Recording the illustrative results](#recording-the-illustrative-results)) | `json`, `csv` or `npz` files, one per declared artefact. The panel does not show them; the figures drawn from them land under `figures/`. |
 | `Results/qualitative/**` | Qualitative, interpretability and explainability figures | `png`, `svg`, `jpg` or `pdf` files (saliency or attribution maps, attention, embeddings, error cases). The panel shows them in their own gallery, never among the generic figures. |
 | `Results/discussion.json` | The results discussion | One JSON object, schema 1, written by `discussion_cli.py scaffold` and completed from the results on disk; see [After the runs](#after-the-runs-the-results-discussion). |
 
@@ -177,6 +178,30 @@ experiments revision declares (see `experimental-deliberation`'s **Choosing
 the significance test by experiment type**); the instrumentation stage is not
 closed for an experiment whose declared significance table has nowhere to
 land.
+
+### Recording the illustrative results
+
+The bound revision declares, per experiment, the illustrative artefacts its
+Results show before any aggregate metric (`experimental-deliberation`'s
+**Declaring the illustrative results**, items (a)-(d)). A figure is drawn
+from what the run kept, so the runs record that raw material under
+`Results/`, for every item the protocol declares:
+
+| Declared item | What the run records | Where | Drawn with |
+| --- | --- | --- | --- |
+| (b) A new or modified loss or regularizer | Per-term loss histories: one numeric series per term, plus the total, per epoch or step | Extra columns in `Results/history*` (for example `loss_data`, `loss_physics`, `loss`) | `loss_terms_plot(ax, steps, terms, *, log=True)`; a term named `total` is drawn as the total |
+| (c) Time series, regression and similar | Representative input windows, predictions, targets, comparator predictions and bands, on the declared examples of the toy set and of the declared real or semi-synthetic dataset | `Results/illustrative/` (one file per example: input times and values, output times, target, one prediction per model, and a (low, high) band per model that has one, with the band method and its number of samples) | `forecast_plot(ax, t_input, y_input, t_output, target, predictions, *, bands=None)` |
+| (a) The improved representation | Representation snapshots: the declared internal quantity (field, residual, attention, feature map) on the declared examples, at the declared stage | `Results/illustrative/` (a 2-D array per snapshot, with its row and column labels) | `heatmap_plot(ax, matrix, *, x_labels=None, y_labels=None, colorbar=True)`, or `line_plot` for a 1-D quantity |
+| (d) Classification, clustering and similar | 2-D embeddings with labels at the declared key points (already projected, with the projection and its seed), confusion counts, ROC points (fpr, tpr and the AUC) | `Results/illustrative/` | `embedding_plot(ax, coords, labels)`, `confusion_matrix_plot(ax, matrix, labels, *, normalize=False)`, `roc_plot(ax, curves)` |
+
+Record them during the run that produces the aggregate numbers, on the same
+seeds and checkpoints, never in a later run tuned to look better. The
+helpers live in the shipped `assets/kit/ps_figures.py` beside the chart
+helpers below; they draw only from the arrays given (no UMAP or t-SNE
+dependency: project the embedding in the experiment and pass the 2-D
+coordinates). Save each figure with `save_figure` under `figures/`. The
+instrumentation stage is not closed for an experiment whose declared
+illustrative artefact has no recorded raw material.
 
 ### Figures that enter the manuscript
 
@@ -199,6 +224,8 @@ Methods and Results prefer data figures over tables (about 60 % figures):
 draw the usual result figures with the kit's chart helpers,
 `interval_plot` (dot-and-whisker or forest), `grouped_bars`,
 `distribution_plot` (violin or box) and `line_plot` (with optional bands).
+The illustrative results have their own helpers (see
+[Recording the illustrative results](#recording-the-illustrative-results)).
 
 - **PDF with embedded text.** The manuscript copy is a vector PDF (TrueType
   fonts embedded, `pdf.fonttype 42`); a PNG is only a preview. `place`

@@ -407,6 +407,8 @@
   "What are the hyperparameters, rates and experimentation protocols?": "¿Cuáles son los hiperparámetros, tasas y protocolos de experimentación?",
   "Fixes the empirical rules and conditions to evaluate the hypotheses stated in the Introduction.": "Fija las reglas y condiciones empíricas para evaluar las hipótesis planteadas en la Introducción.",
   "Density of quantitative evidence. Corroboration with plots, performance tables and contrast with baselines.": "Densidad de evidencia cuantitativa. Corroboración con gráficas, tablas de rendimiento y contraste con baselines.",
+  "Illustrative Results of the Novelty": "Resultados Ilustrativos de la Novedad",
+  "What does the novelty do at its basic stages, shown on representative examples before any aggregate metric?": "¿Qué hace la novedad en sus etapas básicas, mostrado con ejemplos representativos antes de cualquier métrica agregada?",
   "Hypothesis Validation and Main Task": "Validación de Hipótesis y Tarea Principal",
   "Are the main hypotheses stated in the introduction corroborated?": "¿Se corroboran las hipótesis principales planteadas en la introducción?",
   "Quantitative Analysis and Performance": "Análisis Cuantitativo y Desempeño",

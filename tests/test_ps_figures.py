@@ -244,6 +244,74 @@ class ChartHelperValidationTests(unittest.TestCase):
                                                          bands={"A": ([0, 0],)}), "band")
 
 
+class IllustrativeHelperValidationTests(unittest.TestCase):
+    """S4 of `odd/tasks/illustrative-results.md`: the illustrative-result
+    helpers refuse malformed arrays with a ValueError before they touch the
+    Axes (no matplotlib needed)."""
+
+    assert_refused = ChartHelperValidationTests.assert_refused
+
+    def test_forecast_plot_refuses_mismatched_windows_predictions_and_bands(self) -> None:
+        ax = _NoDrawAxes()
+        call = ps_figures.forecast_plot
+        window = ([0, 1], [1.0, 1.0], [2, 3], [1.0, 1.0])
+        self.assert_refused(lambda: call(ax, [0, 1], [1.0], [2, 3], [1.0, 1.0], {"P": [1.0, 1.0]}), "y_input")
+        self.assert_refused(lambda: call(ax, [], [], [2, 3], [1.0, 1.0], {"P": [1.0, 1.0]}), "at least one")
+        self.assert_refused(lambda: call(ax, [0, 1], [1.0, 1.0], [2, 3], [1.0], {"P": [1.0, 1.0]}), "target")
+        self.assert_refused(lambda: call(ax, *window, {}), "at least one")
+        self.assert_refused(lambda: call(ax, *window, {"P": [1.0]}), "'P'")
+        self.assert_refused(lambda: call(ax, *window, {"P": [1.0, 1.0]}, bands={"Q": ([0, 0], [2, 2])}), "'Q'")
+        self.assert_refused(lambda: call(ax, *window, {"P": [1.0, 1.0]}, bands={"P": ([0, 0], [2])}), "band")
+        self.assert_refused(lambda: call(ax, *window, {"P": [1.0, 1.0]}, bands={"P": ([0, 0],)}), "band")
+        self.assert_refused(lambda: call(ax, *window, {"P": [1.0, 1.0]}, bands={"P": ([0, 3], [2, 2])}),
+                            "low <= high")
+
+    def test_loss_terms_plot_refuses_mismatched_terms_and_non_positive_values_on_a_log_axis(self) -> None:
+        ax = _NoDrawAxes()
+        call = ps_figures.loss_terms_plot
+        self.assert_refused(lambda: call(ax, [], {"data": []}), "at least one")
+        self.assert_refused(lambda: call(ax, [0, 1], {}), "at least one")
+        self.assert_refused(lambda: call(ax, [0, 1, 2], {"data": [1.0, 0.5]}), "'data'")
+        self.assert_refused(lambda: call(ax, [0, 1], {"data": [1.0, 0.0]}), "log")
+
+    def test_heatmap_plot_refuses_ragged_or_empty_matrices_and_mismatched_labels(self) -> None:
+        ax = _NoDrawAxes()
+        call = ps_figures.heatmap_plot
+        self.assert_refused(lambda: call(ax, []), "at least one")
+        self.assert_refused(lambda: call(ax, [[]]), "at least one")
+        self.assert_refused(lambda: call(ax, [1.0, 2.0]), "2-D")
+        self.assert_refused(lambda: call(ax, [[1.0, 2.0], [3.0]]), "row 1")
+        self.assert_refused(lambda: call(ax, [[1.0, 2.0]], x_labels=["a"]), "x_labels")
+        self.assert_refused(lambda: call(ax, [[1.0, 2.0]], y_labels=["a", "b"]), "y_labels")
+
+    def test_embedding_plot_refuses_non_planar_coordinates_and_mismatched_labels(self) -> None:
+        ax = _NoDrawAxes()
+        call = ps_figures.embedding_plot
+        self.assert_refused(lambda: call(ax, [], []), "at least one")
+        self.assert_refused(lambda: call(ax, [(0.0, 1.0), (1.0, 0.0)], ["a"]), "labels")
+        self.assert_refused(lambda: call(ax, [(0.0, 1.0, 2.0)], ["a"]), "2-D")
+        self.assert_refused(lambda: call(ax, [0.0, 1.0], ["a", "b"]), "2-D")
+
+    def test_confusion_matrix_plot_refuses_non_square_negative_or_unnormalizable_counts(self) -> None:
+        ax = _NoDrawAxes()
+        call = ps_figures.confusion_matrix_plot
+        self.assert_refused(lambda: call(ax, [], []), "at least one")
+        self.assert_refused(lambda: call(ax, [[1, 2]], ["a", "b"]), "rows")
+        self.assert_refused(lambda: call(ax, [[1, 2], [3]], ["a", "b"]), "row 1")
+        self.assert_refused(lambda: call(ax, [[1, -2], [3, 4]], ["a", "b"]), "negative")
+        self.assert_refused(lambda: call(ax, [[1, 2], [0, 0]], ["a", "b"], normalize=True), "'b'")
+
+    def test_roc_plot_refuses_malformed_curves(self) -> None:
+        ax = _NoDrawAxes()
+        call = ps_figures.roc_plot
+        self.assert_refused(lambda: call(ax, {}), "at least one")
+        self.assert_refused(lambda: call(ax, {"A": ([0.0, 1.0],)}), "'A'")
+        self.assert_refused(lambda: call(ax, {"A": ([0.0, 1.0], [0.0])}), "tpr")
+        self.assert_refused(lambda: call(ax, {"A": ([0.0], [0.0])}), "two points")
+        self.assert_refused(lambda: call(ax, {"A": ([0.0, 1.5], [0.0, 1.0])}), "[0, 1]")
+        self.assert_refused(lambda: call(ax, {"A": ([0.0, 1.0], [0.0, 1.0], 1.2)}), "auc")
+
+
 @unittest.skipUnless(HAS_MATPLOTLIB, NO_MATPLOTLIB)
 class ChartHelperDrawingTests(unittest.TestCase):
     """S4: each helper draws its artists on the given Axes in the house
@@ -259,8 +327,10 @@ class ChartHelperDrawingTests(unittest.TestCase):
             from matplotlib.collections import PolyCollection
             from matplotlib.container import BarContainer, ErrorbarContainer
             from matplotlib.patches import PathPatch
+            from matplotlib.collections import PathCollection
         except ImportError:  # optional: matplotlib lives in experiment repos
             self.skipTest(NO_MATPLOTLIB)
+        self.PathCollection = PathCollection
         self.plt = plt
         self.mpl = matplotlib
         self.mcolors = mcolors
@@ -351,6 +421,100 @@ class ChartHelperDrawingTests(unittest.TestCase):
         self.assertEqual(self.mcolors.to_hex(fills[0].get_facecolor()[0], keep_alpha=False),
                          self.mcolors.to_hex(self.ax.lines[0].get_color()))
         self.assertEqual([t.get_text() for t in self.ax.get_legend().get_texts()], list(series))
+        self.assert_exports()
+
+    # S4 of `odd/tasks/illustrative-results.md`: the illustrative-result helpers.
+
+    def test_forecast_plot_draws_the_window_the_target_each_prediction_and_its_band(self) -> None:
+        predictions = {"Proposed": [1.1, 1.3, 1.2], "LSTM": [0.9, 1.0, 1.4]}
+        bands = {"Proposed": ([1.0, 1.1, 1.0], [1.2, 1.5, 1.4])}
+        result = ps_figures.forecast_plot(self.ax, [0, 1, 2], [0.5, 0.8, 1.0], [3, 4, 5], [1.2, 1.25, 1.3],
+                                          predictions, bands=bands)
+        self.assertIs(result, self.ax)
+        labelled = {line.get_label(): line for line in self.ax.lines if not line.get_label().startswith("_")}
+        self.assertEqual(list(labelled), ["Input window", "Target", "Proposed", "LSTM"])
+        self.assertEqual(list(labelled["Input window"].get_xdata()), [0, 1, 2])
+        self.assertEqual(list(labelled["Target"].get_xdata()), [3, 4, 5])
+        colours = self.colours()
+        self.assertEqual(self.mcolors.to_hex(labelled["Proposed"].get_color()), self.mcolors.to_hex(colours[0]))
+        self.assertEqual(self.mcolors.to_hex(labelled["LSTM"].get_color()), self.mcolors.to_hex(colours[1]))
+        fills = [c for c in self.ax.collections if isinstance(c, self.PolyCollection)]
+        self.assertEqual(len(fills), 1)
+        self.assertEqual(self.mcolors.to_hex(fills[0].get_facecolor()[0], keep_alpha=False),
+                         self.mcolors.to_hex(colours[0]))
+        self.assertEqual([t.get_text() for t in self.ax.get_legend().get_texts()],
+                         ["Input window", "Target", "Proposed", "LSTM"])
+        self.assert_exports()
+
+    def test_loss_terms_plot_draws_one_curve_per_term_on_a_log_axis_and_the_total_in_the_reference_colour(self) -> None:
+        terms = {"data": [1.0, 0.5, 0.2], "physics": [2.0, 0.4, 0.1], "total": [3.0, 0.9, 0.3]}
+        result = ps_figures.loss_terms_plot(self.ax, [0, 10, 20], terms)
+        self.assertIs(result, self.ax)
+        self.assertEqual([line.get_label() for line in self.ax.lines], list(terms))
+        self.assertEqual(self.ax.get_yscale(), "log")
+        total = self.ax.lines[2]
+        self.assertEqual(self.mcolors.to_hex(total.get_color()),
+                         self.mcolors.to_hex(self.mpl.rcParams["axes.edgecolor"]))
+        self.assertGreater(total.get_linewidth(), self.ax.lines[0].get_linewidth())
+        self.assert_exports()
+
+    def test_loss_terms_plot_on_a_linear_axis_accepts_non_positive_values(self) -> None:
+        ps_figures.loss_terms_plot(self.ax, [0, 1], {"penalty": [0.0, -0.1]}, log=False)
+        self.assertEqual(self.ax.get_yscale(), "linear")
+        self.assertEqual(len(self.ax.lines), 1)
+
+    def test_heatmap_plot_draws_one_image_with_its_labels_and_a_colourbar(self) -> None:
+        matrix = [[0.1, 0.4, 0.2], [0.9, 0.3, 0.5]]
+        result = ps_figures.heatmap_plot(self.ax, matrix, x_labels=["t0", "t1", "t2"], y_labels=["h1", "h2"])
+        self.assertIs(result, self.ax)
+        self.assertEqual(len(self.ax.images), 1)
+        self.assertEqual(self.ax.images[0].get_array().shape, (2, 3))
+        self.assertEqual([t.get_text() for t in self.ax.get_xticklabels()], ["t0", "t1", "t2"])
+        self.assertEqual([t.get_text() for t in self.ax.get_yticklabels()], ["h1", "h2"])
+        self.assertEqual(len(self.fig.axes), 2)
+        self.assert_exports()
+
+    def test_heatmap_plot_without_a_colourbar_adds_no_axes(self) -> None:
+        ps_figures.heatmap_plot(self.ax, [[1.0, 2.0], [3.0, 4.0]], colorbar=False)
+        self.assertEqual(len(self.fig.axes), 1)
+
+    def test_embedding_plot_draws_one_scatter_per_label_in_first_seen_order(self) -> None:
+        coords = [(0.0, 0.1), (1.0, 1.1), (0.2, 0.0), (1.2, 0.9), (2.0, 2.0)]
+        labels = ["walk", "run", "walk", "run", "sit"]
+        result = ps_figures.embedding_plot(self.ax, coords, labels)
+        self.assertIs(result, self.ax)
+        scatters = [c for c in self.ax.collections if isinstance(c, self.PathCollection)]
+        self.assertEqual([len(s.get_offsets()) for s in scatters], [2, 2, 1])
+        colours = self.colours()
+        self.assertEqual(self.mcolors.to_hex(scatters[1].get_facecolor()[0], keep_alpha=False),
+                         self.mcolors.to_hex(colours[1]))
+        self.assertEqual([t.get_text() for t in self.ax.get_legend().get_texts()], ["walk", "run", "sit"])
+        self.assert_exports()
+
+    def test_confusion_matrix_plot_annotates_counts_or_row_rates(self) -> None:
+        result = ps_figures.confusion_matrix_plot(self.ax, [[8, 2], [1, 9]], ["neg", "pos"])
+        self.assertIs(result, self.ax)
+        self.assertEqual(len(self.ax.images), 1)
+        self.assertEqual([t.get_text() for t in self.ax.texts], ["8", "2", "1", "9"])
+        self.assertEqual([t.get_text() for t in self.ax.get_xticklabels()], ["neg", "pos"])
+        self.assertEqual([t.get_text() for t in self.ax.get_yticklabels()], ["neg", "pos"])
+        self.assertEqual((self.ax.get_xlabel(), self.ax.get_ylabel()), ("Predicted", "True"))
+        self.assert_exports()
+
+    def test_confusion_matrix_plot_normalizes_each_true_row(self) -> None:
+        ps_figures.confusion_matrix_plot(self.ax, [[8, 2], [1, 9]], ["neg", "pos"], normalize=True)
+        self.assertEqual([t.get_text() for t in self.ax.texts], ["0.80", "0.20", "0.10", "0.90"])
+
+    def test_roc_plot_draws_each_curve_with_its_auc_and_the_chance_diagonal(self) -> None:
+        curves = {"Proposed": ([0.0, 0.1, 1.0], [0.0, 0.8, 1.0], 0.91), "SVM": ([0.0, 0.3, 1.0], [0.0, 0.6, 1.0])}
+        result = ps_figures.roc_plot(self.ax, curves)
+        self.assertIs(result, self.ax)
+        self.assertEqual([t.get_text() for t in self.ax.get_legend().get_texts()], ["Proposed (AUC = 0.91)", "SVM"])
+        diagonal = [line for line in self.ax.lines if list(line.get_xdata()) == [0, 1]
+                    and list(line.get_ydata()) == [0, 1]]
+        self.assertEqual(len(diagonal), 1)
+        self.assertEqual(len(self.ax.lines), 3)
+        self.assertEqual((self.ax.get_xlim(), self.ax.get_ylim()), ((0.0, 1.0), (0.0, 1.0)))
         self.assert_exports()
 
 

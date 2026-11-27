@@ -38,6 +38,17 @@ drawing anything:
     grouped_bars(ax, groups, series, *, errors=None)
     distribution_plot(ax, samples, *, kind="violin")   # or kind="box"
     line_plot(ax, x, series, *, bands=None)
+
+Illustrative-result helpers (spec S4 of `odd/tasks/illustrative-results.md`;
+the Results show what the novelty does at its basic stages before any
+aggregate metric), drawn only from arrays the run recorded:
+
+    forecast_plot(ax, t_input, y_input, t_output, target, predictions, *, bands=None)
+    loss_terms_plot(ax, steps, terms, *, log=True)      # a "total" term is the total
+    heatmap_plot(ax, matrix, *, x_labels=None, y_labels=None, colorbar=True)
+    embedding_plot(ax, coords, labels)                   # coords already 2-D
+    confusion_matrix_plot(ax, matrix, labels, *, normalize=False)
+    roc_plot(ax, curves)                                 # name -> (fpr, tpr[, auc])
 """
 from __future__ import annotations
 
@@ -196,6 +207,12 @@ def _reference_colour() -> str:
     return matplotlib.rcParams["axes.edgecolor"]
 
 
+def _line_width() -> float:
+    import matplotlib
+
+    return float(matplotlib.rcParams["lines.linewidth"])
+
+
 def _bar_errors(name: str, values, groups: int):
     """`values` as matplotlib's `yerr`: one symmetric error per group, or
     one (below, above) pair per group (both distances from the bar top)."""
@@ -308,4 +325,210 @@ def line_plot(ax, x, series, *, bands=None):
             ax.fill_between(x, *shaded[name], color=colour, alpha=BAND_ALPHA, linewidth=0)
     if len(names) > 1:
         ax.legend()
+    return ax
+
+
+# ------------------------------------------------- illustrative-result helpers
+#
+# Spec S4 of `odd/tasks/illustrative-results.md`: the Results show what the
+# novelty does at its basic stages before any aggregate metric. These helpers
+# draw only from arrays the experiment already recorded (embeddings arrive
+# already projected to 2-D: no UMAP or t-SNE dependency here).
+
+TOTAL_TERM = "total"
+TOTAL_LINEWIDTH_FACTOR = 1.6
+CONFUSION_AXIS_LABELS = ("Predicted", "True")
+
+
+def _require_matrix(name: str, matrix) -> list:
+    """`matrix` as a non-empty rectangular list of rows of floats."""
+    rows = _require_rows(name, matrix)
+    table = []
+    for index, row in enumerate(rows):
+        if isinstance(row, (str, bytes)) or not hasattr(row, "__iter__"):
+            raise ValueError(f"{name} must be 2-D: a sequence of rows")
+        table.append([float(value) for value in row])
+    if not table[0]:
+        raise ValueError(f"{name} needs at least one column")
+    for index, row in enumerate(table):
+        if len(row) != len(table[0]):
+            raise ValueError(f"{name} row {index} has {len(row)} values; row 0 has {len(table[0])}")
+    return table
+
+
+def _require_band(name: str, band, count: int, against: str) -> tuple:
+    band = list(band)
+    if len(band) != 2:
+        raise ValueError(f"band {name!r} must be a (low, high) pair of sequences")
+    low = _require_length(f"band {name!r} low", band[0], count, against)
+    high = _require_length(f"band {name!r} high", band[1], count, against)
+    if any(lo > hi for lo, hi in zip(low, high)):
+        raise ValueError(f"band {name!r} must satisfy low <= high at every point")
+    return low, high
+
+
+def forecast_plot(ax, t_input, y_input, t_output, target, predictions, *, bands=None):
+    """Prediction example: the input window (solid) and the target over the
+    forecast horizon (dashed) in the reference colour, a dotted line at the
+    forecast origin, then one line per named prediction (the proposal first,
+    then the comparators, in house colours) with an optional (low, high)
+    band per prediction (a confidence interval, or a Monte Carlo or Monte
+    Carlo dropout spread). Adds a legend."""
+    t_input = _require_rows("t_input", t_input)
+    y_input = _require_length("y_input", y_input, len(t_input), "t_input")
+    t_output = _require_rows("t_output", t_output)
+    target = _require_length("target", target, len(t_output), "t_output")
+    names = _require_rows("predictions", predictions)
+    values = {name: _require_length(f"predictions[{name!r}]", predictions[name], len(t_output), "t_output")
+              for name in names}
+    bands = dict(bands or {})
+    _require_known("bands", bands, values)
+    shaded = {name: _require_band(name, band, len(t_output), "t_output") for name, band in bands.items()}
+    reference = _reference_colour()
+    ax.plot(t_input, y_input, color=reference, label="Input window")
+    ax.plot(t_output, target, color=reference, linestyle="--", label="Target")
+    ax.axvline(t_input[-1], color=reference, linestyle=":", linewidth=REFERENCE_STYLE["linewidth"])
+    colours = _palette()
+    for index, name in enumerate(names):
+        colour = colours[index % len(colours)]
+        ax.plot(t_output, values[name], color=colour, label=str(name))
+        if name in shaded:
+            ax.fill_between(t_output, *shaded[name], color=colour, alpha=BAND_ALPHA, linewidth=0)
+    ax.legend()
+    return ax
+
+
+def loss_terms_plot(ax, steps, terms, *, log=True):
+    """Per-term training curves of a loss or regularizer over `steps` (epoch
+    or step), in house colours, on a log y axis by default. A term named
+    `"total"` is drawn as the total: thicker, in the reference colour. Adds a
+    legend when there is more than one curve."""
+    steps = _require_rows("steps", steps)
+    names = _require_rows("terms", terms)
+    values = {name: _require_length(f"terms[{name!r}]", terms[name], len(steps), "steps") for name in names}
+    if log:
+        for name, curve in values.items():
+            if any(value <= 0 for value in curve):
+                raise ValueError(f"terms[{name!r}] has a value <= 0, which a log axis cannot show; "
+                                 "pass log=False")
+    colours = _palette()
+    linewidth = _line_width()
+    term_index = 0
+    for name in names:
+        if name == TOTAL_TERM:
+            ax.plot(steps, values[name], color=_reference_colour(), label=str(name),
+                    linewidth=linewidth * TOTAL_LINEWIDTH_FACTOR)
+            continue
+        ax.plot(steps, values[name], color=colours[term_index % len(colours)], label=str(name))
+        term_index += 1
+    if log:
+        ax.set_yscale("log")
+    if len(names) > 1:
+        ax.legend()
+    return ax
+
+
+def heatmap_plot(ax, matrix, *, x_labels=None, y_labels=None, colorbar=True):
+    """imshow of a representation (an attention map, a field the network
+    reconstructs, a feature map), row 0 at the top, with optional tick
+    labels per column and row and a colour bar beside the Axes."""
+    table = _require_matrix("matrix", matrix)
+    columns, rows = len(table[0]), len(table)
+    if x_labels is not None:
+        x_labels = _require_length("x_labels", x_labels, columns, "the matrix's columns")
+    if y_labels is not None:
+        y_labels = _require_length("y_labels", y_labels, rows, "the matrix's rows")
+    image = ax.imshow(table, aspect="auto", interpolation="nearest")
+    if x_labels is not None:
+        ax.set_xticks(list(range(columns)), [str(label) for label in x_labels])
+    if y_labels is not None:
+        ax.set_yticks(list(range(rows)), [str(label) for label in y_labels])
+    if colorbar:
+        ax.figure.colorbar(image, ax=ax)
+    return ax
+
+
+def embedding_plot(ax, coords, labels):
+    """A 2-D embedding (already projected: UMAP, t-SNE, PCA or similar) as
+    one scatter per label, in first-seen order and house colours. Adds a
+    legend."""
+    points = _require_rows("coords", coords)
+    labels = _require_length("labels", labels, len(points), "coords")
+    pairs = []
+    for point in points:
+        if isinstance(point, (str, bytes)) or not hasattr(point, "__len__") or len(point) != 2:
+            raise ValueError("coords must be 2-D: one (x, y) pair per point")
+        pairs.append((float(point[0]), float(point[1])))
+    groups: dict = {}
+    for pair, label in zip(pairs, labels):
+        groups.setdefault(label, []).append(pair)
+    colours = _palette()
+    for index, (label, members) in enumerate(groups.items()):
+        ax.scatter([x for x, _ in members], [y for _, y in members], s=8,
+                   color=colours[index % len(colours)], label=str(label))
+    ax.legend()
+    return ax
+
+
+def confusion_matrix_plot(ax, matrix, labels, *, normalize=False):
+    """A confusion matrix: rows are true classes, columns predicted ones,
+    each cell annotated with its count (or, with `normalize`, its share of
+    the true row, two decimals)."""
+    labels = _require_rows("labels", labels)
+    table = _require_matrix("matrix", matrix)
+    _require_length("matrix rows", table, len(labels), "labels")
+    if len(table[0]) != len(labels):
+        raise ValueError(f"matrix rows have {len(table[0])} columns; labels has {len(labels)}")
+    if any(value < 0 for row in table for value in row):
+        raise ValueError("matrix holds a negative count")
+    if normalize:
+        for label, row in zip(labels, table):
+            if sum(row) == 0:
+                raise ValueError(f"true class {label!r} has no samples, so its row cannot be normalized")
+        table = [[value / sum(row) for value in row] for row in table]
+    ax.imshow(table, interpolation="nearest")
+    peak = max(max(row) for row in table)
+    for i, row in enumerate(table):
+        for j, value in enumerate(row):
+            text = f"{value:.2f}" if normalize else f"{value:g}"
+            colour = "white" if peak and value > peak / 2 else _reference_colour()
+            ax.text(j, i, text, ha="center", va="center", color=colour)
+    ticks = list(range(len(labels)))
+    ax.set_xticks(ticks, [str(label) for label in labels])
+    ax.set_yticks(ticks, [str(label) for label in labels])
+    ax.set_xlabel(CONFUSION_AXIS_LABELS[0])
+    ax.set_ylabel(CONFUSION_AXIS_LABELS[1])
+    return ax
+
+
+def roc_plot(ax, curves):
+    """ROC curves: `curves` maps a name to (fpr, tpr) or (fpr, tpr, auc);
+    the AUC, when given, enters the legend label. Draws the chance diagonal
+    and fixes both axes to [0, 1]."""
+    names = _require_rows("curves", curves)
+    parsed = {}
+    for name in names:
+        curve = list(curves[name])
+        if len(curve) not in (2, 3):
+            raise ValueError(f"curves[{name!r}] must be (fpr, tpr) or (fpr, tpr, auc)")
+        fpr = list(curve[0])
+        tpr = _require_length(f"curves[{name!r}] tpr", curve[1], len(fpr), "fpr")
+        if len(fpr) < 2:
+            raise ValueError(f"curves[{name!r}] needs at least two points")
+        if any(not 0 <= value <= 1 for value in fpr + tpr):
+            raise ValueError(f"curves[{name!r}] rates must lie in [0, 1]")
+        auc = curve[2] if len(curve) == 3 else None
+        if auc is not None and not 0 <= auc <= 1:
+            raise ValueError(f"curves[{name!r}] auc must lie in [0, 1], got {auc}")
+        parsed[name] = (fpr, tpr, auc)
+    colours = _palette()
+    for index, (name, (fpr, tpr, auc)) in enumerate(parsed.items()):
+        label = str(name) if auc is None else f"{name} (AUC = {auc:.2f})"
+        ax.plot(fpr, tpr, color=colours[index % len(colours)], label=label)
+    ax.plot([0, 1], [0, 1], color=_reference_colour(), **REFERENCE_STYLE)
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_xlabel("False positive rate")
+    ax.set_ylabel("True positive rate")
+    ax.legend()
     return ax

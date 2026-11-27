@@ -9255,6 +9255,13 @@ class ForgeVocabularyDefinitionTests(unittest.TestCase):
 #: the other fails on an admission whose file no longer carries the word, so an
 #: entry cannot outlive the argument that bought it.
 FORGE_FLOOR_SURFACE_ADMISSIONS: dict[str, dict[str, str]] = {
+    "experimental-deliberation/SKILL.md": {
+        "latent": "the skill's \"Declaring the illustrative results\" section "
+                  "names item (d) of the experimental results contract's rule "
+                  "\"Illustrative results before performance\": latent spaces at "
+                  "key points of the architecture, the operator's own words for a "
+                  "general applied-AI figure, not a loan from any research project",
+    },
     "_core/idea/bank.py": {
         "kaggle": "the fallback copy of smith's managed MCP server names "
                   "(generators.MANAGED_MCP_SERVERS), used when the engine runs "

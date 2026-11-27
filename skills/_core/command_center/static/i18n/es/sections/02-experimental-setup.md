@@ -162,8 +162,8 @@ que la sección especifica, en orden. Puede remitir al diagrama de cierre.
 
 ## Subsección 1 — Evaluación y Comparación de Métodos
 
-Nueve bloques. Cada uno es condicional a que el artículo tenga lo que cubre, salvo las
-métricas.
+Diez bloques. Cada uno es condicional a que el artículo tenga lo que cubre, salvo las
+métricas y, en un artículo de IA aplicada, los instrumentos ilustrativos.
 
 **1. Los conjuntos de datos** — solo cuando la sección de métodos no los posee. Primero. Cuando
 hay varios escenarios, los controlados van primero — sintético, luego
@@ -224,10 +224,36 @@ la pieza prestada que modifica, bajo el mismo protocolo. Luego los barridos de s
 cada perilla que expone la sección de métodos y que se varía, con su rango. Cada variante y
 cada barrido se nombra aquí para que los resultados solo puedan leerlo.
 
+**10. Los instrumentos ilustrativos** — siempre que la tarea sea de series de tiempo,
+regresión, clasificación, agrupamiento o similar, lo que abarca en general los artículos de
+IA aplicada. Los resultados abren con lo que hace la novedad en sus etapas básicas antes de
+cualquier desempeño agregado (`rd-illustrative`), y este bloque declara lo que esas figuras
+leen, para cada ítem que aplica:
+
+- **qué ejemplos representativos** — las instancias, ventanas o sujetos que se muestran,
+  sobre el conjunto de juguete y sobre el conjunto de datos real o semisintético más
+  relevante, y el criterio que los eligió (un caso mediano, un caso difícil, una estructura
+  conocida), nunca la mejor ejecución;
+- **qué comparadores** — los métodos del estado del arte más relevantes que se dibujan junto
+  a la propuesta, un subconjunto de los métodos competidores anteriores;
+- **qué método de banda** — nativo del modelo (una distribución predictiva, un ensamble),
+  Monte Carlo sobre las entradas o los parámetros, o Monte Carlo dropout, con el número de
+  muestras y el intervalo que reporta; o la declaración de que el modelo no da banda;
+- **qué método de incrustación y qué puntos** — UMAP, t-SNE o similar, con su
+  configuración, y los puntos de la arquitectura donde se toma el espacio latente; y, para
+  clasificación, las matrices de confusión y las curvas ROC que se leen;
+- **qué cantidades internas y qué términos de la pérdida** — la representación que se
+  muestra como imagen o como gráfica, y los términos de la pérdida o del regularizador cuyos
+  historiales se dibujan.
+
+Un ítem de la lista de los resultados que no aplica se nombra aquí con su razón, de modo que
+su ausencia en los resultados sea una decisión, no una omisión.
+
 ### Qué se cita aquí
 
 **Una cita por objeto comparado.** Una por método competidor, una por eje o
-arquitectura barrida, una por instrumento cualitativo y una por métrica **no estándar**.
+arquitectura barrida, una por instrumento cualitativo, una por método ilustrativo de banda
+o de incrustación y una por métrica **no estándar**.
 
 **Las métricas estándar llevan una ecuación, no una cita.** La misma asimetría que en la
 sección de métodos: lo que se toma prestado se cita, lo que es convencional se define.
@@ -479,6 +505,9 @@ ablación — el resto los presenta en los resultados, lo que este contrato proh
   cuando existe una formalización.
 - Un eje barrido sin declarar su estructura.
 - Una propiedad afirmada por una contribución sin un instrumento nombrado aquí.
+- Un artículo de IA aplicada cuya evaluación no declara instrumentos ilustrativos — ni
+  ejemplos representativos, ni comparadores, ni método de banda, ni método de
+  incrustación — o deja sin nombrar un ítem que no aplica.
 - Un instrumento nombrado con un nombre distinto al que la propiedad que mide lleva en
   el planteamiento del problema y en la contribución.
 - Un artefacto que aparece antes de cualquier referencia a él, o al que nada referencia en

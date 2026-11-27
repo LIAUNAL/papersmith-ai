@@ -131,7 +131,8 @@
       "extent": "1170–4150 palabras · 2 a 5 bloques de contenido · 3–12 figuras y 0–8 tablas",
       "structure": [
         {"label": "Bloque 0 — Escenario controlado", "text": "Cuando se declaró: la propuesta sobre datos con verdad de referencia conocida."},
-        {"label": "Bloque 1 — La tarea general", "text": "Del 40% al 66% de la sección: métrica principal, datos principales y líneas base, cerrando con la prueba estadística declarada."},
+        {"label": "Bloque 0b — Resultados ilustrativos", "text": "Antes de cualquier métrica agregada: lo que hace la novedad en sus etapas básicas — la representación mejorada, la convergencia e interacción de los términos de la pérdida o del regularizador, ejemplos de predicción con la ventana de entrada, el objetivo, los comparadores y una banda de confianza, o proyecciones de las representaciones internas, matrices de confusión y curvas ROC en clasificación."},
+        {"label": "Bloque 1 — La tarea general", "text": "Del 35% al 55% de la sección: métrica principal, datos principales y líneas base, cerrando con la prueba estadística declarada."},
         {"label": "Bloque 2 — Un bloque por contribución", "text": "Cada uno valida su propiedad con el instrumento que nombró la configuración; una contribución de interpretabilidad se lee dos veces, cualitativamente y con su medida de fidelidad."},
         {"label": "Bloque 3 — Ablación y sensibilidad", "text": "Una lectura por variante de ablación y luego cada barrido."},
         {"label": "Bloque 4 — Costo", "text": "Cuando se afirma el costo: uno o dos párrafos y una figura."},

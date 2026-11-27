@@ -2207,6 +2207,7 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
                 "page": 6,
                 "principles": "Density of quantitative evidence. Corroboration with plots, performance tables and contrast with baselines.",
                 "blocks": [
+                    {"id": "results-and-discussion.rd-illustrative", "role": "Illustrative Results of the Novelty", "question": "What does the novelty do at its basic stages, shown on representative examples before any aggregate metric?"},
                     {"id": "results-and-discussion.rd-general-task", "role": "Hypothesis Validation and Main Task", "question": "Are the main hypotheses stated in the introduction corroborated?"},
                     {"id": "results-and-discussion.rd-contribution-blocks", "role": "Quantitative Analysis and Performance", "question": "What empirical results were obtained against the success metrics?"},
                     {"id": "results-and-discussion.rd-cost", "role": "Contrast with Baselines and Discussion", "question": "What quantitative and qualitative advantages are shown over the state of the art?"}

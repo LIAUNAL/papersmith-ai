@@ -11,6 +11,29 @@
   },
   "blocks": [
     {
+      "id": "rd-illustrative",
+      "requires_facts": [
+        {
+          "value": "results",
+          "source": {
+            "file": "sections/03-results-and-discussion.md",
+            "quote": "The illustrative records — per-term loss histories, representative predictions with their comparators and bands, representation snapshots, embeddings"
+          }
+        }
+      ],
+      "requires_declarations": [],
+      "citations": "resolution",
+      "after": [
+        {
+          "target": "materials-and-methods.mm-proposal",
+          "source": {
+            "file": "sections/03-results-and-discussion.md",
+            "quote": "what the novelty does at its basic stages"
+          }
+        }
+      ]
+    },
+    {
       "id": "rd-general-task",
       "requires_facts": [
         {
@@ -22,7 +45,16 @@
         }
       ],
       "requires_declarations": [],
-      "citations": "resolution"
+      "citations": "resolution",
+      "after": [
+        {
+          "target": "results-and-discussion.rd-illustrative",
+          "source": {
+            "file": "sections/03-results-and-discussion.md",
+            "quote": "Before any aggregate performance artefact (error, R², accuracy and the like), the Results show what the novelty does at its basic stages"
+          }
+        }
+      ]
     },
     {
       "id": "rd-contribution-blocks",
@@ -97,7 +129,7 @@
 ---
 # Results and Discussion
 
-**Extent** 1170–4150 words · two to five content blocks, plus limitations last · at least as many figures as tables
+**Extent** 1170–4150 words · three to six content blocks, plus limitations last · at least as many figures as tables
 **Input** the results of the experiments
 **Carries** 3–12 figures and 0–8 tables — the artefact-densest section of the paper
 **Does not carry** a preamble, a closing artefact, or a single numbered equation
@@ -127,9 +159,23 @@ data whose ground truth is known — synthetic or simulated — showing the prop
 problem names under conditions where it can be checked. It is short, and it is what
 makes the real-data blocks credible.
 
+**Then the illustrative results**, always (`rd-illustrative`), before the general task
+and before any other block that reports a metric.
+
+**Illustrative results before performance.** Before any aggregate performance artefact (error, R², accuracy and the like), the Results show what the novelty does at its basic stages: (a) the improved representation: for a physics-informed network, a transformer or a new architecture, imshow maps or plots of the relevant internal quantities on representative examples; (b) for a new or modified loss or regularizer, how it converges and how its terms interact during training; (c) for time series, regression and similar tasks, prediction examples on the toy set and on the most relevant real or semi-synthetic dataset, showing the input window and the estimated output against the target and the most relevant state-of-the-art comparators, with a confidence or variability band when the model provides one or Monte Carlo or Monte Carlo dropout can estimate it; (d) for classification, clustering and similar tasks, latent spaces at key points of the architecture (UMAP, t-SNE or similar) that show representation and separability or grouping, plus confusion matrices and ROC curves where they apply.
+
+The block carries each item from (a) to (d) that the novelty and the task admit, and
+names the ones that do not apply in the experimental setup, never here. It reads only
+the illustrative instruments the setup declared — the representative examples, the
+comparators, the band method (model-native, Monte Carlo or Monte Carlo dropout) and the
+embedding method with the points of the architecture it is taken at — and the records
+the runs kept for them. **These figures show behaviour, not superiority**: each is read
+with the three-beat move, its mechanism tied to the component of the proposal it
+illustrates, and no aggregate number appears in it. It takes 15% to 25% of the section.
+
 **1. The general task.** The evidence that the proposal works on the task it was
 built for: the main metric, on the main data, against the baselines. This block
-carries the bulk of the section — 40% to 66% of it — and closes on the statistical
+carries the bulk of the section — 35% to 55% of it — and closes on the statistical
 test the setup declared.
 
 **2. One block per contribution.** Each validates the property that contribution
@@ -176,7 +222,9 @@ The obligation runs both ways:
 - **every contribution has a block here**, and
 - **every block here belongs to a contribution or to the general task.**
 
-A block belonging to neither is a measurement nobody asked for.
+The illustrative block belongs to the contributions: it shows each one at work before
+the general task measures it. A block belonging to neither is a measurement nobody
+asked for.
 
 ## How a result is presented
 
@@ -382,6 +430,7 @@ ablation. Subsections close on a *Taken together* synthesis; no section closes o
 
 | Input | Unblocks |
 |---|---|
+| The **illustrative records** — per-term loss histories, representative predictions with their comparators and bands, representation snapshots, embeddings with their labels, confusion counts and ROC points | `rd-illustrative` |
 | The **results** — the main runs, against the baselines | `rd-general-task` |
 | The **implementation** — the most demanding configuration, and the hardware declared in the setup | `rd-cost` |
 
@@ -389,6 +438,8 @@ ablation. Subsections close on a *Taken together* synthesis; no section closes o
 
 | Block | Depends on |
 |---|---|
+| `results-and-discussion.rd-illustrative` — what the novelty does at its basic stages | `materials-and-methods.mm-proposal` — the components of the proposal each illustration shows at work |
+| `results-and-discussion.rd-general-task` — before any aggregate performance artefact, the Results show what the novelty does at its basic stages | `results-and-discussion.rd-illustrative` — the illustrative results, the block immediately before it |
 | `results-and-discussion.rd-contribution-blocks` — a mechanism block opens by naming the previous block's result as the question it comes to answer | `results-and-discussion.rd-general-task` — the general task's evidence, the block immediately before it |
 | `results-and-discussion.rd-contribution-blocks` — The property a contribution promised, and the instrument the setup named for it | `materials-and-methods.mm-proposal` — the enumerated contributions each property traces to |
 | `results-and-discussion.rd-cost` — a mechanism block opens by naming the previous block's result as the question it comes to answer | `results-and-discussion.rd-contribution-blocks` — the per-contribution validation, the block immediately before cost |
@@ -406,6 +457,7 @@ ablation. Subsections close on a *Taken together* synthesis; no section closes o
 
 ## Disqualifiers
 
+- Aggregate performance shown before any illustrative result of the novelty.
 - A table of two columns or two rows whose values a bar or pie chart, or the sentence, could carry.
 - An interpretive mechanism, a baseline analysis or a qualitative-interpretability
   argument stated without a citation that supports it.

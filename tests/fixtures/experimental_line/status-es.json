@@ -211,6 +211,13 @@
      "id": "2.4",
      "name": "Detección de Brecha de Novedad",
      "status": "PENDING"
+    },
+    {
+     "desc": "Aún no hay una idea aceptada: acepte primero el reporte de plausibilidad",
+     "detail": "Aún no hay una idea aceptada: acepte primero el reporte de plausibilidad",
+     "id": "2.5",
+     "name": "Tipo de paper",
+     "status": "PENDING"
     }
    ],
    "tools": [
@@ -1438,6 +1445,7 @@
   "G3": "PENDING",
   "G4": "PENDING"
  },
+ "paper_kind": "experimental",
  "pdf_available": false,
  "pipeline_stages": [
   {
@@ -1640,6 +1648,13 @@
      "detail": "Identificación de vacíos conceptuales y oportunidad",
      "id": "2.4",
      "name": "Detección de Brecha de Novedad",
+     "status": "PENDING"
+    },
+    {
+     "desc": "Aún no hay una idea aceptada: acepte primero el reporte de plausibilidad",
+     "detail": "Aún no hay una idea aceptada: acepte primero el reporte de plausibilidad",
+     "id": "2.5",
+     "name": "Tipo de paper",
      "status": "PENDING"
     }
    ],
@@ -2896,6 +2911,11 @@
    "blocks_total": 0,
    "blocks_written": 0,
    "canonical_blocks": [
+    {
+     "id": "results-and-discussion.rd-illustrative",
+     "question": "¿Qué hace la novedad en sus etapas básicas, mostrado con ejemplos representativos antes de cualquier métrica agregada?",
+     "role": "Resultados Ilustrativos de la Novedad"
+    },
     {
      "id": "results-and-discussion.rd-general-task",
      "question": "¿Se corroboran las hipótesis principales planteadas en la introducción?",
