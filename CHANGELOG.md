@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.87.0
 
 - **The board follows the current iteration.** Pillars, hypotheses and the problem tree take
   their identity (ids, statements, pillar links, experiments) from the latest published proposal
