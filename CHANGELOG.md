@@ -11,7 +11,7 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
-## Unreleased
+## 0.85.0
 
 - **Figures over tables in Methods and Results, for every paper line.** Each line's Methods and
   Results/Discussion contracts carry one rule: comparisons, distributions, trends, effects with
