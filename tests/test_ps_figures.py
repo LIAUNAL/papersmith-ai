@@ -189,5 +189,170 @@ class MatplotlibExportTests(unittest.TestCase):
         self.assertAlmostEqual(report["scale"], 1.0, delta=0.15)
 
 
+class _NoDrawAxes:
+    """An Axes stand-in that fails on any use: a helper must validate its
+    inputs before it draws anything."""
+
+    def __getattr__(self, name):
+        raise AssertionError(f"the helper drew ({name}) before validating its inputs")
+
+
+class ChartHelperValidationTests(unittest.TestCase):
+    """S4 of `odd/tasks/figures-over-tables.md`: every chart helper refuses
+    mismatched inputs with a ValueError before it touches the Axes (no
+    matplotlib needed)."""
+
+    def assert_refused(self, call, fragment: str) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            call()
+        self.assertIn(fragment, str(ctx.exception))
+
+    def test_interval_plot_refuses_mismatched_lengths_and_inverted_intervals(self) -> None:
+        ax = _NoDrawAxes()
+        self.assert_refused(lambda: ps_figures.interval_plot(ax, ["a", "b"], [1.0], [0.0, 0.0], [2.0, 2.0]),
+                            "estimates")
+        self.assert_refused(lambda: ps_figures.interval_plot(ax, ["a"], [1.0], [0.0, 0.0], [2.0]), "low")
+        self.assert_refused(lambda: ps_figures.interval_plot(ax, ["a"], [1.0], [0.0], []), "high")
+        self.assert_refused(lambda: ps_figures.interval_plot(ax, [], [], [], []), "at least one")
+        self.assert_refused(lambda: ps_figures.interval_plot(ax, ["a"], [1.0], [1.5], [2.0]), "low <= estimate <= high")
+
+    def test_grouped_bars_refuses_mismatched_series_and_errors(self) -> None:
+        ax = _NoDrawAxes()
+        self.assert_refused(lambda: ps_figures.grouped_bars(ax, ["g1", "g2"], {"A": [1.0]}), "'A'")
+        self.assert_refused(lambda: ps_figures.grouped_bars(ax, ["g1"], {}), "at least one")
+        self.assert_refused(lambda: ps_figures.grouped_bars(ax, ["g1"], {"A": [1.0]}, errors={"B": [0.1]}), "'B'")
+        self.assert_refused(lambda: ps_figures.grouped_bars(ax, ["g1", "g2"], {"A": [1.0, 2.0]},
+                                                            errors={"A": [0.1]}), "errors")
+        self.assert_refused(lambda: ps_figures.grouped_bars(ax, ["g1"], {"A": [1.0]},
+                                                            errors={"A": [(0.1, 0.2, 0.3)]}), "errors")
+
+    def test_distribution_plot_refuses_an_unknown_kind_and_empty_samples(self) -> None:
+        ax = _NoDrawAxes()
+        self.assert_refused(lambda: ps_figures.distribution_plot(ax, {"A": [1.0, 2.0]}, kind="histogram"), "kind")
+        self.assert_refused(lambda: ps_figures.distribution_plot(ax, {"A": []}), "'A'")
+        self.assert_refused(lambda: ps_figures.distribution_plot(ax, {}), "at least one")
+
+    def test_line_plot_refuses_mismatched_series_and_bands(self) -> None:
+        ax = _NoDrawAxes()
+        self.assert_refused(lambda: ps_figures.line_plot(ax, [0, 1, 2], {"A": [1.0, 2.0]}), "'A'")
+        self.assert_refused(lambda: ps_figures.line_plot(ax, [0, 1], {}), "at least one")
+        self.assert_refused(lambda: ps_figures.line_plot(ax, [0, 1], {"A": [1.0, 2.0]},
+                                                         bands={"B": ([0, 0], [2, 2])}), "'B'")
+        self.assert_refused(lambda: ps_figures.line_plot(ax, [0, 1], {"A": [1.0, 2.0]},
+                                                         bands={"A": ([0, 0], [2])}), "band")
+        self.assert_refused(lambda: ps_figures.line_plot(ax, [0, 1], {"A": [1.0, 2.0]},
+                                                         bands={"A": ([0, 0],)}), "band")
+
+
+@unittest.skipUnless(HAS_MATPLOTLIB, NO_MATPLOTLIB)
+class ChartHelperDrawingTests(unittest.TestCase):
+    """S4: each helper draws its artists on the given Axes in the house
+    style, returns that Axes, and the figure still exports through
+    `save_figure`."""
+
+    def setUp(self) -> None:
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            import matplotlib.colors as mcolors
+            from matplotlib.collections import PolyCollection
+            from matplotlib.container import BarContainer, ErrorbarContainer
+            from matplotlib.patches import PathPatch
+        except ImportError:  # optional: matplotlib lives in experiment repos
+            self.skipTest(NO_MATPLOTLIB)
+        self.plt = plt
+        self.mpl = matplotlib
+        self.mcolors = mcolors
+        self.PolyCollection, self.PathPatch = PolyCollection, PathPatch
+        self.BarContainer, self.ErrorbarContainer = BarContainer, ErrorbarContainer
+        ps_figures.apply_style(10, printed_width_fraction=0.8)
+        self.fig, self.ax = plt.subplots()
+        self.addCleanup(plt.close, self.fig)
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        self.tmp = Path(holder.name)
+
+    def colours(self) -> list:
+        return self.mpl.rcParams["axes.prop_cycle"].by_key()["color"]
+
+    def assert_exports(self) -> None:
+        pdf = ps_figures.save_figure(self.fig, self.tmp / "chart.pdf", png_preview=True)
+        self.assertGreater(pdf.stat().st_size, 0)
+        self.assertTrue(pdf.with_suffix(".png").is_file())
+
+    def test_interval_plot_draws_one_whisker_per_row_and_a_reference_line(self) -> None:
+        labels = ["Model A", "Model B", "Model C"]
+        result = ps_figures.interval_plot(self.ax, labels, [0.2, -0.1, 0.5], [0.0, -0.3, 0.3], [0.4, 0.1, 0.7],
+                                          reference=0.0)
+        self.assertIs(result, self.ax)
+        containers = [c for c in self.ax.containers if isinstance(c, self.ErrorbarContainer)]
+        self.assertEqual(len(containers), 1)
+        self.assertEqual(len(containers[0].lines[0].get_xdata()), 3)
+        self.assertEqual(len(containers[0].lines[2][0].get_segments()), 3)
+        self.assertEqual([t.get_text() for t in self.ax.get_yticklabels()], labels)
+        references = [line for line in self.ax.lines if list(line.get_xdata()) == [0.0, 0.0]]
+        self.assertEqual(len(references), 1)
+        self.assert_exports()
+
+    def test_interval_plot_without_a_reference_draws_no_extra_line(self) -> None:
+        ps_figures.interval_plot(self.ax, ["a", "b"], [1.0, 2.0], [0.5, 1.5], [1.5, 2.5])
+        self.assertEqual(len(self.ax.lines), 1)
+
+    def test_grouped_bars_draws_one_bar_per_group_and_series_with_errors_and_a_legend(self) -> None:
+        groups = ["Task 1", "Task 2", "Task 3"]
+        series = {"Proposed": [0.8, 0.7, 0.9], "Baseline": [0.6, 0.5, 0.7]}
+        errors = {"Proposed": [0.05, 0.04, 0.03], "Baseline": [(0.02, 0.06), (0.01, 0.02), (0.03, 0.03)]}
+        result = ps_figures.grouped_bars(self.ax, groups, series, errors=errors)
+        self.assertIs(result, self.ax)
+        bars = [c for c in self.ax.containers if isinstance(c, self.BarContainer)]
+        self.assertEqual([len(c.patches) for c in bars], [3, 3])
+        self.assertEqual(len(self.ax.patches), 6)
+        self.assertEqual(len([c for c in self.ax.containers if isinstance(c, self.ErrorbarContainer)]), 2)
+        self.assertEqual([t.get_text() for t in self.ax.get_legend().get_texts()], list(series))
+        self.assertEqual([t.get_text() for t in self.ax.get_xticklabels()], groups)
+        colours = self.colours()
+        self.assertEqual(self.mcolors.to_hex(bars[0].patches[0].get_facecolor()), self.mcolors.to_hex(colours[0]))
+        self.assertEqual(self.mcolors.to_hex(bars[1].patches[0].get_facecolor()), self.mcolors.to_hex(colours[1]))
+        self.assert_exports()
+
+    def test_grouped_bars_without_errors_draws_no_error_bars(self) -> None:
+        ps_figures.grouped_bars(self.ax, ["g1", "g2"], {"A": [1.0, 2.0]})
+        self.assertEqual(len(self.ax.patches), 2)
+        self.assertFalse([c for c in self.ax.containers if isinstance(c, self.ErrorbarContainer)])
+
+    def test_distribution_plot_draws_one_violin_body_per_sample(self) -> None:
+        samples = {"A": [1.0, 1.2, 0.9, 1.4, 1.1], "B": [2.0, 2.5, 1.8, 2.2, 2.1], "C": [0.5, 0.7, 0.6, 0.4, 0.8]}
+        result = ps_figures.distribution_plot(self.ax, samples)
+        self.assertIs(result, self.ax)
+        bodies = [c for c in self.ax.collections if isinstance(c, self.PolyCollection)]
+        self.assertEqual(len(bodies), 3)
+        self.assertEqual([t.get_text() for t in self.ax.get_xticklabels()], list(samples))
+        self.assert_exports()
+
+    def test_distribution_plot_draws_one_box_patch_per_sample(self) -> None:
+        samples = {"A": [1.0, 1.2, 0.9, 1.4, 1.1], "B": [2.0, 2.5, 1.8, 2.2, 2.1]}
+        result = ps_figures.distribution_plot(self.ax, samples, kind="box")
+        self.assertIs(result, self.ax)
+        self.assertEqual(len([p for p in self.ax.patches if isinstance(p, self.PathPatch)]), 2)
+        self.assertEqual([t.get_text() for t in self.ax.get_xticklabels()], list(samples))
+        self.assert_exports()
+
+    def test_line_plot_draws_one_line_per_series_and_one_band_per_entry(self) -> None:
+
+        x = [0, 1, 2, 3]
+        series = {"Proposed": [0.2, 0.5, 0.7, 0.8], "Baseline": [0.2, 0.4, 0.5, 0.55]}
+        bands = {"Proposed": ([0.1, 0.4, 0.6, 0.75], [0.3, 0.6, 0.8, 0.85])}
+        result = ps_figures.line_plot(self.ax, x, series, bands=bands)
+        self.assertIs(result, self.ax)
+        self.assertEqual(len(self.ax.lines), 2)
+        fills = [c for c in self.ax.collections if isinstance(c, self.PolyCollection)]
+        self.assertEqual(len(fills), 1)
+        self.assertEqual(self.mcolors.to_hex(fills[0].get_facecolor()[0], keep_alpha=False),
+                         self.mcolors.to_hex(self.ax.lines[0].get_color()))
+        self.assertEqual([t.get_text() for t in self.ax.get_legend().get_texts()], list(series))
+        self.assert_exports()
+
+
 if __name__ == "__main__":
     unittest.main()
