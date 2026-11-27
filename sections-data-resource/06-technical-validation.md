@@ -54,7 +54,7 @@ The technical validation reports the checks that support the quality of the data
 This section replaces results and discussion: it shows that the data are what
 the methods say they are, and draws no scientific conclusion from them.
 
-**Extent** 300–1000 words · one subsection per block
+**Extent** 300–1000 words · one subsection per block · at least as many figures as tables
 
 ## Block `tv-quality-checks`
 
@@ -62,7 +62,9 @@ The quality checks are the results of the quality report the operator's data pro
 class or label balance and subject structure, copied from
 `datasets/<slug>/qc.json` as `datasets_cli.py --root . qc` wrote it against
 the current files and dictionary. A check that failed is reported with what
-was done about it.
+was done about it. A distribution is drawn as a figure: the class or label
+balance as a bar chart, the missing values per variable as a bar chart or a
+heat map, a signal's range as a violin or box plot.
 
 ## Block `tv-annotator-agreement`
 
@@ -77,7 +79,9 @@ The baselines are the reference results the outcomes and the analysis plan of th
 copied from the outputs of its run in `analysis/log.jsonl` (`analysis_cli.py
 run` or the operator's `record` for a GUI tool), with its label as the log
 computed it: confirmatory only when the locked protocol names the outcome and
-the plan, exploratory otherwise. A baseline shows the data can be used; it
+the plan, exploratory otherwise. The scores are drawn as grouped bars or a
+dot-and-whisker plot per metric; a table carries them only when other authors
+will look up the exact scores. A baseline shows the data can be used; it
 is not a claim about the task.
 
 ## LIA house style
@@ -100,6 +104,8 @@ No data descriptor of this line has been measured yet: the rules below carry the
 - **Transitions come from the relation between claims.** A stock connector (*In addition*, *Furthermore*, *Additionally*, *Moreover*) is the exception: never the same one twice within five sentences.
 - **No promotional adjectives.** *Revolutionary*, *transformative*, *pivotal*, *comprehensive*, *crucial*, *novel*, *large-scale* say nothing a reader can check; state the counts instead.
 - **A table has at least three columns and three rows.** A two-column or two-row table is a grid with nothing to cross: one or two values go in the sentence. A figure is drawn by a script from the resource's records, its provenance recorded with `paper_cli.py figure provenance`, and placed with `paper_cli.py place`.
+- Figures over tables. In Methods and Results, present comparisons, distributions, trends, effects with their intervals and time series as data figures (line, bar, dot-and-whisker or forest, violin or box plots, heat maps) or diagrams. Keep a table only for values a reader must look up exactly (settings, hyperparameters, dataset, participant or hardware characteristics, metadata) or when the venue requires one. Among the floats of Methods and Results, aim at about 60 % figures and 40 % tables.
+- A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text.
 - **Every number comes from a record.** Counts of files, records, participants and labels from `datasets/<slug>/qc.json` and the registry, variables and units from the dictionary, baseline scores from the outputs of the analysis log, planned values (sources, sample, annotation scheme, analysis plan) from the locked protocol revision, never recounted or retyped by hand.
 
 ## Disqualifiers

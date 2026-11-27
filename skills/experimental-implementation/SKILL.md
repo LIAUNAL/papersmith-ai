@@ -195,6 +195,11 @@ ax.plot(...); ax.set_xlabel(...); ax.set_ylabel(...)  # no set_title, no suptitl
 save_figure(fig, "Results/figures/accuracy.pdf", png_preview=True)
 ```
 
+Methods and Results prefer data figures over tables (about 60 % figures):
+draw the usual result figures with the kit's chart helpers,
+`interval_plot` (dot-and-whisker or forest), `grouped_bars`,
+`distribution_plot` (violin or box) and `line_plot` (with optional bands).
+
 - **PDF with embedded text.** The manuscript copy is a vector PDF (TrueType
   fonts embedded, `pdf.fonttype 42`); a PNG is only a preview. `place`
   refuses a plot without a text layer (`FIGURE_NO_TEXT_LAYER`).

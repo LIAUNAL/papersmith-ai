@@ -2299,6 +2299,20 @@ is the order in which those groups enable one another.
 
 An empirical paper adds five study facts: `protocol`, `sample`, `outcomes` and `analysis-plan`, read from the study protocol revisions under `protocol/` (mark them with `mark revisions --root protocol --revision-prefix v --ordinal-digits 2`), and `participant-flow`, read from the counts in `study/flow.json`. That file is a structured record, hashed the way the participant flow module hashes it (timestamps ignored), so changing a count marks the fact stale in `phases` and `readiness`. The `study-registration` declaration records a primary study's registry, id, registration date and first-enrolment date; `review-registration` stays the review line's.
 
+**Figures over tables, and short captions.** Every paper line's Methods and
+Results contracts tell the writer to show comparisons, distributions, trends,
+effects with their intervals and time series as data figures or diagrams, and
+to keep a table only for values a reader looks up exactly or that the venue
+requires, aiming at about 60 % figures and 40 % tables among those sections'
+floats. The run script draws them with the `ps_figures` helpers
+(`interval_plot`, `grouped_bars`, `distribution_plot`, `line_plot`), and
+`verify` reports the balance as `figure-table-balance`: figure environments
+against table environments (`longtable` included) inside the Methods and
+Results blocks, passing at a figure share of 0.6 or more. Captions follow one
+sentence too: "A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text." A caption is at most four lines (checked as at most 70 words): `verify`'s `caption-length` fails one over 70 words.
+The redactor drafts to both rules, the paper-reviewer reads them under
+Clarity, and a venue's own limits on figures and tables still win.
+
 **Venue adaptation: the `venue` verbs and the `venue-adapter` agent.** A journal
 asks for its own document class, section list, limits, declarations and
 reference style, and smith's base template (`sections/*.md`, `paper/main.tex`)

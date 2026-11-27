@@ -74,7 +74,7 @@ STROBE items 13 to 17, STARD 2015 items 19 to 25, COSMIN 2.0 results items. Ever
 The results report; interpretation, comparison with other studies and
 implications wait for the discussion.
 
-**Extent** 900–2200 words · the participant flow figure, one table of participant characteristics, one table per outcome family
+**Extent** 900–2200 words · the participant flow figure, one table of participant characteristics, one figure per outcome family (its estimates with their 95% intervals as a dot-and-whisker or forest plot) · at least as many figures as tables
 
 ## Block `r-participant-flow`
 
@@ -111,6 +111,9 @@ for the confounders the protocol named, saying which and why. A planned
 outcome that was not analysed is reported as not analysed, with the reason,
 never dropped. Category boundaries of a grouped continuous variable are given,
 and relative risks are translated into absolute risks when that is meaningful.
+The estimates of an outcome family are drawn as one dot-and-whisker or forest
+plot with their 95% intervals, unadjusted beside adjusted; their exact values go
+in the text, or in a table only when the venue requires one.
 
 ## Block `r-diagnostic-accuracy` (variant `diagnostic-validation`, optional)
 
@@ -120,7 +123,7 @@ any clinical intervention between the index test and the reference standard,
 the cross tabulation of the index test results (or their distribution) by the
 results of the reference standard, the estimates of diagnostic accuracy
 (sensitivity, specificity, predictive values, likelihood ratios or the area
-under the curve) with their 95% confidence intervals, the indeterminate and
+under the curve, with the ROC curve as a figure) with their 95% confidence intervals, the indeterminate and
 missing results and how they were handled, and any adverse events from
 performing the index test or the reference standard.
 
@@ -151,7 +154,7 @@ discussion or the conclusions.
 
 No paper of this line has been measured yet: the rules below carry the group's writing rules from the experimental and review lines to an observational or measurement study, and the extent at the top of this contract stays the target. They read the records the line keeps: the locked protocol revision `protocol/study-protocol-<slug>-vNN.md` and `study/protocol.lock.json`, the ethics and registration records under `study/`, the data dictionaries and quality reports under `datasets/`, the analysis log `analysis/log.jsonl` and the participant flow counts `study/flow.json`.
 
-**Measured size.** None yet; a STROBE or STARD results section of this extent opens on the flow figure, then the characteristics table and one table per outcome family.
+**Measured size.** None yet; a STROBE or STARD results section of this extent opens on the flow figure, then the characteristics table and one figure per outcome family.
 
 **Human boundaries (every section of this line).**
 
@@ -167,6 +170,8 @@ No paper of this line has been measured yet: the rules below carry the group's w
 - **Transitions come from the relation between claims.** A stock connector (*In addition*, *Furthermore*, *Additionally*, *Moreover*) is the exception: never the same one twice within five sentences.
 - **No promotional adjectives.** *Revolutionary*, *transformative*, *pivotal*, *comprehensive*, *crucial*, *novel* say nothing a reader can check; state what the data show instead.
 - **A table has at least three columns and three rows.** A two-column or two-row table is a grid with nothing to cross: counts or measures across categories become a bar chart, the shares of one whole (at most six parts) a pie chart, and one or two values go in the sentence. The chart is drawn by a script from the study's records, its provenance recorded with `paper_cli.py figure provenance`, and placed with `paper_cli.py place`.
+- Figures over tables. In Methods and Results, present comparisons, distributions, trends, effects with their intervals and time series as data figures (line, bar, dot-and-whisker or forest, violin or box plots, heat maps) or diagrams. Keep a table only for values a reader must look up exactly (settings, hyperparameters, dataset, participant or hardware characteristics, metadata) or when the venue requires one. Among the floats of Methods and Results, aim at about 60 % figures and 40 % tables.
+- A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text.
 - **Every number comes from a record.** Counts from `study/flow.json`, estimates from the outputs of the analysis log, planned values (sample size, outcomes, analysis plan) from the locked protocol revision, never recounted or retyped by hand.
 
 ## Disqualifiers

@@ -108,7 +108,7 @@
 
 The validation and characterization transcribe the measurement records; they never state a value that no record holds. HardwareX section 7, items 24 to 26, with every uncertainty reported as GUM clause 7 asks (`python skills/_core/checklists/checklist_cli.py check --guideline gum-reporting --root .`). Read the whole state first with `python skills/_core/measurement/measure_cli.py status --root .`.
 
-**Extent** 800–2000 words · the use case figure, the uncertainty budget table, the Bland-Altman plot
+**Extent** 800–2000 words · the use case figure, the uncertainty budget table, the Bland-Altman plot, the performance across the operating parameters as figures · at least as many figures as tables
 
 ## Block `vc-protocol`
 
@@ -120,7 +120,7 @@ Every instrument used to calibrate or to test the hardware, from `study/instrume
 
 ## Block `vc-uncertainty`
 
-One uncertainty budget per measured quantity and condition set, from `study/uncertainty/<quantity>.json` (`python skills/_core/measurement/measure_cli.py uncertainty status --root .`): the result with its unit, each component with its type (A from the replicates, B from the instrument), distribution, standard uncertainty and sensitivity coefficient, the combined standard uncertainty, the effective degrees of freedom, the coverage factor and its coverage probability, and the expanded uncertainty. A budget the status marks stale is recomputed by the operator before it is reported. Performance across the operating parameters (HardwareX item 25: range, resolution, repeatability, drift) is reported from these budgets, one per condition set.
+One uncertainty budget per measured quantity and condition set, from `study/uncertainty/<quantity>.json` (`python skills/_core/measurement/measure_cli.py uncertainty status --root .`): the result with its unit, each component with its type (A from the replicates, B from the instrument), distribution, standard uncertainty and sensitivity coefficient, the combined standard uncertainty, the effective degrees of freedom, the coverage factor and its coverage probability, and the expanded uncertainty. A budget the status marks stale is recomputed by the operator before it is reported. Performance across the operating parameters (HardwareX item 25: range, resolution, repeatability, drift) is reported from these budgets, one per condition set, and drawn as figures: the response across the range with its expanded uncertainty as error bars, and the drift as a line over time.
 
 ## Block `vc-agreement`
 
@@ -158,6 +158,8 @@ No paper of this line has been measured yet: the rules below carry the group's w
 - **Transitions come from the relation between claims.** A stock connector (*In addition*, *Furthermore*, *Additionally*, *Moreover*) is the exception: never the same one twice within five sentences.
 - **No promotional adjectives.** *Revolutionary*, *transformative*, *pivotal*, *comprehensive*, *crucial*, *novel* say nothing a reader can check; state the cost, the range or the uncertainty instead.
 - **A table has at least three columns and three rows**, except the two-column specifications table the template fixes. A smaller grid becomes a chart or a sentence. A chart is drawn by a script from the line's records, its provenance recorded with `paper_cli.py figure provenance`, and placed with `paper_cli.py place`.
+- Figures over tables. In Methods and Results, present comparisons, distributions, trends, effects with their intervals and time series as data figures (line, bar, dot-and-whisker or forest, violin or box plots, heat maps) or diagrams. Keep a table only for values a reader must look up exactly (settings, hyperparameters, dataset, participant or hardware characteristics, metadata) or when the venue requires one. Among the floats of Methods and Results, aim at about 60 % figures and 40 % tables.
+- A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text.
 - **Every number comes from a record.** Readings from the registered raw files, uncertainties from the budgets, agreement from the agreement record, costs from the bill of materials, planned values from the locked protocol revision, never recounted or retyped by hand.
 
 ## Disqualifiers

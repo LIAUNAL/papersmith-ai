@@ -94,7 +94,7 @@ topics, the Kitchenham and Charters guidelines. Every block below maps to
 PRISMA 2020 items; `python skills/systematic-review/scripts/review_cli.py
 checklist --root .` reports which items still lack a section.
 
-**Extent** 800–1500 words · one protocol flow diagram, the PRISMA flow figure
+**Extent** 800–1500 words · one protocol flow diagram, the PRISMA flow figure · at least as many figures as tables
 
 ## Block `m-protocol-registration` (item 24)
 
@@ -120,7 +120,7 @@ delegates it to the `diagram-author` agent, which writes
 m-protocol-registration`, which also checks this obligation; `/figure-review protocol-flow` (agents
 `figure-auditor` and `figure-visual-reviewer`) checks the compiled figure
 before the block is drafted. The caption enumerates the phases in order and
-decodes every shape and arrow style. The text cites the figure before it
+decodes every shape and arrow style in two to four words each, within four lines. The text cites the figure before it
 appears and walks the reader through it in one paragraph, phase by phase,
 saying what the review did at each one for this topic and which record under
 `review/` holds it.
@@ -173,7 +173,7 @@ applied it, and whether a threshold excluded studies.
 The synthesis method: how the taxonomy of themes and the problem classes
 were built (from the background's open problems and the extracted data, with
 the operator), the comparison dimensions each theme is read along, the
-comparison tables, and any meta-analysis (model, heterogeneity), bibliometric
+evidence figures (evidence map, forest plot) and comparison tables, and any meta-analysis (model, heterogeneity), bibliometric
 analysis or sensitivity analysis. When a study can fall in several themes,
 say so here.
 
@@ -198,6 +198,8 @@ Measured on the group's MDPI review A029 (Cardona-Álvarez, Álvarez-Meza and Ca
 - **Transitions come from the relation between claims.** A stock connector (*In addition*, *Furthermore*, *Additionally*, *Moreover*) is the exception: never the same one twice within five sentences. A029 opens 14 sentences with *In addition* and 16 with *Furthermore* or *Additionally*; that is the pattern to avoid.
 - **No promotional adjectives.** *Revolutionary*, *transformative*, *pivotal*, *comprehensive*, *crucial*, *novel* say nothing a reader can check; state what the evidence shows instead.
 - **A table has at least three columns and three rows.** A two-column or two-row table is a grid with nothing to cross: counts or measures across categories become a bar chart, the shares of one whole (at most six parts) a pie chart, and one or two values go in the sentence. The chart is drawn by a script from the review's records, its provenance recorded with `paper_cli.py figure provenance`, and placed with `paper_cli.py place`.
+- Figures over tables. In Methods and Results, present comparisons, distributions, trends, effects with their intervals and time series as data figures (line, bar, dot-and-whisker or forest, violin or box plots, heat maps) or diagrams. Keep a table only for values a reader must look up exactly (settings, hyperparameters, dataset, participant or hardware characteristics, metadata) or when the venue requires one. Among the floats of Methods and Results, aim at about 60 % figures and 40 % tables.
+- A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text.
 - **Every number comes from a record.** Counts from `review/prisma.json`, study values from `review/extraction.jsonl`, never recounted by hand.
 
 ## Disqualifiers

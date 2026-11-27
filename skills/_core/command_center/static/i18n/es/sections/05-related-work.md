@@ -323,9 +323,11 @@ de su informe:**
 
 **Las celdas son concisas y exactas:** un símbolo (`\checkmark`, `--`, una marca parcial) o
 como máximo tres palabras. Ninguna oración, ninguna cláusula, ninguna celda que sea solo
-una cita. La leyenda es la clave: decodifica cada símbolo y abreviatura que usan las
-celdas, de modo que la tabla se lee sin el cuerpo. La cita va en la celda del propio
-trabajo, una sola vez.
+una cita. La leyenda nombra lo que la tabla compara; una nota debajo de la tabla es la
+clave: decodifica cada símbolo y abreviatura que usan las celdas, de modo que la tabla se
+lee sin el cuerpo. La cita va en la celda del propio trabajo, una sola vez.
+
+- La leyenda de una figura o una tabla tiene como máximo cuatro renglones: un título que dice qué muestra el flotante, más la única definición que el lector necesita para leerlo. La notación y las demás definiciones van en una nota debajo de la tabla o en el texto.
 
 **Cabe en la caja de texto.** Reglas de `booktabs` y un `tabularx` a `\linewidth`, bajo
 las reglas de tablas de los contratos 02 y 03 (*Las tablas quedan dentro de la caja de
@@ -443,7 +445,7 @@ mismo a distintas profundidades.
 - Menos de 7 o más de 12 trabajos en la tabla de síntesis, sin contar la fila de la propuesta.
 - Una familia de esta sección sin fila en la tabla de síntesis.
 - Una columna de la tabla de síntesis no vinculada a un pilar, contribución o propiedad que declara la propuesta, o una que comparten todas las filas.
-- Una oración o una cláusula como prosa en una celda de la tabla de síntesis, o un símbolo que la leyenda no decodifica.
+- Una oración o una cláusula como prosa en una celda de la tabla de síntesis, o un símbolo que ni la leyenda ni la nota de la tabla decodifican.
 - Un artefacto que aparece antes de cualquier referencia a él, o que nada referencia en
   absoluto.
 - Una cita usada como sintagma nominal.

@@ -107,7 +107,7 @@
 ---
 # Materiales y métodos
 
-**Extensión** 1000–3950 palabras · 2 a 9 subsecciones
+**Extensión** 1000–3950 palabras · 2 a 9 subsecciones · al menos tantas figuras como tablas
 **Contiene** el planteamiento del problema, la maquinaria prestada, la propuesta (incluido su mecanismo de interpretabilidad) y un diagrama de síntesis
 **No contiene** ningún resultado, número medido, comparación ni protocolo de evaluación
 
@@ -160,7 +160,8 @@ abarca varias subsecciones, estas son consecutivas y nada las sigue.
 De 3 a 12 párrafos, en una subsección o en dos (sintéticos y reales, o una por fuente).
 Una o dos figuras: el protocolo de adquisición, siempre, para un conjunto real, y muestras
 representativas cuando ayudan. Cero a dos
-tablas: listas de variables o estadísticas descriptivas. Pocas ecuaciones: la segmentación o
+tablas: listas de variables, o estadísticas descriptivas que el lector debe consultar con exactitud;
+una distribución o una comparación de las variables es una figura. Pocas ecuaciones: la segmentación o
 el ventaneo que define una muestra es la habitual.
 
 Secuencia de párrafos:
@@ -325,7 +326,9 @@ sobre la formulación.
   esta sección. Cada panel lleva en la fuente la marca `% node:`; las entradas, etapas,
   pérdidas y salidas que los rodean son contexto y no llevan ninguna.
 - **La leyenda enumera los paneles en ese orden** y decodifica todo lo que la figura
-  codifica: si hay colores, la leyenda dice qué significa cada uno.
+  codifica: si hay colores, la leyenda dice qué significa cada uno, cada entrada en dos
+  a cuatro palabras, de modo que la leyenda no pase de cuatro renglones; la leyenda
+  interna de la figura repite la decodificación, y cualquier otra definición va en el texto.
 - **Muestra el método, no el experimento.** En él no aparece ningún conjunto de datos ni
   ninguna línea base, ni como panel ni como contexto; esos pertenecen al propio diagrama
   de la configuración experimental. Un recuadro que aparece en ambos significa que uno
@@ -517,6 +520,8 @@ distribución predictiva al final. El entrenamiento y la evaluación son de la c
   ecuaciones propias de la propuesta no llevan cita.
 - **Una figura es el sujeto de su oración**: *Figure 2 illustrates the
   architecture*. Nunca es *Fig.*, ni un paréntesis suelto.
+- Figuras antes que tablas. En Métodos y Resultados, presente las comparaciones, las distribuciones, las tendencias, los efectos con sus intervalos y las series de tiempo como figuras de datos (de líneas, de barras, de punto y bigote o de bosque, de violín o de caja, mapas de calor) o como diagramas. Conserve una tabla solo para los valores que el lector debe consultar con exactitud (configuraciones, hiperparámetros, conjunto de datos, características de los participantes o del hardware, metadatos) o cuando la revista exija una. Entre los flotantes de Métodos y Resultados, apunte a cerca de 60 % de figuras y 40 % de tablas.
+- La leyenda de una figura o una tabla tiene como máximo cuatro renglones: un título que dice qué muestra el flotante, más la única definición que el lector necesita para leerlo. La notación y las demás definiciones van en una nota debajo de la tabla o en el texto.
 
 ## Entradas
 

@@ -97,7 +97,7 @@
 ---
 # Results and Discussion
 
-**Extent** 1170–4150 words · two to five content blocks, plus limitations last
+**Extent** 1170–4150 words · two to five content blocks, plus limitations last · at least as many figures as tables
 **Input** the results of the experiments
 **Carries** 3–12 figures and 0–8 tables — the artefact-densest section of the paper
 **Does not carry** a preamble, a closing artefact, or a single numbered equation
@@ -279,10 +279,14 @@ direction.
 
 ## The artefact type follows the claim
 
-A grid of numbers is a table. A spatial, temporal, or spectral pattern is a figure.
-This is not a stylistic preference: a block whose claim is a comparison across cells
-takes tables and may carry no figure at all, while a block whose claim is a pattern
-takes figures and may carry no table.
+A comparison, a distribution, a trend, an effect with its interval, and a spatial,
+temporal, or spectral pattern are figures: dot-and-whisker or forest plots against the
+baselines, grouped bars, violin or box plots over the runs, lines over a sweep, heat
+maps over a grid of conditions. A grid of numbers stays a table only when a reader
+must look up each value exactly, or when the venue requires one. This is not a
+stylistic preference: a block whose claim is a pattern takes figures and may carry no
+table, and a block whose claim is a comparison across cells takes its figure first and
+a table only for the exact values beside it.
 
 ## Citations
 
@@ -333,6 +337,8 @@ document): never smaller, and never at the body size.
   values, its provenance recorded with `paper_cli.py figure provenance`, and
   placed with `paper_cli.py place`. Keep such a small table only when its
   cells are words no chart can carry.
+- Figures over tables. In Methods and Results, present comparisons, distributions, trends, effects with their intervals and time series as data figures (line, bar, dot-and-whisker or forest, violin or box plots, heat maps) or diagrams. Keep a table only for values a reader must look up exactly (settings, hyperparameters, dataset, participant or hardware characteristics, metadata) or when the venue requires one. Among the floats of Methods and Results, aim at about 60 % figures and 40 % tables.
+- A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text.
 
 ## LIA house style
 
@@ -366,8 +372,9 @@ ablation. Subsections close on a *Taken together* synthesis; no section closes o
 - **The best value of each column is in bold, and the caption says so**: *Bold marks
   the best result for each metric.*
 - **A figure or table is the subject of its sentence** (*Table 4 compares*, *As shown
-  in Figure 5,*), and its caption is a noun phrase followed by one to three sentences
-  that explain the panels, colours and abbreviations — about 30 to 60 words.
+  in Figure 5,*), and its caption is a noun phrase followed by the one sentence a
+  reader needs to read the panels, colours or bold — at most four lines, about 60
+  words; further abbreviations go in a table note below the table or in the text.
 
 ## Inputs
 
@@ -423,7 +430,7 @@ ablation. Subsections close on a *Taken together* synthesis; no section closes o
 - A conceded loss paired with an asserted gain instead of a measured one.
 - A deficiency justified here and absent from limitations.
 - A citation credited to a result.
-- A table used for a pattern, or a figure used for a comparison grid.
+- A table used for a pattern, or a table used for a comparison a figure could carry when no reader must look up its values exactly.
 - Limitations placed anywhere but last.
 - Interpretation of a result no artefact contains.
 - A comparison against the baselines with no statistical significance test.

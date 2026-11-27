@@ -69,7 +69,7 @@ theme, quote, count and agreement figure comes from a record the operator kept
 or signed off. The results report; interpretation, comparison with other
 studies and implications wait for the discussion.
 
-**Extent** 1000–2500 words · one table of the themes and subthemes, or one table of the items with their agreement per round
+**Extent** 1000–2500 words · a thematic map of the themes and subthemes (a diagram of their relations, or a code co-occurrence heat map), or the items' agreement per round as a figure, with a table of the themes or of the items only for the definitions or wording a reader looks up · at least as many figures as tables
 
 ## Block `r-synthesis`
 
@@ -78,8 +78,10 @@ SRQR item 16, COREQ items 30 to 32. The main findings. For a
 operator signed off (`python skills/_core/qualitative/qual_cli.py themes
 status --root .` must report the sign-off current before the block is
 drafted), each with its definition and its relation to the others, the diverse
-and minor themes as well as the major ones, and a table or a diagram of the
-themes when it helps. For a consensus study, the items that reached consensus
+and minor themes as well as the major ones, and a thematic map of the themes:
+a diagram of the themes and their relations, or a heat map of code
+co-occurrence; a table of the themes carries only the definitions a reader
+looks up. For a consensus study, the items that reached consensus
 and those that did not, which the consensus blocks report round by round; for
 an experience report, what was observed, which `r-experience-what-was-done`
 reports. A theme never rests on a count of how many participants said
@@ -111,8 +113,10 @@ results of each round, read from `python
 skills/_core/qualitative/consensus_cli.py round status --root .`: the members
 invited and responding, and for each item the number of ratings, the percent
 agreement, the median and the interquartile range, whether it reached the
-pre-specified threshold and its change from the previous round. One table of
-the items with their agreement per round, then the final list of agreed items
+pre-specified threshold and its change from the previous round. One figure of
+the agreement per round (each item's percent agreement or median across the
+rounds, against the threshold), a table of the items only for their exact
+wording and values, then the final list of agreed items
 in the wording of the last round. A round whose record is stale (its response
 file, the plan or the protocol changed since) is not reported until the
 operator records it again; the assistant never enters, corrects or completes a
@@ -163,7 +167,7 @@ no effect inferred from it. A count comes from the authors' records.
 
 No paper of this line has been measured yet: the rules below carry the group's writing rules from the experimental and review lines to a qualitative, participatory or consensus study, and the extent at the top of this contract stays the target. They read the records the line keeps: the locked protocol revision `protocol/study-protocol-<slug>-vNN.md` and `study/protocol.lock.json` when the study has one, the ethics record `study/ethics.json`, the transcript register `study/transcripts.json`, the codebook versions `study/codebook.json`, the theme sign-offs `study/themes.json` and, for a consensus study, the panel, plan, rounds and MICMAC records under `study/consensus/`.
 
-**Measured size.** None yet; an SRQR results section of this extent opens on the table of themes and gives each theme its paragraph and its quotes.
+**Measured size.** None yet; an SRQR results section of this extent opens on the thematic map and gives each theme its paragraph and its quotes.
 
 **Human boundaries (every section of this line).**
 
@@ -179,6 +183,8 @@ No paper of this line has been measured yet: the rules below carry the group's w
 - **Transitions come from the relation between claims.** A stock connector (*In addition*, *Furthermore*, *Additionally*, *Moreover*) is the exception: never the same one twice within five sentences.
 - **No promotional adjectives.** *Revolutionary*, *transformative*, *pivotal*, *comprehensive*, *crucial*, *novel* say nothing a reader can check; state what the material shows instead.
 - **A table has at least three columns and three rows.** A two-column or two-row table is a grid with nothing to cross: counts across categories become a bar chart, the shares of one whole (at most six parts) a pie chart, and one or two values go in the sentence. The chart is drawn by a script from the study's records, its provenance recorded with `paper_cli.py figure provenance`, and placed with `paper_cli.py place`.
+- Figures over tables. In Methods and Results, present comparisons, distributions, trends, effects with their intervals and time series as data figures (line, bar, dot-and-whisker or forest, violin or box plots, heat maps) or diagrams. Keep a table only for values a reader must look up exactly (settings, hyperparameters, dataset, participant or hardware characteristics, metadata) or when the venue requires one. Among the floats of Methods and Results, aim at about 60 % figures and 40 % tables.
+- A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text.
 - **Every number comes from a record.** Counts of participants and transcripts from `study/transcripts.json` or the panel record, agreement, medians and interquartile ranges from the recorded round results, MICMAC ranks from the recorded computation, planned values (sample, rounds, threshold) from the locked protocol and the consensus plan, never recounted or retyped by hand.
 
 ## Disqualifiers

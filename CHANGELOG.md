@@ -11,6 +11,33 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **Figures over tables in Methods and Results, for every paper line.** Each line's Methods and
+  Results/Discussion contracts carry one rule: comparisons, distributions, trends, effects with
+  their intervals and time series are drawn as data figures (line, bar, dot-and-whisker or forest,
+  violin or box plots, heat maps) or diagrams. A table is kept only for values a reader looks up
+  exactly (settings, hyperparameters, dataset, participant or hardware characteristics, metadata)
+  or when the venue requires one. Among the floats of those sections the target is about 60 %
+  figures. Extent lines now allow at least as many figures as tables, and per-line sentences that
+  asked for a table per outcome or per theme ask for a figure. The Spanish contract copies, the
+  review board and the review flow template follow.
+- **New `verify` check `figure-table-balance`.** It counts figure and table environments
+  (`longtable` included) in the Methods, experimental set-up, Results, Discussion, data records,
+  technical validation, hardware description and validation sections, from the block markers. It
+  fails when figures are under 60 % of those floats; a section set with no table passes.
+- **Captions are at most four lines.** Every contract that governs figures or tables says so:
+  notation and further definitions go in a table note or the text. The new `verify` check
+  `caption-length` fails on a caption longer than 70 words (about four single-column lines); a
+  paper with no caption passes.
+- **Chart helpers for run scripts.** `ps_figures` adds `interval_plot`, `grouped_bars`,
+  `distribution_plot` (violin or box) and `line_plot`, drawn in the house style, so a results table
+  can become a figure without a new plotting stack.
+- **Agents read the same rules.** The redactor drafts figures first and short captions; the
+  paper-reviewer reads the figure-to-table ratio and long captions under Clarity; the venue
+  adapter keeps 60/40 when the venue allows it; the figure-review `numeric-text` advisory and the
+  manuscript QA advice offer a data figure first.
+
 ## 0.84.6
 
 - **The accepted idea on the board is English.** `paper_type_cli.py accept` now takes the

@@ -86,13 +86,13 @@ It reads the synthesis along a cross-cutting axis chosen with the operator
 (a life cycle, a pipeline, a level of maturity) that cuts across the themes,
 so that it says something the thematic subsections could not.
 
-**Extent** 450–1200 words
+**Extent** 450–1200 words · at least as many figures as tables, the results' evidence figures cited rather than redrawn
 
 ## Block `d-principal-findings`
 
 The contributions are revisited one by one with what the evidence supports. One paragraph per stage of the cross-cutting axis or per
 research question, interpreting the pattern and citing the groups of studies
-that support it, never restating the tables.
+that support it, never restating the figures or the tables.
 
 ## Block `d-other-evidence`
 
@@ -149,11 +149,13 @@ Measured on the group's MDPI review A029 (Cardona-Álvarez, Álvarez-Meza and Ca
 - **Transitions come from the relation between claims.** A stock connector (*In addition*, *Furthermore*, *Additionally*, *Moreover*) is the exception: never the same one twice within five sentences. A029 opens 14 sentences with *In addition* and 16 with *Furthermore* or *Additionally*; that is the pattern to avoid.
 - **No promotional adjectives.** *Revolutionary*, *transformative*, *pivotal*, *comprehensive*, *crucial*, *novel* say nothing a reader can check; state what the evidence shows instead.
 - **A table has at least three columns and three rows.** A two-column or two-row table is a grid with nothing to cross: counts or measures across categories become a bar chart, the shares of one whole (at most six parts) a pie chart, and one or two values go in the sentence. The chart is drawn by a script from the review's records, its provenance recorded with `paper_cli.py figure provenance`, and placed with `paper_cli.py place`.
+- Figures over tables. In Methods and Results, present comparisons, distributions, trends, effects with their intervals and time series as data figures (line, bar, dot-and-whisker or forest, violin or box plots, heat maps) or diagrams. Keep a table only for values a reader must look up exactly (settings, hyperparameters, dataset, participant or hardware characteristics, metadata) or when the venue requires one. Among the floats of Methods and Results, aim at about 60 % figures and 40 % tables.
+- A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text.
 - **Every number comes from a record.** Counts from `review/prisma.json`, study values from `review/extraction.jsonl`, never recounted by hand.
 
 ## Disqualifiers
 
-- A paragraph that restates a table or a subsection of the results.
+- A paragraph that restates a figure, a table or a subsection of the results.
 - A direction that no challenge of the included studies supports.
 - Challenges or directions written as items: bullets, a numbered list, bold or italic lead-ins, or one-line challenges.
 - A challenge paragraph shorter than six lines or longer than eight, or one that cites none of the included studies that report it.

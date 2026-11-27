@@ -1050,12 +1050,17 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: the final, approved experiments, never the iteration rounds behind them.
 #: 02 and 03 re-captured (0.80.0): a table of two columns or two rows becomes a
 #: bar or pie chart, or the sentence.
+#: 01, 02, 03 and 05 re-captured (figures-over-tables, S2 and S6): 01, 02 and 03 carry
+#: the shared "Figures over tables" rule and the four-line caption rule, their extent
+#: lines allow at least as many figures as tables, and 03 draws comparisons as figures,
+#: keeping a table for the exact values; 05 moves the synthesis-table legend to a table
+#: note and carries the caption rule.
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
-    "01-materials-and-methods.md": "6828a8784f4e8691e5d51b9c9700ad56b1fcc5ce1e93d098eb574dce1af9d689",
-    "02-experimental-setup.md": "658d74bd7a9696bfe481a6973d760efb13e13f5d777beb08be4b13c1ee7d349d",
-    "03-results-and-discussion.md": "26726784f15694375482955d0cbf2b13baf3752af1e1726549ec5b89c8e9052f",
+    "01-materials-and-methods.md": "25a94e768adba8d165d5c6b8768e469fe0ab0d132336f9855099943514b68557",
+    "02-experimental-setup.md": "9afcd323660245c0efeb2d7c7f9086227a01bdcb7f018f34345399cb6920b456",
+    "03-results-and-discussion.md": "c9bd18bd2ab6494646a6686755db5e55569952bf2e43f405a8e0fd0c40dbdfb1",
     "04-limitations.md": "42bb9e8fa82c6b5b2734f25b06b8d2f772a25540a060de4097098ed2437ea66a",
-    "05-related-work.md": "35461f08cd877a198b13f19202ee6a2091024d35e736f91563b45002fbc80c76",
+    "05-related-work.md": "1ce654c4b2da6d7a721a12b08fa7ad46581fcaf8d8f23c687abef432f7c1f174",
     "06-introduction.md": "72e5c2a1c302a7008f7a8a5d0ba4d4a64ec999058673050be08857f048a8dc1a",
     "07-conclusions.md": "cfc56c03753c4c2c570b0b4ac6e622141c2109027c7b475f26d46ad1403d1ef6",
     "08-abstract.md": "42080b0a390616d6a765b189f069242d38b04d9080f6a4a37507904e31336e32",

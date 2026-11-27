@@ -107,7 +107,7 @@
 ---
 # Materials and Methods
 
-**Extent** 1000–3950 words · 2 to 9 subsections
+**Extent** 1000–3950 words · 2 to 9 subsections · at least as many figures as tables
 **Carries** the problem setup, the borrowed machinery, the proposal (its interpretability mechanism included), and one summary diagram
 **Does not carry** any result, measured number, comparison, or evaluation protocol
 
@@ -160,7 +160,8 @@ spans several subsections, they are consecutive and nothing follows them.
 3 to 12 paragraphs, in one subsection or two (synthetic and real, or one per source).
 One or two figures — the acquisition protocol, always, for a real dataset, and
 representative samples when they help. Zero to two
-tables — variable lists or summary statistics. Few equations: the segmentation or
+tables — variable lists, or summary statistics a reader must look up exactly; a
+distribution or a comparison of the variables is a figure. Few equations: the segmentation or
 windowing that defines a sample is the usual one.
 
 Paragraph sequence:
@@ -324,7 +325,9 @@ about the formulation.
   panel carries the source's `% node:` marker; the inputs, stages, losses and outputs
   around them are context and carry none.
 - **The caption enumerates the panels in that order** and decodes anything the figure
-  encodes — if there are colours, the caption says what each one means.
+  encodes — if there are colours, the caption says what each one means — each entry
+  in two to four words, so the caption stays within four lines; the in-figure legend
+  repeats the decoding, and any further definition goes in the text.
 - **It shows the method, not the experiment.** No dataset and no baseline appears in
   it, as a panel or as context; those belong to the experimental setup's own diagram.
   A box appearing in both means one of the two is wrong. Neither does a metric or a
@@ -516,6 +519,8 @@ predictive distribution last. Training and evaluation are the experimental setup
   proposal's own equations carry no citation.
 - **A figure is the subject of its sentence**: *Figure 2 illustrates the
   architecture*. It is never *Fig.*, and never a bare parenthesis.
+- Figures over tables. In Methods and Results, present comparisons, distributions, trends, effects with their intervals and time series as data figures (line, bar, dot-and-whisker or forest, violin or box plots, heat maps) or diagrams. Keep a table only for values a reader must look up exactly (settings, hyperparameters, dataset, participant or hardware characteristics, metadata) or when the venue requires one. Among the floats of Methods and Results, aim at about 60 % figures and 40 % tables.
+- A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text.
 
 ## Inputs
 
