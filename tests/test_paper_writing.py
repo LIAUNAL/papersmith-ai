@@ -4949,7 +4949,12 @@ class RequirementCorpusEqualityGoldenTests(unittest.TestCase):
     `contributions` (`materials-and-methods.mm-proposal` is now its sole
     producer, and `block-4b` requires the fact it used to produce),
     appended last so the tuple order matches the header's own
-    `requires_facts` declaration order."""
+    `requires_facts` declaration order.
+
+    `illustrative-results` (S2) re-recorded exactly one addition:
+    `results-and-discussion.rd-illustrative`, the new required block that
+    shows the novelty at work before the general task, requires
+    `results`."""
 
     #: `experimental-setup.es-assessment`'s pre-ruling `requires_facts`
     #: value set, and `title-and-keywords.keywords`'s — the exact two
@@ -5019,6 +5024,7 @@ class RequirementCorpusEqualityGoldenTests(unittest.TestCase):
         "results-and-discussion.rd-contribution-blocks": ("contributions", "results"),
         "results-and-discussion.rd-cost": ("results", "implementation"),
         "results-and-discussion.rd-general-task": ("results",),
+        "results-and-discussion.rd-illustrative": ("results",),
         "title-and-keywords.keywords": (),
         "title-and-keywords.title": ("contributions",),
     }

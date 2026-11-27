@@ -211,6 +211,13 @@
      "id": "2.4",
      "name": "Novelty Gap Detection",
      "status": "PENDING"
+    },
+    {
+     "desc": "No accepted idea yet: accept the plausibility report first",
+     "detail": "No accepted idea yet: accept the plausibility report first",
+     "id": "2.5",
+     "name": "Paper Type",
+     "status": "PENDING"
     }
    ],
    "tools": [
@@ -1438,6 +1445,7 @@
   "G3": "PENDING",
   "G4": "PENDING"
  },
+ "paper_kind": "experimental",
  "pdf_available": false,
  "pipeline_stages": [
   {
@@ -1640,6 +1648,13 @@
      "detail": "Identification of conceptual voids and opportunity",
      "id": "2.4",
      "name": "Novelty Gap Detection",
+     "status": "PENDING"
+    },
+    {
+     "desc": "No accepted idea yet: accept the plausibility report first",
+     "detail": "No accepted idea yet: accept the plausibility report first",
+     "id": "2.5",
+     "name": "Paper Type",
      "status": "PENDING"
     }
    ],
@@ -2896,6 +2911,11 @@
    "blocks_total": 0,
    "blocks_written": 0,
    "canonical_blocks": [
+    {
+     "id": "results-and-discussion.rd-illustrative",
+     "question": "What does the novelty do at its basic stages, shown on representative examples before any aggregate metric?",
+     "role": "Illustrative Results of the Novelty"
+    },
     {
      "id": "results-and-discussion.rd-general-task",
      "question": "Are the main hypotheses stated in the introduction corroborated?",

@@ -162,8 +162,8 @@ the section specifies, in order. It may point to the closing diagram.
 
 ## Subsection 1 — Assessment and Method Comparison
 
-Nine blocks. Each one is conditional on the paper having what it covers, except the
-metrics.
+Ten blocks. Each one is conditional on the paper having what it covers, except the
+metrics and, in an applied-AI paper, the illustrative instruments.
 
 **1. The datasets** — only when the methods section does not own them. First. When
 there are several scenarios, the controlled ones come first — synthetic, then
@@ -224,11 +224,35 @@ the borrowed piece it modifies, under the same protocol. Then the sensitivity sw
 each knob the methods section exposes that is varied, with its range. Each variant and
 each sweep is named here so the results can only read it.
 
+**10. The illustrative instruments** — whenever the task is time series, regression,
+classification, clustering or similar, which covers applied-AI papers in general. The
+results open on what the novelty does at its basic stages before any aggregate
+performance (`rd-illustrative`), and this block declares what those figures read, for
+each item that applies:
+
+- **which representative examples** — the instances, windows or subjects shown, on the
+  toy set and on the most relevant real or semi-synthetic dataset, and the criterion
+  that picked them (a median case, a hard case, a known structure), never the best run;
+- **which comparators** — the most relevant state-of-the-art methods drawn beside the
+  proposal, a subset of the competing methods above;
+- **which band method** — model-native (a predictive distribution, an ensemble),
+  Monte Carlo over the inputs or the parameters, or Monte Carlo dropout, with the
+  number of samples and the interval it reports; or the statement that the model gives
+  no band;
+- **which embedding method and points** — UMAP, t-SNE or similar, with its settings,
+  and the points of the architecture where the latent space is taken; and, for
+  classification, the confusion matrices and ROC curves read;
+- **which internal quantities and loss terms** — the representation shown as an image
+  or a plot, and the loss or regularizer terms whose histories are drawn.
+
+An item from the results' list that does not apply is named here with the reason, so
+its absence in the results is a decision, not an omission.
+
 ### What is cited here
 
 **One citation per compared object.** One per competing method, one per axis or
-architecture swept, one per qualitative instrument, and one per **non-standard**
-metric.
+architecture swept, one per qualitative instrument, one per illustrative band or
+embedding method, and one per **non-standard** metric.
 
 **Standard metrics carry an equation, not a citation.** The same asymmetry as the
 methods section: what is borrowed is cited, what is conventional is defined.
@@ -476,6 +500,9 @@ ablation here — the rest surface them in the results, which this contract forb
   where a formalization exists.
 - An axis swept without its structure declared.
 - A property claimed by a contribution with no instrument named here.
+- An applied-AI paper whose assessment declares no illustrative instruments — no
+  representative examples, comparators, band method or embedding method — or leaves
+  an inapplicable item unnamed.
 - An instrument named under a different name than the property it measures carries in
   the problem statement and the contribution.
 - An artefact that appears before any reference to it, or that nothing references at

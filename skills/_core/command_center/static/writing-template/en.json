@@ -131,7 +131,8 @@
       "extent": "1170–4150 words · 2 to 5 content blocks · 3–12 figures and 0–8 tables",
       "structure": [
         {"label": "Block 0 — Controlled scenario", "text": "When declared: the proposal on data with known ground truth."},
-        {"label": "Block 1 — The general task", "text": "40% to 66% of the section: main metric, main data, baselines, closing on the declared statistical test."},
+        {"label": "Block 0b — Illustrative results", "text": "Before any aggregate metric: what the novelty does at its basic stages — the improved representation, the convergence and interplay of loss or regularizer terms, prediction examples with the input window, target, comparators and a confidence band, or embeddings at key points, confusion matrices and ROC curves for classification."},
+        {"label": "Block 1 — The general task", "text": "35% to 55% of the section: main metric, main data, baselines, closing on the declared statistical test."},
         {"label": "Block 2 — One block per contribution", "text": "Each validates its property with the instrument the set-up named; an interpretability contribution is read twice, qualitatively and by its faithfulness measure."},
         {"label": "Block 3 — Ablation and sensitivity", "text": "One reading per ablation variant, then each sweep."},
         {"label": "Block 4 — Cost", "text": "When cost is claimed: one or two paragraphs and one figure."},

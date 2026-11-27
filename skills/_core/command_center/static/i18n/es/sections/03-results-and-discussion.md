@@ -11,6 +11,29 @@
   },
   "blocks": [
     {
+      "id": "rd-illustrative",
+      "requires_facts": [
+        {
+          "value": "results",
+          "source": {
+            "file": "sections/03-results-and-discussion.md",
+            "quote": "Los registros ilustrativos — historiales por término de la pérdida, predicciones representativas con sus comparadores y bandas, instantáneas de la representación, incrustaciones"
+          }
+        }
+      ],
+      "requires_declarations": [],
+      "citations": "resolution",
+      "after": [
+        {
+          "target": "materials-and-methods.mm-proposal",
+          "source": {
+            "file": "sections/03-results-and-discussion.md",
+            "quote": "lo que hace la novedad en sus etapas básicas"
+          }
+        }
+      ]
+    },
+    {
       "id": "rd-general-task",
       "requires_facts": [
         {
@@ -22,7 +45,16 @@
         }
       ],
       "requires_declarations": [],
-      "citations": "resolution"
+      "citations": "resolution",
+      "after": [
+        {
+          "target": "results-and-discussion.rd-illustrative",
+          "source": {
+            "file": "sections/03-results-and-discussion.md",
+            "quote": "Antes de cualquier artefacto de desempeño agregado (error, R², exactitud y similares), los Resultados muestran lo que hace la novedad en sus etapas básicas"
+          }
+        }
+      ]
     },
     {
       "id": "rd-contribution-blocks",
@@ -97,7 +129,7 @@
 ---
 # Resultados y Discusión
 
-**Extensión** 1170–4150 palabras · de dos a cinco bloques de contenido, más las limitaciones al final · al menos tantas figuras como tablas
+**Extensión** 1170–4150 palabras · de tres a seis bloques de contenido, más las limitaciones al final · al menos tantas figuras como tablas
 **Entrada** los resultados de los experimentos
 **Contiene** 3–12 figuras y 0–8 tablas — la sección del artículo con mayor densidad de artefactos
 **No contiene** un preámbulo, un artefacto de cierre ni una sola ecuación numerada
@@ -127,9 +159,24 @@ datos cuya verdad de referencia se conoce — sintéticos o simulados — mostra
 problema nombra en condiciones en las que puede verificarse. Es breve, y es lo que
 hace creíbles los bloques sobre datos reales.
 
+**Luego los resultados ilustrativos**, siempre (`rd-illustrative`), antes de la tarea general
+y antes de cualquier otro bloque que reporte una métrica.
+
+**Resultados ilustrativos antes del desempeño.** Antes de cualquier artefacto de desempeño agregado (error, R², exactitud y similares), los Resultados muestran lo que hace la novedad en sus etapas básicas: (a) la representación mejorada: para una red informada por la física, un transformer o una arquitectura nueva, mapas imshow o gráficas de las cantidades internas relevantes sobre ejemplos representativos; (b) para una pérdida o un regularizador nuevo o modificado, cómo converge y cómo interactúan sus términos durante el entrenamiento; (c) para series de tiempo, regresión y tareas similares, ejemplos de predicción sobre el conjunto de juguete y sobre el conjunto de datos real o semisintético más relevante, que muestran la ventana de entrada y la salida estimada frente al objetivo y a los comparadores del estado del arte más relevantes, con una banda de confianza o de variabilidad cuando el modelo la proporciona o cuando Monte Carlo o Monte Carlo dropout pueden estimarla; (d) para clasificación, agrupamiento y tareas similares, espacios latentes en puntos clave de la arquitectura (UMAP, t-SNE o similares) que muestran la representación y la separabilidad o el agrupamiento, además de matrices de confusión y curvas ROC cuando apliquen.
+
+El bloque contiene cada ítem de (a) a (d) que la novedad y la tarea admiten, y nombra
+en la configuración experimental, nunca aquí, los que no aplican. Lee solo los
+instrumentos ilustrativos que declaró la configuración — los ejemplos representativos,
+los comparadores, el método de banda (nativo del modelo, Monte Carlo o Monte Carlo
+dropout) y el método de incrustación con los puntos de la arquitectura en que se toma —
+y los registros que las ejecuciones guardaron para ellos. **Estas figuras muestran
+comportamiento, no superioridad**: cada una se lee con el movimiento de tres tiempos, su
+mecanismo ligado al componente de la propuesta que ilustra, y ningún número agregado
+aparece en ella. Ocupa entre el 15% y el 25% de la sección.
+
 **1. La tarea general.** La evidencia de que la propuesta funciona en la tarea para la que fue
 construida: la métrica principal, sobre los datos principales, contra las líneas base. Este bloque
-contiene el grueso de la sección — entre el 40% y el 66% de ella — y cierra con la prueba
+contiene el grueso de la sección — entre el 35% y el 55% de ella — y cierra con la prueba
 estadística que declaró la configuración.
 
 **2. Un bloque por contribución.** Cada uno valida la propiedad que esa contribución
@@ -176,7 +223,9 @@ La obligación va en ambos sentidos:
 - **cada contribución tiene un bloque aquí**, y
 - **cada bloque aquí pertenece a una contribución o a la tarea general.**
 
-Un bloque que no pertenece a ninguna es una medición que nadie pidió.
+El bloque ilustrativo pertenece a las contribuciones: muestra cada una en acción antes de
+que la tarea general la mida. Un bloque que no pertenece a ninguna es una medición que
+nadie pidió.
 
 ## Cómo se presenta un resultado
 
@@ -384,6 +433,7 @@ explícita. Las subsecciones cierran con una síntesis *Taken together*; ninguna
 
 | Entrada | Desbloquea |
 |---|---|
+| Los **registros ilustrativos** — historiales por término de la pérdida, predicciones representativas con sus comparadores y bandas, instantáneas de la representación, incrustaciones con sus etiquetas, conteos de confusión y puntos ROC | `rd-illustrative` |
 | Los **resultados** — las ejecuciones principales, contra las líneas base | `rd-general-task` |
 | La **implementación** — la configuración más exigente, y el hardware declarado en la configuración experimental | `rd-cost` |
 
@@ -391,6 +441,8 @@ explícita. Las subsecciones cierran con una síntesis *Taken together*; ninguna
 
 | Bloque | Depende de |
 |---|---|
+| `results-and-discussion.rd-illustrative` — lo que hace la novedad en sus etapas básicas | `materials-and-methods.mm-proposal` — los componentes de la propuesta que cada ilustración muestra en acción |
+| `results-and-discussion.rd-general-task` — antes de cualquier artefacto de desempeño agregado, los Resultados muestran lo que hace la novedad en sus etapas básicas | `results-and-discussion.rd-illustrative` — los resultados ilustrativos, el bloque inmediatamente anterior |
 | `results-and-discussion.rd-contribution-blocks` — un bloque de mecanismo abre nombrando el resultado del bloque anterior como la pregunta que viene a responder | `results-and-discussion.rd-general-task` — la evidencia de la tarea general, el bloque inmediatamente anterior |
 | `results-and-discussion.rd-contribution-blocks` — La propiedad que una contribución prometió, y el instrumento que la configuración nombró para ella | `materials-and-methods.mm-proposal` — las contribuciones enumeradas a las que se rastrea cada propiedad |
 | `results-and-discussion.rd-cost` — un bloque de mecanismo abre nombrando el resultado del bloque anterior como la pregunta que viene a responder | `results-and-discussion.rd-contribution-blocks` — la validación por contribución, el bloque inmediatamente anterior al costo |
@@ -408,6 +460,7 @@ explícita. Las subsecciones cierran con una síntesis *Taken together*; ninguna
 
 ## Descalificadores
 
+- Un desempeño agregado mostrado antes de cualquier resultado ilustrativo de la novedad.
 - Una tabla de dos columnas o dos filas cuyos valores podría llevar un diagrama de barras o de pastel, o la oración.
 - Un mecanismo interpretativo, un análisis de línea base o un argumento de interpretabilidad
   cualitativa enunciado sin una cita que lo sustente.

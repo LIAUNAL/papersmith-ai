@@ -1055,10 +1055,15 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: lines allow at least as many figures as tables, and 03 draws comparisons as figures,
 #: keeping a table for the exact values; 05 moves the synthesis-table legend to a table
 #: note and carries the caption rule.
+#: 02 and 03 re-captured (illustrative-results, S2): 03 carries the "Illustrative
+#: results before performance" rule, the required `rd-illustrative` block before the
+#: general task (whose share drops to 35-55 %) and the performance-first
+#: disqualifier; 02's assessment gains a tenth block declaring the illustrative
+#: instruments (examples, comparators, band method, embedding method and points).
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
     "01-materials-and-methods.md": "25a94e768adba8d165d5c6b8768e469fe0ab0d132336f9855099943514b68557",
-    "02-experimental-setup.md": "9afcd323660245c0efeb2d7c7f9086227a01bdcb7f018f34345399cb6920b456",
-    "03-results-and-discussion.md": "c9bd18bd2ab6494646a6686755db5e55569952bf2e43f405a8e0fd0c40dbdfb1",
+    "02-experimental-setup.md": "a9736b136ab1a6720a813f8e3e8a4f7f25ba3ad4aa64d7338c991c732a516df8",
+    "03-results-and-discussion.md": "32e633ebf59dddcc48ec1c3944221faad9a6ee7e960c2fe57f324775f8863cf9",
     "04-limitations.md": "42bb9e8fa82c6b5b2734f25b06b8d2f772a25540a060de4097098ed2437ea66a",
     "05-related-work.md": "1ce654c4b2da6d7a721a12b08fa7ad46581fcaf8d8f23c687abef432f7c1f174",
     "06-introduction.md": "72e5c2a1c302a7008f7a8a5d0ba4d4a64ec999058673050be08857f048a8dc1a",

@@ -2313,6 +2313,24 @@ sentence too: "A figure or table caption is at most four lines: a title that say
 The redactor drafts to both rules, the paper-reviewer reads them under
 Clarity, and a venue's own limits on figures and tables still win.
 
+**Illustrative results before performance.** In an applied-AI paper (the
+experimental line), the Results show what the novelty does at its basic stages
+before any error, R², accuracy or other aggregate number: the improved
+representation as imshow maps or plots on representative examples; a new loss or
+regularizer converging, term by term; prediction examples on the toy set and the
+most relevant real or semi-synthetic dataset, with the input window, the target,
+the most relevant comparators and a confidence or variability band (model-native,
+Monte Carlo or Monte Carlo dropout); and, for classification or clustering, latent
+spaces (UMAP, t-SNE or similar), confusion matrices and ROC curves. The results
+contract holds these in a required block, `rd-illustrative`, ordered before the
+general task, and disqualifies aggregate performance shown first; the
+experimental-setup contract declares the examples, comparators, band method and
+embedding method they read. The run script draws them with `forecast_plot`,
+`loss_terms_plot`, `heatmap_plot`, `embedding_plot`, `confusion_matrix_plot` and
+`roc_plot`; the redactor drafts `rd-illustrative` first, and the paper-reviewer
+reads a Results that opens on aggregate metrics without them as a Quality and
+Clarity weakness.
+
 **Venue adaptation: the `venue` verbs and the `venue-adapter` agent.** A journal
 asks for its own document class, section list, limits, declarations and
 reference style, and smith's base template (`sections/*.md`, `paper/main.tex`)

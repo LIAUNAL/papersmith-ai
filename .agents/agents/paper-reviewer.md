@@ -131,6 +131,18 @@ Fill the fields in this order, with these exact labels.
      of values a reader looks up exactly (settings, hyperparameters, dataset
      or hardware characteristics) is not. A caption longer than four lines is
      a clarity weakness: "A figure or table caption is at most four lines: a title that says what the float shows, plus the one definition a reader needs to read it. Notation and further definitions go in a table note below the table or in the text."
+     In an applied-AI paper (time series, regression, classification,
+     clustering or similar), a Results section that opens on aggregate
+     metrics (error, R², accuracy and the like) without the illustrative
+     results is a Quality and Clarity weakness: "Before any aggregate
+     performance artefact (error, R², accuracy and the like), the Results
+     show what the novelty does at its basic stages". Name the illustration
+     that is missing: the improved representation on representative
+     examples; the loss or regularizer terms converging and interacting;
+     prediction examples on the toy set and the most relevant real or
+     semi-synthetic dataset, with the input window, the target, the
+     comparators and a confidence or variability band; or latent spaces,
+     confusion matrices and ROC curves.
    - *Significance*: would others use or build on it? does it solve a hard
      task better than prior work, or advance understanding demonstrably?
    - *Originality*: new insights, tasks, methods, or a well-argued novel

@@ -114,6 +114,22 @@ a suggested change in words. You never write the change.
    (`Results/history*`, `Results/significance*.json`). Suggest which tests to
    add when the protocol declares none or an inappropriate one.
 
+   Confirm too that the code records the raw material of every illustrative
+   artefact the protocol declares (`experimental-deliberation`'s **Declaring
+   the illustrative results**, items (a)-(d); `experimental-implementation`'s
+   **Recording the illustrative results**): per-term loss histories in
+   `Results/history*`; representative input windows, predictions, targets,
+   comparator predictions and bands; representation snapshots; 2-D
+   embeddings with labels, confusion counts and ROC points under
+   `Results/illustrative/`. A declared illustrative artefact the code never
+   records is a `major` finding (the Results would open on aggregate
+   metrics alone). So is an experiment whose kind calls for one of items
+   (a)-(d) (a new architecture, a new loss term, a forecasting or
+   regression task, a classification or clustering task) while the protocol
+   declares neither the artefact nor the reason it does not apply. Examples
+   picked by best error, or recorded in a different run from the one that
+   produced the aggregate numbers, are `major` too.
+
    When `Results/discussion.json` exists, review it under this dimension too
    (the skill's **After the runs: the results discussion**): run
    `python skills/_core/results/discussion_cli.py check --product
