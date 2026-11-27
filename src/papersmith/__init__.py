@@ -7,4 +7,4 @@ copies framework files at ``init`` and re-syncs them at ``upgrade``, while
 every research artifact is protected by the preservation contract.
 """
 
-__version__ = "0.84.6"
+__version__ = "0.85.0"
