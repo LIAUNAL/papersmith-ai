@@ -11,6 +11,31 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **The board follows the current iteration.** Pillars, hypotheses and the problem tree take
+  their identity (ids, statements, pillar links, experiments) from the latest published proposal
+  revision's sky overlay at every reader: `/api/model`, the phase steps, citations and the
+  manuscript graph. `.papersmith/model_spec.json` only adds enrichment.
+  - A new `idea_sync` (`python skills/_core/command_center/idea_sync.py --root . [--dry-run]`),
+    also run by "Update board", rewrites the spec from that revision. Entries the revision
+    dropped move to `novelty.retired` with the last revision that held them, and
+    `novelty.source_revision` records the source.
+  - `/api/model` flags a spec synced from an older revision as `stale`, and the refresh report
+    lists what was added, retired or updated.
+- **Findings follow the latest protocol and the proposal's hypothesis ids.**
+  - The novelty overview, the manuscript-graph findings and the Concept Map statuses count only
+    the discussions recorded on the latest published protocol. Older products show as
+    superseded and never merge with the current ones.
+  - Each finding appears under the proposal hypothesis that names its experiment. This reads
+    `proposal_hypotheses` when the discussion carries it, or derives it from the revision's
+    experiments without rewriting the discussion. `discussion_cli.py link` backfills the field.
+  - The Concept Map's hypothesis badges read the current findings ("supported (current protocol
+    v23)"), and the new `GET /api/model/findings` serves them.
+- **A contribution type judged on an older revision or protocol is flagged stale.** The callers
+  record `contribution_type_revision` (proposal mode) or `contribution_type_protocol` (findings
+  mode) beside it, and the board shows a stale badge until the judge-reviewer runs again.
+
 ## 0.86.0
 
 - **Applied-AI papers show illustrative results before performance.** The experimental line's

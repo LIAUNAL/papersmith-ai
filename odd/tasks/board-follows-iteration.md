@@ -27,8 +27,8 @@ Objective: the board (`smith ui`) shows the idea, problem, pillars, hypotheses, 
 | ID | Specs | Route | Status | Evidence |
 | --- | --- | --- | --- | --- |
 | T1 | S2, S4 (spec side), S5 | delegated (Writer trigger a: parallel with T2, disjoint surfaces) | done | idea sync, precedence, board refresh, deliberation SKILL, tests |
-| T2 | S3, S4 (board side) | delegated (Writer trigger a) | pending | discussion proposal ids, protocol filter, manuscript graph, novelty overview, Concept Map status, stale badges, server endpoint, i18n, tests |
-| T3 | S1 | inline | pending | seam, CHANGELOG, release, upgrade Paper_EEIA, verify the panels there |
+| T2 | S3, S4 (board side) | delegated (Writer trigger a) | done | discussion proposal ids, protocol filter, manuscript graph, novelty overview, Concept Map status, stale badges, server endpoint, i18n, tests |
+| T3 | S1 | inline | done | seam, CHANGELOG, release, upgrade Paper_EEIA, verify the panels there |
 
 ## Log
 - L1 (2026-11-27): operator request, verbatim in S1.
@@ -48,3 +48,9 @@ Objective: the board (`smith ui`) shows the idea, problem, pillars, hypotheses, 
   - Tests: 29 new; existing refresh, phase4, citations and sky tests pass.
   - Paper_EEIA dry-run: r21, 0 added, 0 pruned, 17 changed (pillar-3 renamed, 7 hypotheses restated, experiments added), contribution type stale.
   - Forwarded to T2: badges from /api/model, the paper-reviewer records contribution_type_revision, manuscript_graph reuses current_novelty.
+- L4 (2026-11-27): T2 done (31 tests). Parent added:
+  - proposal ids derived on read through proposal_map when a discussion lacks the field (no write; test DerivedProposalIdsTests);
+  - the board-refresh.js ideas report with en/es strings;
+  - contribution_type_protocol in the experimental- and proposal-implementation SKILLs; harness sync.
+- L5: real-data check on Paper_EEIA (read-only): current protocol v23, the pi5rc v12 PoC superseded, findings under proposal ids (H11 partially_supported E14, H7a/H7b supported E10, H9 supported E12); idea_sync dry run: r21, 17 changed.
+  - Full suite -n 6: 63 failed. The serial rerun left 1: test_mcp_tools workspace_audit DRIFT_ERROR, because the worktree .venv imports papersmith from the main checkout, so the MCP child audits with older code. Checked after the merge.
