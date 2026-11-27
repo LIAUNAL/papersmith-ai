@@ -123,7 +123,8 @@ class TestNoveltyOverviewSobrietyData(unittest.TestCase):
                                                                      "why": "pilot only"}})
         overview = novelty_gate.get_novelty_overview(self.root)
         self.assertEqual(overview["contribution_type"],
-                         {"type": "Concept & Feasibility", "why": "pilot only", "product": "Pilot", "stage": "poc"})
+                         {"type": "Concept & Feasibility", "why": "pilot only", "product": "Pilot", "stage": "poc",
+                          "stale": False})
         _write_discussion(self.root, "Full", {"contribution_type": {"type": "Negative Results",
                                                                     "why": "H1 not supported"}})
         (self.root / "implementations" / "repo" / "Full" / "Experimental_AGREED.md").write_text("ok")

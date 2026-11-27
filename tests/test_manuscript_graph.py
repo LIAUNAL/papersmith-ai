@@ -44,6 +44,13 @@ class _Workspace(unittest.TestCase):
         self.addCleanup(holder.cleanup)
         root = Path(holder.name).resolve() / "ws"
         shutil.copytree(FIXTURE, root)
+        # A finding counts only when its discussion answers the latest protocol
+        # (board-follows-iteration S3); the fixture's discussion predates the
+        # field, so the copy records the fixture's one protocol.
+        path = root / "implementations" / "repo" / "Pool" / "Results" / "discussion.json"
+        data = json.loads(path.read_text("utf-8"))
+        data["protocol"] = "experiments/experiments-pool-v01.md"
+        path.write_text(json.dumps(data), encoding="utf-8")
         return root
 
     def empty_workspace(self) -> Path:

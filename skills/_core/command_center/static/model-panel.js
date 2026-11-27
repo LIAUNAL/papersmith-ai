@@ -21,8 +21,15 @@
  * the contribution-type card, where its verdict appears. A locked step's
  * buttons are disabled and say what the step requires.
  *
- * Public surface (window): renderModelModules(spec), renderModelSteps(steps),
- * refreshModelSteps().
+ * Each hypothesis's status badge reads the current findings
+ * (GET /api/model/findings): the verdicts of the latest protocol only, keyed by
+ * proposal hypothesis id, as "supported (current protocol vNN)"; the spec's
+ * prose status stays a detail under the statement. A contribution type
+ * model_spec.py flags `contribution_type_stale` carries a "stale" badge, and a
+ * specification synced from an older revision (`stale`) says so above the pillars.
+ *
+ * Public surface (window): renderModelModules(spec), renderModelFindings(findings),
+ * renderModelSteps(steps), refreshModelSteps().
  */
 (function () {
   'use strict';
@@ -197,10 +204,20 @@
   }
   if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('resize', drawNoveltyArrows);
 
+  // model_spec.py flags a specification synced from an older revision than the
+  // latest one (`stale`): its ideas are not shown as current without saying so.
+  function staleNotice(spec) {
+    if (!spec.stale) return '';
+    return `<p class="model-step__reason" data-spec-stale="true">⚠ ${esc(t('modelPanel.specStale', {
+      source: spec.source_revision || t('modelPanel.specNeverSynced'),
+      latest: spec.latest_revision || '',
+    }))}</p>`;
+  }
+
   function pillars(spec) {
     const list = ((spec.novelty || {}).pillars || []).filter((p) => p && (p.name || p.summary));
-    if (!list.length) return empty(t('modelPanel.noPillars'));
-    return list.map((p, i) => {
+    if (!list.length) return staleNotice(spec) + empty(t('modelPanel.noPillars'));
+    return staleNotice(spec) + list.map((p, i) => {
       const c = colour(p.color, '#38bdf8');
       return `<div class="model-pillar-card" style="--tone: ${c}; border-top: 3px solid ${c};">
         <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -214,15 +231,40 @@
     }).join('');
   }
 
+  // A hypothesis's status comes from the findings of the current protocol
+  // (GET /api/model/findings), keyed by proposal hypothesis id; the spec's
+  // prose status is only a detail, since it may describe an older iteration.
+  const FINDING_STATUS_KEYS = {
+    supported: 'modelPanel.finding.supported',
+    partially_supported: 'modelPanel.finding.partially_supported',
+    not_supported: 'modelPanel.finding.not_supported',
+    inconclusive: 'modelPanel.finding.inconclusive',
+    pending: 'modelPanel.finding.pending',
+  };
+  const FINDING_TONES = { supported: 'ok', partially_supported: 'warn', not_supported: 'bad', inconclusive: 'info' };
+
+  function findingBadge(id) {
+    if (!lastFindings) return '';
+    const found = (lastFindings.statuses || {})[id];
+    const status = found && FINDING_STATUS_KEYS[found.status] ? found.status : 'pending';
+    const label = t(FINDING_STATUS_KEYS[status]);
+    const text = lastFindings.version !== null && lastFindings.version !== undefined
+      ? t('modelPanel.finding.withProtocol', { status: label, version: String(lastFindings.version).padStart(2, '0') })
+      : label;
+    const tone = FINDING_TONES[status] ? ` badge--${FINDING_TONES[status]}` : '';
+    return `<span class="badge${tone}" data-finding-status="${esc(status)}">${esc(text)}</span>`;
+  }
+
   function hypotheses(spec) {
     const list = ((spec.novelty || {}).hypotheses || []).filter((h) => h && (h.title || h.statement));
     if (!list.length) return empty(t('modelPanel.noHypotheses'));
     return list.map((h, i) => `<div class="model-hypothesis-card">
         <div style="display: flex; justify-content: space-between; gap: 0.5rem;">
           <strong>${esc(h.id || '')} ${rich(h.title || '')}</strong>
-          ${h.status ? `<span class="badge">${esc(h.status)}</span>` : ''}
+          ${findingBadge(ideaId(h, 'H', i + 1))}
         </div>
         <p style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.45;">${rich(h.statement)}</p>
+        ${h.status ? `<p class="model-hypothesis__prose" style="font-size: 0.76rem; color: var(--text-muted);"><em>${esc(t('modelPanel.finding.proseStatus'))}</em> ${esc(h.status)}</p>` : ''}
         ${h.evidence ? `<p style="font-size: 0.76rem; color: var(--text-muted);">${rich(h.evidence)}</p>` : ''}
         ${cites(`hypothesis:${ideaId(h, 'H', i + 1)}`)}
       </div>`).join('');
@@ -256,8 +298,11 @@
     const ct = spec.contribution_type;
     const head = `<h4 style="font-size: 0.78rem; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.04em; margin-bottom: 0.6rem;">${esc(t('contribution.title'))}</h4>`;
     if (!ct || !CONTRIBUTION_TYPE_KEYS[ct.type]) return head + empty(t('contribution.owed', { artifact: '.papersmith/model_spec.json' })) + judgeButton(false);
+    // model_spec.py flags a type judged before the latest revision.
+    const stale = spec.contribution_type_stale
+      ? ` <span class="badge badge--warn" data-contribution-stale="true" title="${esc(t('contribution.staleWhy'))}">${esc(t('contribution.stale'))}</span>` : '';
     return `${head}<div class="model-hypothesis-card">
-        <span class="badge">${esc(t(CONTRIBUTION_TYPE_KEYS[ct.type]))}</span>
+        <span class="badge">${esc(t(CONTRIBUTION_TYPE_KEYS[ct.type]))}</span>${stale}
         <p style="font-size: 0.82rem; color: var(--text-muted); line-height: 1.45;"><strong>${esc(t('contribution.why'))}</strong> ${esc(ct.why)}</p>
         ${window.ContributionAffinity ? window.ContributionAffinity.html(ct) : ''}
       </div>${judgeButton(true)}`;
@@ -296,6 +341,7 @@
 
   let lastSpec = null;
   let lastSteps = null;
+  let lastFindings = null;
 
   function renderModelModules(spec) {
     lastSpec = spec || {};
@@ -431,10 +477,26 @@
     if (typeof window.sendToCli === 'function') window.sendToCli(STEP_COMMANDS[id], false, { kind: 'slash' });
   }
 
+  async function refreshModelFindings() {
+    if (typeof fetch !== 'function') return;
+    try {
+      const res = await fetch('/api/model/findings');
+      if (!res.ok) return;
+      lastFindings = await res.json();
+      if (lastSpec) renderModelModules(lastSpec);
+    } catch (_) { /* the statuses stay as they were */ }
+  }
+
   window.renderModelModules = (spec) => {
     renderModelModules(spec);
     refreshModelSteps();
+    refreshModelFindings();
     if (window.Citations) window.Citations.load();
+  };
+  // The current findings, as GET /api/model/findings serves them.
+  window.renderModelFindings = (findings) => {
+    lastFindings = findings || null;
+    if (lastSpec) renderModelModules(lastSpec);
   };
   if (window.Citations) window.Citations.onChange(() => { if (lastSpec) renderModelModules(lastSpec); });
   window.renderModelSteps = renderModelSteps;

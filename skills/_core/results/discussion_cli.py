@@ -4,15 +4,20 @@
     discussion_cli.py scaffold --product implementations/<repo>/<Name>
     discussion_cli.py check    --product implementations/<repo>/<Name>
     discussion_cli.py status   --product implementations/<repo>/<Name>
+    discussion_cli.py link     --product implementations/<repo>/<Name> [--dry-run]
 
 Each verb prints exactly one JSON object on stdout. A refusal prints
 ``{"ok": false, "error": <CODE>, "message": ...}`` and exits non-zero (1; usage
 errors exit 2) with nothing written. The only file this tool ever writes is
-``<product>/Results/discussion.json``, and only when ``scaffold`` succeeds.
+``<product>/Results/discussion.json``: ``scaffold`` creates it, and ``link``
+backfills each hypothesis's ``proposal_hypotheses`` (the proposal hypothesis ids
+whose ``experiments`` in the latest proposal sky overlay name its experiment),
+changing no verdict nor any other field. ``link --dry-run`` reports the change
+and writes nothing.
 
 Refusal codes: ``USAGE``, ``PRODUCT_ABSENT``, ``APPROVAL_ABSENT``,
-``DISCUSSION_EXISTS``, ``DISCUSSION_ABSENT``, ``RESULTS_UNSAFE``,
-``WRITE_FAILED``.
+``DISCUSSION_EXISTS``, ``DISCUSSION_ABSENT``, ``DISCUSSION_UNREADABLE``,
+``SKY_ABSENT``, ``SKY_REFUSED``, ``RESULTS_UNSAFE``, ``WRITE_FAILED``.
 """
 
 from __future__ import annotations
@@ -58,12 +63,15 @@ class _Parser(argparse.ArgumentParser):
 
 def _parser() -> argparse.ArgumentParser:
     parser = _Parser(prog="discussion_cli.py", description=__doc__.split("\n\n")[0])
-    verbs = parser.add_subparsers(dest="verb", required=True, metavar="{scaffold,check,status}")
+    verbs = parser.add_subparsers(dest="verb", required=True, metavar="{scaffold,check,status,link}")
     for verb, text in (("scaffold", "write a pending Results/discussion.json skeleton"),
                        ("check", "validate Results/discussion.json (non-zero when invalid or absent)"),
-                       ("status", "like check, but exit 0 whenever the product exists")):
+                       ("status", "like check, but exit 0 whenever the product exists"),
+                       ("link", "backfill each hypothesis's proposal_hypotheses from the latest proposal sky")):
         sub = verbs.add_parser(verb, help=text)
         sub.add_argument("--product", required=True, help="implementations/<repo>/<Name>")
+        if verb == "link":
+            sub.add_argument("--dry-run", action="store_true", help="report the change, write nothing")
     return parser
 
 
@@ -138,6 +146,17 @@ def _scaffold(product: Path, shown: str) -> int:
                   "status": checked["status"], "errors": checked["errors"], "warnings": warnings})
 
 
+def _link(product: Path, dry_run: bool) -> int:
+    results = product / "Results"
+    if os.path.lexists(results) and not _contained_dir(product, results):
+        return _refuse("RESULTS_UNSAFE", "Results/ is not a directory inside the product folder")
+    try:
+        linked = contract.link_proposal_hypotheses(product, write=not dry_run)
+    except contract.DiscussionRefusal as refusal:
+        return _refuse(refusal.code, refusal.message)
+    return _emit({"ok": True, **linked})
+
+
 def _report(product: Path, verb: str) -> int:
     loaded = contract.load_and_check(product)
     if not loaded["present"]:
@@ -153,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args = _parser().parse_args(argv)
     except _Usage as usage:
-        return _refuse("USAGE", f"{usage}; usage: discussion_cli.py {{scaffold,check,status}} --product <path>", 2)
+        return _refuse("USAGE", f"{usage}; usage: discussion_cli.py {{scaffold,check,status,link}} --product <path>", 2)
     except SystemExit as stop:  # --help
         return int(stop.code or 0)
     product = _product(args.product)
@@ -161,6 +180,8 @@ def main(argv: list[str] | None = None) -> int:
         return _refuse("PRODUCT_ABSENT", f"{args.product} is not a product folder")
     if args.verb == "scaffold":
         return _scaffold(product, args.product)
+    if args.verb == "link":
+        return _link(product, args.dry_run)
     return _report(product, args.verb)
 
 

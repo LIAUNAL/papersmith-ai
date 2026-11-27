@@ -2667,6 +2667,18 @@ def create_app(root: Path | str, *, debounce_ms: int = 300,
         # Each idea's SOTA citations and what each stage owes (read-only).
         return JSONResponse(phase_steps.citation_state(root_path), headers=dict(_PAPER_HEADERS))
 
+    @app.get("/api/model/findings")
+    def api_model_findings() -> JSONResponse:
+        # The Concept Map's hypothesis statuses: the findings of the latest
+        # protocol only, keyed by proposal hypothesis id (discussion.py
+        # current_findings); older products are listed as superseded.
+        warnings: list[str] = []
+        reader = experiments_view._Reader(root_path, warnings)
+        products = [folder for _repo, folder in experiments_view._product_dirs(root_path, reader)]
+        current = experiments_view.results_discussion().current_findings(root_path, products)
+        body = {key: current[key] for key in ("protocol", "version", "statuses", "superseded")}
+        return JSONResponse(body, headers=dict(_PAPER_HEADERS))
+
     @app.get("/api/model")
     def api_model() -> JSONResponse:
         """Return conceptual architecture, formal mathematical model, and PoC deliberation plan."""

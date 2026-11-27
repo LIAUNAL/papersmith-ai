@@ -387,18 +387,43 @@ def _contribution_type():
     return sys.modules[name]
 
 
+def _stale_type(judged: Any, protocol: str, latest: str) -> bool:
+    """A findings-mode contribution type is stale when it judged an older protocol.
+
+    Its ``contribution_type_protocol`` (the protocol the paper-reviewer read) is not
+    the latest, or, without one, its product's protocol is not the latest one.
+    """
+    discussion = _discussion_module()
+    if isinstance(judged, str) and discussion.protocol_version(judged) is not None:
+        return not discussion.is_current(judged, latest)
+    return not discussion.is_current(protocol, latest)
+
+
 def get_novelty_overview(root: Path) -> dict[str, Any]:
     """Synthesize the full novelty assessment overview from discussion records,
-    hypotheses, SOTA pool, and rigor checklists."""
+    hypotheses, SOTA pool, and rigor checklists.
+
+    Only the products whose discussion records the latest published protocol count;
+    the others are listed in ``superseded`` and never merge with the current findings.
+    Each hypothesis is listed under its proposal hypothesis id (``proposal_hypotheses``),
+    one entry per id, or under its positional id marked ``unmapped``."""
     root = Path(root)
     gate = read_gate(root)
+    discussion_module = _discussion_module()
+    latest = discussion_module.latest_protocol(root)
+    try:
+        proposal_ids = discussion_module.proposal_map(root)
+    except Exception:  # noqa: BLE001 - without a usable sky the ids stay positional
+        proposal_ids = {}
 
     # 1. Gather discussions across products
     products_dir = root / "implementations"
     discussions: list[dict[str, Any]] = []
+    superseded: list[dict[str, Any]] = []
     hypotheses: list[dict[str, Any]] = []
     novelty_claims: list[dict[str, Any]] = []
     limitations: list[dict[str, Any]] = []
+    stale_types: list[dict[str, Any]] = []
     normalize_type = _contribution_type().normalize
 
     if products_dir.is_dir():
@@ -415,14 +440,39 @@ def get_novelty_overview(root: Path) -> dict[str, Any]:
                         if isinstance(disc_data, dict):
                             stage = "full" if (prod / "Experimental_AGREED.md").is_file() else "poc"
                             prod_name = prod.name
+                            protocol = str(disc_data.get("protocol") or "")
+                            raw_type = disc_data.get("contribution_type")
+                            nov = disc_data.get("novelty") if isinstance(disc_data.get("novelty"), dict) else {}
+                            if not discussion_module.is_current(protocol, latest):
+                                superseded.append({
+                                    "product": prod_name,
+                                    "repo": repo.name,
+                                    "stage": stage,
+                                    "protocol": protocol,
+                                    "version": discussion_module.protocol_version(protocol),
+                                    "verdict": nov.get("verdict", "pending"),
+                                    "summary": str(disc_data.get("summary") or ""),
+                                })
+                                kind = normalize_type(raw_type)
+                                if kind:
+                                    stale_types.append({**kind, "product": prod_name, "stage": stage,
+                                                        "stale": True, "protocol": protocol})
+                                continue
+                            kind = normalize_type(raw_type)
+                            judged = disc_data.get("contribution_type_protocol")
+                            if kind:
+                                kind = {**kind, "stale": _stale_type(judged, protocol, latest)}
+                                if isinstance(judged, str) and judged.strip():
+                                    kind["judged_protocol"] = judged.strip()
                             disc_summary = {
                                 "product": prod_name,
                                 "stage": stage,
+                                "protocol": protocol,
                                 "summary": str(disc_data.get("summary") or ""),
-                                "verdict": disc_data.get("novelty", {}).get("verdict", "pending") if isinstance(disc_data.get("novelty"), dict) else "pending",
-                                "claim": disc_data.get("novelty", {}).get("claim", "") if isinstance(disc_data.get("novelty"), dict) else "",
-                                "rationale": disc_data.get("novelty", {}).get("rationale", "") if isinstance(disc_data.get("novelty"), dict) else "",
-                                "contribution_type": normalize_type(disc_data.get("contribution_type")),
+                                "verdict": nov.get("verdict", "pending"),
+                                "claim": nov.get("claim", ""),
+                                "rationale": nov.get("rationale", ""),
+                                "contribution_type": kind,
                             }
                             discussions.append(disc_summary)
 
@@ -437,26 +487,29 @@ def get_novelty_overview(root: Path) -> dict[str, Any]:
                                         "text": text[:MAX_LIMITATION_LENGTH],
                                     })
 
-                            # Hypotheses
+                            # Hypotheses, one entry per proposal hypothesis id
                             raw_hyps = disc_data.get("hypotheses")
                             for h in (raw_hyps if isinstance(raw_hyps, list) else [])[:MAX_HYPOTHESES_PER_PRODUCT]:
                                 if isinstance(h, dict) and h.get("id"):
-                                    hypotheses.append({
-                                        "id": h.get("id"),
-                                        "product": prod_name,
-                                        "stage": stage,
-                                        "statement": h.get("statement", ""),
-                                        "metric": h.get("metric", ""),
-                                        "test": h.get("test", ""),
-                                        "criterion": h.get("criterion", ""),
-                                        "observed": h.get("observed", ""),
-                                        "verdict": h.get("verdict", "pending"),
-                                        "rationale": h.get("rationale", ""),
-                                    })
+                                    for identifier, unmapped in discussion_module.finding_ids(h, proposal_ids):
+                                        hypotheses.append({
+                                            "id": identifier,
+                                            "discussion_id": h.get("id"),
+                                            "unmapped": unmapped,
+                                            "experiment": h.get("experiment", ""),
+                                            "product": prod_name,
+                                            "stage": stage,
+                                            "statement": h.get("statement", ""),
+                                            "metric": h.get("metric", ""),
+                                            "test": h.get("test", ""),
+                                            "criterion": h.get("criterion", ""),
+                                            "observed": h.get("observed", ""),
+                                            "verdict": h.get("verdict", "pending"),
+                                            "rationale": h.get("rationale", ""),
+                                        })
 
                             # Novelty
-                            nov = disc_data.get("novelty")
-                            if isinstance(nov, dict) and nov.get("claim"):
+                            if nov.get("claim"):
                                 novelty_claims.append({
                                     "product": prod_name,
                                     "stage": stage,
@@ -526,17 +579,24 @@ def get_novelty_overview(root: Path) -> dict[str, Any]:
 
     # 4. The paper-reviewer's contribution type for the findings:
     # the full stage's over the pilot's, the first product in order otherwise.
+    # Only a current product's type is the findings' type; a superseded one is shown
+    # flagged stale when no current product carries a type yet.
     typed = [d for d in discussions if d["contribution_type"]]
     typed.sort(key=lambda d: d["stage"] != "full")
     contribution_type = ({**typed[0]["contribution_type"], "product": typed[0]["product"],
                           "stage": typed[0]["stage"]} if typed else None)
+    if contribution_type is None and stale_types:
+        stale_types.sort(key=lambda d: d["stage"] != "full")
+        contribution_type = stale_types[0]
 
     return {
         "gate": gate,
         "contribution_type": contribution_type,
         "judge": judge_state(root),
         "experiment_citations_owed": _citations().state(root)["stages"]["experiments"]["owed"],
+        "protocol": {"current": latest, "version": discussion_module.protocol_version(latest)},
         "discussions": discussions,
+        "superseded": superseded,
         "hypotheses": hypotheses,
         "novelty_claims": novelty_claims,
         "limitations": limitations,

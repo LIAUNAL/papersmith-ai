@@ -15,8 +15,13 @@ Node types and sources (first present source wins):
                     ``paper/main.tex``), else the sky's ``problem`` planet.
 ``pillar``          the sky's ``pillars`` (checked by
                     ``merge_proposal_sky.pillars_and_hypotheses``), else
-                    ``.papersmith/model_spec.json`` ``novelty.pillars``.
-``hypothesis``      the sky's ``hypotheses``; each protocol experiment no sky
+                    ``.papersmith/model_spec.json`` ``novelty.pillars``. One
+                    precedence rule: the latest revision gives the identity
+                    (ids, names, statements, pillar links, experiments) and the
+                    spec only enriches a surviving id (its ``summary`` and
+                    ``details``); a spec entry the revision dropped is not drawn.
+``hypothesis``      the sky's ``hypotheses`` (the spec's ``title`` of the same
+                    id as enrichment); each protocol experiment no sky
                     hypothesis names brings its own ``Hypothesis`` bullet.
 ``sota``            ``atlas_manuscript.cited_systems``: cited atlas systems
                     and cited papers outside the pool.
@@ -28,10 +33,17 @@ Node types and sources (first present source wins):
                     ``facts.contributions``, else fact ``contributions``).
 ``experiment``      the latest protocol's ``## Experiment [exp:<id>]``
                     entries, else fact ``experimental-design``.
-``finding``         every product's ``Results/discussion.json`` hypothesis
-                    (full stage over proof of concept) and its novelty verdict.
+``finding``         the current products' ``Results/discussion.json``
+                    hypotheses (full stage over proof of concept) and novelty
+                    verdict. A product is current when its ``protocol`` is the
+                    latest ``experiments-*-vNN.md``; the others are listed in
+                    the graph's ``superseded`` and never merged. A finding is
+                    keyed by its proposal hypothesis id (``proposal_hypotheses``),
+                    one per id, its verdict combined over the experiments that
+                    test it; without the field it keeps the positional id and is
+                    marked ``unmapped``.
 ``conclusion``      the first sentence of each ``conclusions.concl-block-*``,
-                    else the latest discussion ``summary``.
+                    else the latest current discussion ``summary``.
 
 Edges (``rel``): topic→problem ``frames``; problem→pillar
 ``decomposes_into``; pillar→hypothesis ``predicts``; sota→pillar (the pillar's
@@ -68,7 +80,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from . import atlas_manuscript, experiments_view, math_view
+from . import atlas_manuscript, experiments_view, idea_sync, math_view
 
 SCHEMA = "papersmith.manuscript-graph/v1"
 GRAPH_REL = ".papersmith/manuscript_graph.json"
@@ -212,6 +224,9 @@ class _Sources:
         self.blocks, self.blocks_problem = self._blocks()
         #: ``(path, text)`` of the latest discussion summary, set by ``_findings``.
         self.summary: tuple[str, str] | None = None
+        #: The latest protocol and the products that answer an older one, set by ``_findings``.
+        self.protocol_rel = ""
+        self.superseded: list[dict] = []
 
     def _blocks(self) -> tuple[dict[str, str], str]:
         data = _read_bytes(self.paper / "main.tex")
@@ -311,17 +326,47 @@ def _problem(src: _Sources) -> dict[str, Any]:
     return _missing("problem", "fact problem-statement not declared and no sky problem planet")
 
 
+def _current_ideas(src: _Sources) -> tuple[dict[str, dict], dict[str, dict]]:
+    """The current pillars and hypotheses by id, as every reader shows them:
+    ``idea_sync.current_novelty`` puts the latest revision's identity over the
+    spec's enrichment, and leaves out what the revision dropped."""
+    spec = _read_json(src.root / ".papersmith" / "model_spec.json")
+    novelty = spec.get("novelty") if isinstance(spec, dict) and isinstance(spec.get("novelty"), dict) else {}
+    current = idea_sync.current_novelty(novelty, src.sky)
+    out: list[dict[str, dict]] = []
+    for key in ("pillars", "hypotheses"):
+        items = current.get(key) if isinstance(current, dict) else None
+        out.append({str(item["id"]).strip(): item for item in items or []
+                    if isinstance(item, dict) and str(item.get("id") or "").strip()})
+    return out[0], out[1]
+
+
+def _enriched(entry: dict | None, fallback: str) -> str:
+    if not entry:
+        return fallback
+    text = " ".join(str(entry.get(k) or "").strip() for k in ("summary", "details")).strip()
+    return text or fallback
+
+
 def _pillars(src: _Sources) -> tuple[list[dict], list[dict], str]:
-    """(pillar nodes, sky hypotheses, refusal)."""
+    """(pillar nodes, sky hypotheses, refusal).
+
+    The latest revision's sky gives each pillar's identity (id, label, contribution);
+    the spec enriches the detail of a pillar with the same id (``_current_ideas``).
+    """
     refusal = ""
     if isinstance(src.sky, dict):
         found, refusal = _merger().pillars_and_hypotheses(src.sky)
         if found and found["pillars"]:
-            nodes = [_node("pillar", p["id"], p["label"], detail=p.get("detail", ""),
+            spec_pillars, spec_hypotheses = _current_ideas(src)
+            nodes = [_node("pillar", p["id"], p["label"],
+                           detail=_enriched(spec_pillars.get(p["id"]), p.get("detail", "")),
                            path=src.sky_rel(), locator=f"pillars[{i}]",
                            contribution=p.get("contribution", ""))
                      for i, p in enumerate(found["pillars"])]
-            return nodes, found["hypotheses"], ""
+            hypotheses = [{**h, "_title": str((spec_hypotheses.get(h["id"]) or {}).get("title") or "")}
+                          for h in found["hypotheses"]]
+            return nodes, hypotheses, ""
     spec = _read_json(src.root / ".papersmith" / "model_spec.json")
     novelty = spec.get("novelty") if isinstance(spec, dict) else None
     pillars = novelty.get("pillars") if isinstance(novelty, dict) else None
@@ -344,8 +389,9 @@ def _hypotheses_and_experiments(src: _Sources, sky_hypotheses: list[dict]):
     experiments = protocol.get("experiments") or []
     named: set[str] = set()
     for i, hyp in enumerate(sky_hypotheses):
+        extra = {"title": hyp["_title"]} if hyp.get("_title") else {}
         node = _node("hypothesis", hyp["id"], hyp["statement"], detail=hyp["statement"],
-                     path=src.sky_rel(), locator=f"hypotheses[{i}]", pillar=hyp["pillar"])
+                     path=src.sky_rel(), locator=f"hypotheses[{i}]", pillar=hyp["pillar"], **extra)
         hyp_nodes.append(node)
         edges.append({"from": f"pillar:{hyp['pillar']}", "to": node["id"], "rel": "predicts"})
         for exp in hyp.get("experiments", []):
@@ -473,42 +519,82 @@ def _sota_edges(src: _Sources, sota: list[dict], pillars: list[dict], novelty: l
 
 
 def _findings(src: _Sources) -> tuple[list[dict], str]:
+    """The current iteration's findings, one node per proposal hypothesis id.
+
+    ``discussion.current_findings`` decides what is current (the latest protocol) and
+    how ids map; the products it supersedes land in ``src.superseded``.
+    """
     discussion = experiments_view.results_discussion()
-    chosen: dict[str, tuple[int, dict]] = {}
+    current = discussion.current_findings(src.root, [folder for _repo, folder in src.products])
+    src.protocol_rel = current["protocol"]
+    src.superseded = current["superseded"]
+    rank_of = {"full": 1}
+    best: dict[str, int] = {}
+    for finding in current["findings"]:
+        best[finding["id"]] = max(best.get(finding["id"], 0), rank_of.get(finding["stage"], 0))
+    grouped: dict[str, list[dict]] = {}
+    for finding in current["findings"]:
+        if rank_of.get(finding["stage"], 0) == best[finding["id"]]:
+            grouped.setdefault(finding["id"], []).append(finding)
+    nodes = []
+    for key in sorted(grouped):
+        group = grouped[key]
+        first = group[0]
+        verdict = current["statuses"][key]["status"]
+        records = []
+        for finding in group:
+            folder = src.root / finding["product"]
+            data = discussion.load_and_check(folder).get("data") or {}
+            hyps = [h for h in data.get("hypotheses") or [] if isinstance(h, dict)]
+            records.append(hyps[finding["index"]] if finding["index"] < len(hyps) else {})
+        detail = "; ".join(x for x in (
+            *(r.get("statement") for r in records[:1]),
+            *(f"{f['experiment'] or f['discussion_id']}: {f['verdict']}" for f in group if len(group) > 1),
+            *(r.get("observed") and f"Observed: {r['observed']}" for r in records)) if x)
+        path = f"{first['product']}/{discussion.DISCUSSION_FILE}"
+        experiments = list(dict.fromkeys(_norm_exp(f["experiment"]) for f in group if f["experiment"]))
+        nodes.append(_node("finding", key, f"{key}: {verdict}", detail=detail, path=path,
+                           locator=f"hypotheses[{first['index']}]", verdict=verdict,
+                           outcome=OUTCOMES.get(verdict, "inconclusive"),
+                           experiment=experiments[0] if experiments else "", experiments=experiments,
+                           observed=_clip(" ".join(str(r.get("observed") or "") for r in records)),
+                           discussion_ids=[f["discussion_id"] for f in group],
+                           unmapped=all(f["unmapped"] for f in group),
+                           discussion_status=first["status"]))
+    chosen: tuple[int, dict] | None = None
     summaries: list[tuple[int, str, str]] = []
     for _repo, folder in src.products:
         result = discussion.load_and_check(folder)
         data = result.get("data")
-        if not isinstance(data, dict):
+        if not isinstance(data, dict) or not discussion.is_current(data.get("protocol"), current["protocol"]):
             continue
         rank = 1 if (result.get("stage") or data.get("stage")) == "full" else 0
         path = _rel(src.root, folder / discussion.DISCUSSION_FILE)
-        for i, hyp in enumerate(h for h in data.get("hypotheses") or [] if isinstance(h, dict)):
-            key = str(hyp.get("id") or f"{path}#{i}")
-            if key not in chosen or rank > chosen[key][0]:
-                chosen[key] = (rank, {**hyp, "_path": path, "_index": i,
-                                      "_status": result.get("status")})
         novelty = data.get("novelty")
         if isinstance(novelty, dict) and novelty.get("verdict"):
-            if "novelty" not in chosen or rank > chosen["novelty"][0]:
-                chosen["novelty"] = (rank, {"statement": novelty.get("claim"), "verdict": novelty["verdict"],
-                                            "observed": novelty.get("rationale"), "_path": path,
-                                            "_index": "novelty", "_status": result.get("status")})
+            if chosen is None or rank > chosen[0]:
+                chosen = (rank, {"statement": novelty.get("claim"), "verdict": novelty["verdict"],
+                                 "observed": novelty.get("rationale"), "_path": path,
+                                 "_status": result.get("status")})
         if isinstance(data.get("summary"), str) and data["summary"].strip():
             summaries.append((rank, path, data["summary"]))
-    nodes = []
-    for key, (_rank, hyp) in sorted(chosen.items()):
+    if chosen is not None:
+        hyp = chosen[1]
         verdict = str(hyp.get("verdict") or "pending")
         detail = "; ".join(x for x in (hyp.get("statement"), hyp.get("observed")
                                         and f"Observed: {hyp['observed']}") if x)
-        locator = "novelty" if key == "novelty" else f"hypotheses[{hyp['_index']}]"
-        nodes.append(_node("finding", key, f"{key}: {verdict}", detail=detail, path=hyp["_path"],
-                           locator=locator, verdict=verdict,
-                           outcome=OUTCOMES.get(verdict, "inconclusive"),
-                           experiment=_norm_exp(hyp.get("experiment")),
-                           observed=_clip(hyp.get("observed")), discussion_status=hyp["_status"]))
+        nodes.append(_node("finding", "novelty", f"novelty: {verdict}", detail=detail, path=hyp["_path"],
+                           locator="novelty", verdict=verdict, outcome=OUTCOMES.get(verdict, "inconclusive"),
+                           experiment="", experiments=[], observed=_clip(hyp.get("observed")),
+                           discussion_status=hyp["_status"]))
+    nodes.sort(key=lambda n: n["id"])
     src.summary = max(summaries)[1:] if summaries else None
-    return nodes, "" if nodes else "no Results/discussion.json with hypotheses yet"
+    if nodes:
+        return nodes, ""
+    if src.superseded:
+        return nodes, (f"no Results/discussion.json for the current protocol {current['protocol']} yet; "
+                       f"{len(src.superseded)} product(s) answer an older protocol")
+    return nodes, "no Results/discussion.json with hypotheses yet"
 
 
 def _conclusions(src: _Sources) -> list[dict]:
@@ -560,8 +646,8 @@ def build_graph(root: Path | str, *, paper_dir: Path | str | None = None) -> dic
                 if name and name in hyp["label"].lower():
                     edges.append({"from": concept["id"], "to": hyp["id"], "rel": "tested_by"})
     for finding in findings:
-        if finding.get("experiment"):
-            edges.append({"from": f"experiment:{finding['experiment']}", "to": finding["id"],
+        for experiment in finding.get("experiments") or []:
+            edges.append({"from": f"experiment:{experiment}", "to": finding["id"],
                           "rel": "yields", "verdict": finding["outcome"]})
         for conclusion in conclusions:
             if conclusion["status"]["state"] == "present" and _mentions(conclusion["detail"], finding):
@@ -582,6 +668,7 @@ def build_graph(root: Path | str, *, paper_dir: Path | str | None = None) -> dic
               for kind in NODE_TYPES}
     return {"schema": SCHEMA, "generated_from": src.digests(),
             "summary": {"counts": counts, "missing": missing, "edges": len(unique)},
+            "protocol": src.protocol_rel, "superseded": src.superseded,
             "nodes": nodes, "edges": unique}
 
 
