@@ -97,15 +97,22 @@ class SynthesisTableAuditCrossCheckTests(unittest.TestCase):
         self.assertEqual(result["verdicts"][1], {"bullet": "An equation.", "verdict": "clear", "span": ""})
 
 
+_SYNTHESIS_MARKER = "[block: rw-problem-blocks, rw-synthesis-artefact] "
+
+
 class ShippedContractCarriesTheRuleTests(unittest.TestCase):
     def test_contract_05_lists_the_row_count_bullet_verbatim(self) -> None:
+        # Marked for the block that holds the synthesis table (S7 of
+        # `odd/tasks/efficiency-stage-b.md`); the deterministic cross-check
+        # matches the rule text behind the marker.
         bullets = paper_audit.extract_disqualifiers(_CONTRACT.read_text(encoding="utf-8"))
-        self.assertIn(paper_audit.ROW_COUNT_BULLET, bullets)
+        self.assertIn(f"{_SYNTHESIS_MARKER}{paper_audit.ROW_COUNT_BULLET}", bullets)
 
     def test_contract_05_lists_the_family_column_and_prose_disqualifiers(self) -> None:
         bullets = paper_audit.extract_disqualifiers(_CONTRACT.read_text(encoding="utf-8"))
         joined = "\n".join(bullets)
-        self.assertIn("A family of this section with no row in the synthesis table.", bullets)
+        self.assertIn(
+            f"{_SYNTHESIS_MARKER}A family of this section with no row in the synthesis table.", bullets)
         self.assertIn("not tied to a pillar, contribution or property", joined)
         self.assertIn("prose in a synthesis-table cell", joined)
 

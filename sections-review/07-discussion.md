@@ -158,7 +158,7 @@ Measured on the group's MDPI review A029 (Cardona-Álvarez, Álvarez-Meza and Ca
 - A paragraph that restates a figure, a table or a subsection of the results.
 - A direction that no challenge of the included studies supports.
 - Challenges or directions written as items: bullets, a numbered list, bold or italic lead-ins, or one-line challenges.
-- A challenge paragraph shorter than six lines or longer than eight, or one that cites none of the included studies that report it.
+- [block: d-challenges-directions] A challenge paragraph shorter than six lines or longer than eight, or one that cites none of the included studies that report it.
 - No comparison with the existing reviews the introduction named.
 - A claim stronger than the risk of bias and the number of studies allow.
 - A promotional adjective, or a closing appeal to collaboration among stakeholders with no finding behind it.

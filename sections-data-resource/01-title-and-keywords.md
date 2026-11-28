@@ -104,11 +104,11 @@ No data descriptor of this line has been measured yet: the rules below carry the
 
 ## Disqualifiers
 
-- A title that names no kind of records, no content or no population, source or setting.
-- A title that states a finding, or a size or quality the data records do not count.
-- A promotional or evaluative word in the title (*Novel*, *Large-scale*, *Comprehensive*).
-- A keyword that repeats a word of the title.
-- An acronym or short name in the title that the abstract does not expand.
+- [block: title] A title that names no kind of records, no content or no population, source or setting.
+- [block: title] A title that states a finding, or a size or quality the data records do not count.
+- [block: title] A promotional or evaluative word in the title (*Novel*, *Large-scale*, *Comprehensive*).
+- [block: title, keywords] A keyword that repeats a word of the title.
+- [block: title] An acronym or short name in the title that the abstract does not expand.
 
 ## Sources
 

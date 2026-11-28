@@ -128,6 +128,40 @@ optional-and-unopened. `order`'s own graph derivation reads no block's
 `optional` flag at all — an optional block is ordered exactly like any
 other.
 
+### Block markers on disqualifiers
+
+A `## Disqualifiers` bullet may open with a marker naming the block or
+blocks of its own contract it is judged on: `[block: <id>]`, or
+`[block: <id>, <id>, ...]` for a rule that governs several, each id
+exactly as the header's `blocks` list declares it (bare, never
+`<section>.<block>`), comma-and-space separated, one space before the rule:
+
+```markdown
+- [block: block-3] Block 3 in other than two paragraphs, or outside 260–600 words.
+- [block: concl-block-1, concl-block-2, concl-block-3] A citation anywhere outside the future-work block.
+```
+
+The marker is part of the bullet's verbatim text: the contract judge sees
+it, quotes it back unchanged, and `write` reports a fired bullet with it.
+The contract judge rules on every unmarked bullet (section-wide) and on the
+bullets whose marker names the block being written; a verdict on a bullet
+marked for another block refuses `VERDICT_BULLET_UNKNOWN` (see `write` in
+`references/write.md`). A contract without markers, an older or customized
+one included, is judged on every bullet, exactly as before.
+
+A marker never takes a rule away from the block it governs. One that does
+not parse (`[block bm-funding]`, `[block: ]`), or that names any id the
+header does not declare, is ignored: that bullet applies to every block,
+and `write --precheck` lists it under `unresolvedMarkers` so the typo can
+be fixed. Mark a bullet only when the block it is judged on is unambiguous
+from the contract's own block list: a bullet that names its block (`in
+4b`, `Block 2 without ...`), a rule about the title or the keywords, or a
+rule about a unit the skeleton gives to exactly one block (the synthesis
+table, the open-problem paragraphs). A rule that can fire on several
+blocks names all of them; a rule about something missing from the section
+(`The closing paragraph missing`, `A stated problem with no block`) is
+judged section-wide and stays unmarked. When in doubt, leave it unmarked.
+
 ### Decision Gates (contract, readiness, order, phases)
 
 | Situation | Action |

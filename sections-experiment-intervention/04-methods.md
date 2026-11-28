@@ -343,7 +343,7 @@ No paper of this line has been measured yet: the rules below carry the group's w
 - No statement of who was blinded, or of who knew the assignment when blinding was not possible.
 - An analysis described as planned that the locked analysis plan does not contain, or no statement of which analyses were confirmatory and which exploratory.
 - An ethics approval, consent route or registration that the operator's records do not hold, or a registration after the first enrolment not called retrospective with its reason.
-- A field-experiment block (`m-field-units`, `m-mixed-models`, `m-animals-husbandry`) written in a workspace of the `human-trial` variant, or `m-animals-husbandry` written for an experiment without animals.
+- [block: m-field-units, m-mixed-models, m-animals-husbandry] A field-experiment block (`m-field-units`, `m-mixed-models`, `m-animals-husbandry`) written in a workspace of the `human-trial` variant, or `m-animals-husbandry` written for an experiment without animals.
 - Subsamples or repeated measurements of one experimental unit counted as replicates.
 
 ## Inputs

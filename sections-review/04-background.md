@@ -131,8 +131,8 @@ Measured on the group's MDPI review A029 (Cardona-Álvarez, Álvarez-Meza and Ca
 - A finding of an included study: the background describes the field, the results synthesize the studies.
 - An open problem that the results never use as a class, or a class of the results that the background never names.
 - Open problems written as items: bullets, a numbered list, bold or italic lead-ins, or one-line problems.
-- An open-problem paragraph shorter than six lines or longer than eight, or one without a citation that illustrates the problem.
-- Open-problem paragraphs that do not link to each other: each starts from zero, or the same stock connector opens two of them.
+- [block: bg-open-problems] An open-problem paragraph shorter than six lines or longer than eight, or one without a citation that illustrates the problem.
+- [block: bg-open-problems] Open-problem paragraphs that do not link to each other: each starts from zero, or the same stock connector opens two of them.
 - A subsection unrelated to any research question.
 
 ## Inputs

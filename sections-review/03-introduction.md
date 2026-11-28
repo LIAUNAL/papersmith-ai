@@ -180,10 +180,10 @@ Measured on the group's MDPI review A029 (Cardona-Álvarez, Álvarez-Meza and Ca
 - Research questions set apart under RQ1, RQ2 … labels, or as a numbered or bulleted list, in the introduction.
 - Contributions or innovation points given as short lines (a numbered list, bullets, bold lead-ins, or a colon followed by items) instead of the proposal paragraph.
 - No proposal paragraph before the agenda paragraph, or one that leaves out the idea, the novelty against the closest reviews, or the key points.
-- A question of `review/protocol.json` missing from the proposal paragraph, carried with a different meaning, or one the protocol does not ask.
+- [block: intro-objectives] A question of `review/protocol.json` missing from the proposal paragraph, carried with a different meaning, or one the protocol does not ask.
 - A gap stated as a lack (*a notable deficiency in comprehensive analysis*) without naming the closest existing reviews and what each leaves out.
 - A finding of an included study reported in the introduction: findings belong to the results.
-- Key points whose order differs from the research questions they answer.
+- [block: intro-objectives] Key points whose order differs from the research questions they answer.
 - A roadmap that names a section that does not exist, or skips one.
 - A citation used as the subject of a sentence.
 

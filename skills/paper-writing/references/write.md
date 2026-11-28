@@ -38,7 +38,7 @@ sentence without a citation (`future-work-uncited`).
 | Verb | What it does | Refuses |
 | --- | --- | --- |
 | `write --section <id> --block <id> --draft <path> --audit <path> [--evidence <path>] [--style <path>] [--guidance <dir>] [--transcript <path>] [--grounding <path>] [--expect-digest <sha256>]` | With `--expect-digest`, first refuses `BLOCK_CHANGED_SINCE_READ` when the block's recorded digest is no longer the one read, and checks it again at `substitute`. Before any draft/audit byte is read: refuses if this block's own phase wave is not yet writable, then refuses if this block's own section citation folder is not fully ready, then runs packet assembly for this block. Then reconciles the already-drafted, already-audited block against its real contract, evidence set and mode; substitutes on success, reports fired bullets on a first failure, refuses and escalates on exhaustion. `--style` records the sampler's account as `R` and runs the eight-token tripwire against the styled draft before `substitute`. For a `transposition`-mode block with at least one resolved bound section, `check_source_section_verbatim` then runs against the same draft, after the style tripwire and before `substitute`. `--grounding` records the section-grounding-auditor's account and reconciles it against every subject sentence, after the verbatim check and before `substitute` | `BLOCK_CHANGED_SINCE_READ`, `PHASE_NOT_READY`, `CITATION_FOLDER_ABSENT`, `CITATION_NOT_INGESTED`, `CITATION_FOLDER_UNCLASSIFIED`, `GUIDANCE_MARKDOWN_UNREADABLE`, `MODE_ABSENT`, `DRAFT_NOT_ENGLISH`, `DRAFT_PLACEHOLDER_TEXT`, `DRAFT_BOLD_LEAD_IN`, `DRAFT_SECTION_HEADING`, `EVIDENCE_SET_REQUIRED`, `UNBOUND_SENTENCE`, `BINDING_ORPHANED`, `EVIDENCE_ID_UNKNOWN`, `FACT_NOT_LICENSED`, `DECLARATION_NOT_LICENSED`, `STRUCTURAL_CARRIES_CLAIM`, `DECLARATION_UNDECLARED`, `DECLARATION_VALUE_ABSENT`, `DECLARATION_CARRIES_CLAIM`, `MODE_VIOLATION`, `DISQUALIFIERS_ABSENT`, `VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`, `AUDIT_EXHAUSTED`, `SPAN_NOT_IN_SOURCE`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, `GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`, `GROUNDING_VERDICT_MISSING`, `SECTION_UNSUPPORTED_CLAIM` |
-| `write --section <id> --block <id> --draft <path> --precheck [--evidence <path>] [--style <path>] [--guidance <dir>] [--expect-digest <sha256>]` | Runs every deterministic check `write` runs, in its order, before any judge is spawned: the digest, phase and citation gates, packet assembly, language, lead-ins, headings, the evidence audit and binding, the disqualifier extraction, table lint, the style tripwire and the verbatim-from-source check. Reads no judge account: `--audit` and `--grounding` beside `--precheck` are invocation errors (exit 2). Writes no attempt ledger, substitutes nothing. Returns `"status": "precheck-passed"` with `attempt` (the attempt the next `write` would be), `disqualifiers` (every bullet the contract judge must rule on), `rowCount` (contract 05's measured synthesis-table finding, or `null`), `groundingSubjects` (the sentences the grounding judge must rule on; empty means no grounding judge is needed), `tableLint` and `language` | the same codes as `write` before its contract audit, plus `DISQUALIFIERS_ABSENT`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, and `AUDIT_EXHAUSTED` when the block already escalated to the operator |
+| `write --section <id> --block <id> --draft <path> --precheck [--evidence <path>] [--style <path>] [--guidance <dir>] [--expect-digest <sha256>]` | Runs every deterministic check `write` runs, in its order, before any judge is spawned: the digest, phase and citation gates, packet assembly, language, lead-ins, headings, the evidence audit and binding, the disqualifier extraction, table lint, the style tripwire and the verbatim-from-source check. Reads no judge account: `--audit` and `--grounding` beside `--precheck` are invocation errors (exit 2). Writes no attempt ledger, substitutes nothing. Returns `"status": "precheck-passed"` with `attempt` (the attempt the next `write` would be), `disqualifiers` (every bullet the contract judge must rule on: the unmarked ones and those marked for this block, verbatim), `unresolvedMarkers` (marked bullets whose marker did not parse or names an undeclared block, judged on every block), `rowCount` (contract 05's measured synthesis-table finding, or `null`), `groundingSubjects` (the sentences the grounding judge must rule on; empty means no grounding judge is needed), `tableLint` and `language` | the same codes as `write` before its contract audit, plus `DISQUALIFIERS_ABSENT`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, and `AUDIT_EXHAUSTED` when the block already escalated to the operator |
 
 **The phase gate stops the write path, it does not merely report it.**
 Unit 6 wired `PHASE_NOT_READY` onto the read-only `phases` verb alone;
@@ -145,12 +145,21 @@ An incomplete judge account (`VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`,
 `GROUNDING_VERDICT_MISSING`) spends no attempt: ask the same judge again for
 the missing verdicts, never re-draft for it.
 
-**The contract judge rules on every bullet.** No contract marks a
-disqualifier bullet as belonging to one block (a bullet such as "Block 3 in
-other than two paragraphs" names its block in prose only), so `write`
-extracts every bullet of the section and `VERDICT_MISSING` forces a verdict
-on each. A bullet about another block is `clear` for this draft unless the
-draft itself breaches it; the judge never skips it.
+**The contract judge rules on every bullet that applies to the block.**
+A bullet applies when it carries no block marker (section-wide), or when
+its leading `[block: <id>, ...]` marker names the block being written
+(the marker format: "Block markers on disqualifiers" in
+`references/section-contract.md`). `write` extracts every bullet,
+selects the applicable ones, and `VERDICT_MISSING` forces a verdict on
+each; a verdict on a bullet marked for another block refuses
+`VERDICT_BULLET_UNKNOWN`, naming the block. A marker that does not parse,
+or names a block the contract does not declare, never removes a rule: that
+bullet applies to every block, and `--precheck` lists it under
+`unresolvedMarkers`. A contract with no marker (an older or customized one)
+is judged on every bullet, exactly as before. An unmarked bullet that names
+a block in prose only ("Block 3 in other than two paragraphs") still
+applies: it is `clear` for a draft of another block unless that draft
+itself breaches it; the judge never skips it.
 
 **Measure this before delegating (redactor/contract-auditor):** confirm the
 contract's own `sections/*.md` file and its evidence set are both already

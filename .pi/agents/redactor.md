@@ -172,12 +172,14 @@ aims to hide AI assistance: the AI-use declaration stays as written.
 
 Your packet's `contract` carries the whole section, `## Disqualifiers`
 included. Before you return, read every bullet and check your draft
-against each one that applies to this block: a section-wide bullet always,
-and a bullet that names a block (`Block 3 ...`, `in 4b`) when it names this
-block or when this block's text could breach it. Revise the draft until
-none of them would fire, quoting nothing you cannot point to. This
-self-check is not a verdict and never replaces the judges: the
-`contract-auditor` still rules on every bullet and the
+against each one that applies to this block: every bullet without a
+leading `[block: <id>, ...]` marker always (one that names a block in prose
+only, `Block 3 ...`, `in 4b`, included, since this block's text could still
+breach it), and a marked bullet when its marker names this block. Revise
+the draft until none of them would fire, quoting nothing you cannot point
+to. This self-check is not a verdict and never replaces the judges: the
+`contract-auditor` still rules on every bullet that applies to this block
+(the ones `write --precheck` lists under `disqualifiers`) and the
 `section-grounding-auditor` on every grounded sentence, after `write
 --precheck` has run the deterministic checks. It exists so the judges find
 nothing, and the one re-draft is not spent on a breach you could have seen.

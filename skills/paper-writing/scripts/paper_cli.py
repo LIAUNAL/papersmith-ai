@@ -3021,6 +3021,7 @@ def cmd_write(args: argparse.Namespace) -> dict:
         source_sections=paper_source_span.resolve_bound_sections(corpus, qualified_id),
         licensed_declarations=licensed_declarations,
         declared=declared,
+        declared_blocks=tuple(entry["id"] for entry in header.blocks),
     )
     if precheck:
         # `--precheck`: the deterministic checks only, before any judge is

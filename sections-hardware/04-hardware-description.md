@@ -104,7 +104,7 @@ No paper of this line has been measured yet: the rules below carry the group's w
 
 - A contribution the validation section does not test.
 - A datasheet value presented as a measured performance of this hardware.
-- Fewer than three or more than five bullet points on uses for other researchers.
+- [block: hd-uses] Fewer than three or more than five bullet points on uses for other researchers.
 
 ## Inputs
 

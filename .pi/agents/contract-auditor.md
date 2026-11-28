@@ -36,11 +36,16 @@ something different; you re-read every time.
 
 ## What you judge
 
-Exactly one verdict per bullet: `fires`, `clear`, or `undecidable`, for
-every bullet of the section, block-specific ones included. No contract
-marks a bullet as belonging to one block, so `write` asks for a verdict on
-each; a bullet that names another block (`Block 3 ...`, `in 4b`) is `clear`
-for this draft unless this draft itself breaches it, and never skipped.
+Exactly one verdict per bullet that applies to the block being written:
+`fires`, `clear`, or `undecidable`. The bullets that apply are the ones
+`write --precheck` lists under `disqualifiers`, verbatim and in contract
+order: every unmarked bullet of the section, and every bullet whose leading
+`[block: <id>]` (or `[block: <id>, <id>]`) marker names this block. A
+bullet marked for another block is not yours to judge on this draft; a
+verdict on it refuses. Quote each bullet exactly as listed, its marker
+included. An unmarked bullet that names another block in prose only
+(`Block 3 ...`, `in 4b`) still applies: it is `clear` for this draft unless
+this draft itself breaches it, and never skipped.
 
 - **`fires`** requires a quoted span from the drafted block — the exact
   text that violates the bullet. A verdict citing no span is not `fires`;
@@ -59,8 +64,9 @@ for this draft unless this draft itself breaches it, and never skipped.
 
 `write` extracts the same bullets from the same contract independently and
 reconciles your account against them in both directions: a verdict naming
-a bullet that is not actually in the contract refuses, and a bullet with
-no verdict from you refuses too. A `fires` verdict whose quoted span is not
+a bullet that is not actually in the contract, or one marked for another
+block, refuses, and an applicable bullet with no verdict from you refuses
+too. A `fires` verdict whose quoted span is not
 actually present in the draft downgrades to `undecidable` automatically —
 your citation is checked against the real bytes, never taken on your word.
 

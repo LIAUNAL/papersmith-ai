@@ -169,7 +169,7 @@ No paper of this line has been measured yet: the rules below carry the group's w
 - No comparison with the closest studies the introduction named.
 - A qualitative finding generalised statistically to a population, or a panel's consensus presented as the view of every expert.
 - An implication stronger than the findings allow, or a closing appeal with no finding behind it.
-- An experience-report block (`d-experience-lessons`) written in a workspace of another variant.
+- [block: d-experience-lessons] An experience-report block (`d-experience-lessons`) written in a workspace of another variant.
 - In an experience report, an effect of the innovation (better learning, higher performance) claimed without an evaluation that measured it.
 
 ## Inputs

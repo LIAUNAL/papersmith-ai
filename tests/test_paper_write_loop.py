@@ -3,7 +3,7 @@
 The rule (odd/tasks/efficiency-stage-b.md, S4): fewer blind redrafts with
 the same or a stronger gate. The deterministic checks run before any LLM
 judge (`write --precheck`), the contract judge rules on every disqualifier
-bullet, the block is written only when every judge passes, exactly one
+bullet that applies to the block, the block is written only when every judge passes, exactly one
 bounded re-draft is allowed, and after it the loop stops and escalates to
 the operator with the judges' verdicts recorded in the attempt ledger --
 never an automatic pass and never another blind redraft.
@@ -197,9 +197,10 @@ class PrecheckTests(_Paper):
 
 
 class EveryBulletIsJudgedTests(_Paper):
-    """S4 (3): contracts carry no machine-readable block marker on their
-    bullets, so the contract judge still rules on every bullet; a missing
-    verdict refuses and spends no attempt."""
+    """S4 (3): a bullet that names a block in prose only carries no block
+    marker, so it applies to every block and the contract judge rules on
+    it; a missing verdict refuses and spends no attempt. Marked bullets:
+    `tests/test_paper_audit_block_markers.py` (S7)."""
 
     def test_a_missing_verdict_on_a_block_specific_bullet_refuses_verdict_missing(self) -> None:
         self.assertRefused(

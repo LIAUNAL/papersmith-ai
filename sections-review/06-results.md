@@ -174,8 +174,8 @@ Measured on the group's MDPI review A029 (Cardona-Álvarez, Álvarez-Meza and Ca
 - A table of two columns or two rows whose values a bar or pie chart, or the sentence, could carry.
 - A citation as the subject of a sentence: *The paper by [n]*, *The study by [n]*, *The article by [n]*, *In [n], the authors*, *Author et al. [n] proposed*.
 - Three or more consecutive sentences about one study.
-- A sub-theme paragraph that cites a single study, unless it says that this study is the only evidence.
-- A sub-theme without its closing synthesis sentence, or one that restates the topic (*These studies highlight the importance of …*).
+- [block: r-thematic-synthesis] A sub-theme paragraph that cites a single study, unless it says that this study is the only evidence.
+- [block: r-thematic-synthesis] A sub-theme without its closing synthesis sentence, or one that restates the topic (*These studies highlight the importance of …*).
 - A theme without its evidence figure (or, for a theme of one or two studies, its comparison in the text), a theme with more comparison tables than figures, or a figure or table never referenced in the text.
 - RQ notation anywhere in the results: an RQ label in a title, a sentence, a parenthesis or a table.
 - A subsection or sub-theme paragraph that starts from zero, with no link to the claim the previous one closed.

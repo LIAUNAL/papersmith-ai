@@ -96,10 +96,10 @@ No paper of this line has been measured yet: the rules below carry the group's w
 
 ## Disqualifiers
 
-- A title that does not say what the hardware is for.
-- An acronym or abbreviation in the title that is not the hardware's own name expanded in the abstract.
-- A promotional or evaluative word in the title (*Novel*, *Revolutionary*, *Smart* used as praise).
-- Fewer than three or more than six keywords, or a keyword that repeats a word of the title.
+- [block: title] A title that does not say what the hardware is for.
+- [block: title] An acronym or abbreviation in the title that is not the hardware's own name expanded in the abstract.
+- [block: title] A promotional or evaluative word in the title (*Novel*, *Revolutionary*, *Smart* used as praise).
+- [block: title, keywords] Fewer than three or more than six keywords, or a keyword that repeats a word of the title.
 
 ## Inputs
 

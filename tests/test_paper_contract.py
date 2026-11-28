@@ -1060,16 +1060,18 @@ class ProducesFactsSchemaTests(unittest.TestCase):
 #: general task (whose share drops to 35-55 %) and the performance-first
 #: disqualifier; 02's assessment gains a tenth block declaring the illustrative
 #: instruments (examples, comparators, band method, embedding method and points).
+#: 05, 06, 07 and 09 re-captured (efficiency stage B, S7): block-specific
+#: disqualifiers carry a leading `[block: <id>]` marker; no rule was reworded.
 PRE_MIGRATION_BODY_DIGESTS: dict[str, str] = {
     "01-materials-and-methods.md": "25a94e768adba8d165d5c6b8768e469fe0ab0d132336f9855099943514b68557",
     "02-experimental-setup.md": "a9736b136ab1a6720a813f8e3e8a4f7f25ba3ad4aa64d7338c991c732a516df8",
     "03-results-and-discussion.md": "32e633ebf59dddcc48ec1c3944221faad9a6ee7e960c2fe57f324775f8863cf9",
     "04-limitations.md": "42bb9e8fa82c6b5b2734f25b06b8d2f772a25540a060de4097098ed2437ea66a",
-    "05-related-work.md": "1ce654c4b2da6d7a721a12b08fa7ad46581fcaf8d8f23c687abef432f7c1f174",
-    "06-introduction.md": "72e5c2a1c302a7008f7a8a5d0ba4d4a64ec999058673050be08857f048a8dc1a",
-    "07-conclusions.md": "cfc56c03753c4c2c570b0b4ac6e622141c2109027c7b475f26d46ad1403d1ef6",
+    "05-related-work.md": "7a7f9d4a306dcb6445408cb30e2daa25863356cc0a22023aa836f83d0c2287a5",
+    "06-introduction.md": "b50625f8f0efb726c42c54c3686cead27d4fcaf074e048059429c15486af49af",
+    "07-conclusions.md": "71970dd2a6908044a089a248b2a033a2dede2c0996c0fba2026cf7fbbd86ad12",
     "08-abstract.md": "42080b0a390616d6a765b189f069242d38b04d9080f6a4a37507904e31336e32",
-    "09-title-and-keywords.md": "e91df770daef297c33bbabfe54ec49d1c09c7e2d43b48e8807f252eb465f545d",
+    "09-title-and-keywords.md": "73a0707e57a802d1948a596db9943463a0342b01d271c7dade27078991e44662",
     "10-back-matter.md": "b33d99493d781fbc8513a8487be052cebd328311fe4424c78437b46e5d72674d",
 }
 

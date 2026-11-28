@@ -201,17 +201,17 @@ acrónimo aparece en el resumen y en el cuerpo.
 
 ## Descalificadores
 
-- Menos de 10 o más de 16 palabras en el título.
+- [block: title] Menos de 10 o más de 16 palabras en el título.
 - Ningún adjetivo de propiedad, o uno que no va primero.
 - Ningún mecanismo nombrado.
 - Ninguna tarea nombrada.
 - Un número, un porcentaje o una afirmación de superioridad.
-- Un acrónimo en el título sin dos puntos, o uno que el resumen no desarrolla.
+- [block: title] Un acrónimo en el título sin dos puntos, o uno que el resumen no desarrolla.
 - Un dominio o lugar nombrado cuando el trabajo no está ligado a él.
 - Un guion corto donde los términos de igual rango en una serie necesitan una raya media.
-- Menos de 3 o más de 5 palabras clave, o un número que la revista destino no permite.
-- Una lista de palabras clave que solo repite términos del título.
-- Una palabra clave ausente del cuerpo.
+- [block: keywords] Menos de 3 o más de 5 palabras clave, o un número que la revista destino no permite.
+- [block: title, keywords] Una lista de palabras clave que solo repite términos del título.
+- [block: keywords] Una palabra clave ausente del cuerpo.
 - Una línea de clasificación faltante cuando la revista destino la exige.
 - Nombres reales de autores, afiliaciones o correos de contacto incluidos en la redacción inicial antes de la verificación completa del manuscrito con el usuario.
 - Un manuscrito compuesto a dos columnas en lugar del modo de revisión a una columna (`onecolumn`).

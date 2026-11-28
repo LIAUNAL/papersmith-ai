@@ -82,6 +82,12 @@ class BlockContract:
     #: recorded declaration's string, or the `ai_usage` record's
     #: `(components, extra)` pair. An id with no recorded value is absent.
     declared: dict = field(default_factory=dict)
+    #: The bare block ids this block's contract header declares, what a
+    #: `[block: <id>]` disqualifier marker is resolved against (S7 of
+    #: `odd/tasks/efficiency-stage-b.md`). Defaulted empty: with no declared
+    #: ids every marker is inert and every bullet is judged, as before. Not
+    #: part of the attempt key; the key hashes the contract prose itself.
+    declared_blocks: tuple = ()
 
 
 def _attempt_key(contract: BlockContract) -> str:
@@ -276,6 +282,7 @@ def _stage_contract_audit(contract: BlockContract, draft: dict, audit_account: d
     return paper_audit.audit(
         contract.contract_prose, draft["latex"], audit_account["verdicts"],
         source_name=contract.contract_source,
+        block_id=contract.block_id, declared_blocks=contract.declared_blocks,
     )
 
 
@@ -347,16 +354,19 @@ def precheck_block(paper_dir: Path, contract: BlockContract, draft: dict) -> dic
     `AUDIT_EXHAUSTED` when the block already escalated, so no judge runs on
     a block only the operator can reopen.
 
-    Returns the bullets the contract judge must rule on (every bullet: no
-    contract marks a bullet as belonging to one block), the deterministic
-    row-count finding when that bullet is present, and the subject
-    sentences the grounding judge must rule on (empty: no grounding judge
-    is needed)."""
+    Returns the bullets the contract judge must rule on, verbatim and in
+    contract order (every unmarked bullet, plus the bullets whose
+    `[block: ...]` marker names this block; S7), the marked bullets whose
+    marker did not resolve and so apply to every block, the deterministic
+    row-count finding when that bullet applies, and the subject sentences
+    the grounding judge must rule on (empty: no grounding judge is
+    needed)."""
     _stage_readiness(contract)
     _check_draft_shape(draft)
     language = _stage_prose_checks(paper_dir, contract, draft)
     bindings = _stage_evidence_audit(contract, draft)
-    bullets = paper_audit.extract_disqualifiers(contract.contract_prose, source_name=contract.contract_source)
+    every_bullet = paper_audit.extract_disqualifiers(contract.contract_prose, source_name=contract.contract_source)
+    bullets = paper_audit.applicable_disqualifiers(every_bullet, contract.block_id, contract.declared_blocks)
     attempt = _next_attempt(contract, paper_dir, _attempt_key(contract))
     table_lint = _table_lint(paper_dir, draft)
     subjects = []
@@ -376,8 +386,9 @@ def precheck_block(paper_dir: Path, contract: BlockContract, draft: dict) -> dic
         "block": contract.block_id,
         "attempt": attempt,
         "disqualifiers": bullets,
+        "unresolvedMarkers": paper_audit.unresolved_markers(every_bullet, contract.declared_blocks),
         "rowCount": paper_audit.row_count_finding(draft["latex"])
-        if paper_audit.ROW_COUNT_BULLET in bullets else None,
+        if paper_audit.ROW_COUNT_BULLET in map(paper_audit.bullet_rule, bullets) else None,
         "groundingSubjects": [{"sentence": subject.sentence, "fact": subject.ref} for subject in subjects],
         "tableLint": table_lint,
         "language": language,

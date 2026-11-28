@@ -250,14 +250,14 @@ an internal-chain row.
   section does not already hold.
 - A component list disagreeing with the introduction or the methods section in count,
   order, or naming.
-- A contribution with no finding paragraph in block 2.
+- [block: concl-block-2] A contribution with no finding paragraph in block 2.
 - Block 1 not first, or block 4 not last.
-- Block 1 closing on a number instead of on the distinguishing property.
+- [block: concl-block-1] Block 1 closing on a number instead of on the distinguishing property.
 - A number that differs from the results section — in value, unit, or precision.
 - More than one headline number for a single contribution.
 - A future-work direction that answers no stated limitation.
-- A future-work block that continues the paragraph before it instead of opening its own.
-- A citation anywhere outside the future-work block.
+- [block: concl-block-4] A future-work block that continues the paragraph before it instead of opening its own.
+- [block: concl-block-1, concl-block-2, concl-block-3] A citation anywhere outside the future-work block.
 - A future-work direction with no reference.
 - A future-work direction too vague to be a paper.
 - An equation, a figure, or a table.

@@ -109,11 +109,11 @@ No paper of this line has been measured yet: the rules below carry the group's w
 
 ## Disqualifiers
 
-- A title that does not name the design (cohort, case-control, cross-sectional, diagnostic accuracy, measurement properties).
-- A title that states a causal effect the design cannot support (*X reduces Y*, *the impact of X on Y*) for an observational study.
-- A promotional or evaluative word in the title (*Novel*, *Revolutionizing*, *Comprehensive*).
-- A keyword that repeats a word of the title.
-- An acronym in the title that the abstract does not expand.
+- [block: title] A title that does not name the design (cohort, case-control, cross-sectional, diagnostic accuracy, measurement properties).
+- [block: title] A title that states a causal effect the design cannot support (*X reduces Y*, *the impact of X on Y*) for an observational study.
+- [block: title] A promotional or evaluative word in the title (*Novel*, *Revolutionizing*, *Comprehensive*).
+- [block: title, keywords] A keyword that repeats a word of the title.
+- [block: title] An acronym in the title that the abstract does not expand.
 
 ## Sources
 

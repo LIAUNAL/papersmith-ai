@@ -171,7 +171,7 @@ No paper of this line has been measured yet: the rules below carry the group's w
 - A simulated value called measured.
 - A primary observable other than the locked protocol's, or a planned observable silently left out.
 - An interpretation, a comparison with other studies or a recommendation: those belong to the discussion.
-- A variant block (`r-sample-characterization`, `r-model-verification`) written in a workspace of another variant.
+- [block: r-sample-characterization, r-model-verification] A variant block (`r-sample-characterization`, `r-model-verification`) written in a workspace of another variant.
 
 ## Inputs
 
