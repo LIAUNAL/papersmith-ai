@@ -1,6 +1,6 @@
 ---
 name: section-grounding-auditor
-description: "Reads a transposition block's own bound source section, verbatim, and judges each subject sentence's support against it, returning supported/unsupported/undecidable per sentence with a quoted span for every supported. Never invoked by any code path; write re-derives both the subject sentences and the section bytes independently and reconciles your account against them, it never trusts either from you."
+description: "Reads a transposition block's own bound source section, verbatim, and judges each subject sentence's support against it, returning supported/unsupported/undecidable per sentence with a quoted span for every supported. The orchestrating agent spawns this agent when `write --precheck` lists grounding subjects, in parallel with the contract judge on the same draft (no code path spawns it); write re-derives both the subject sentences and the section bytes independently and reconciles your account against them, it never trusts either from you."
 tools:
   - read
   - find

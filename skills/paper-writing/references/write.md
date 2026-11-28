@@ -37,7 +37,8 @@ sentence without a citation (`future-work-uncited`).
 
 | Verb | What it does | Refuses |
 | --- | --- | --- |
-| `write --section <id> --block <id> --draft <path> --audit <path> [--evidence <path>] [--style <path>] [--guidance <dir>] [--transcript <path>] [--grounding <path>] [--expect-digest <sha256>]` | With `--expect-digest`, first refuses `BLOCK_CHANGED_SINCE_READ` when the block's recorded digest is no longer the one read, and checks it again at `substitute`. Before any draft/audit byte is read: refuses if this block's own phase wave is not yet writable, then refuses if this block's own section citation folder is not fully ready, then runs packet assembly for this block. Then reconciles the already-drafted, already-audited block against its real contract, evidence set and mode; substitutes on success, reports fired bullets on a first failure, refuses on exhaustion. `--style` records the sampler's account as `R` and runs the eight-token tripwire against the styled draft before `substitute`. For a `transposition`-mode block with at least one resolved bound section, `check_source_section_verbatim` then runs against the same draft, after the style tripwire and before `substitute`. `--grounding` records the section-grounding-auditor's account and reconciles it against every subject sentence, after the verbatim check and before `substitute` | `BLOCK_CHANGED_SINCE_READ`, `PHASE_NOT_READY`, `CITATION_FOLDER_ABSENT`, `CITATION_NOT_INGESTED`, `CITATION_FOLDER_UNCLASSIFIED`, `GUIDANCE_MARKDOWN_UNREADABLE`, `MODE_ABSENT`, `DRAFT_NOT_ENGLISH`, `DRAFT_PLACEHOLDER_TEXT`, `DRAFT_BOLD_LEAD_IN`, `DRAFT_SECTION_HEADING`, `EVIDENCE_SET_REQUIRED`, `UNBOUND_SENTENCE`, `BINDING_ORPHANED`, `EVIDENCE_ID_UNKNOWN`, `FACT_NOT_LICENSED`, `DECLARATION_NOT_LICENSED`, `STRUCTURAL_CARRIES_CLAIM`, `DECLARATION_UNDECLARED`, `DECLARATION_VALUE_ABSENT`, `DECLARATION_CARRIES_CLAIM`, `MODE_VIOLATION`, `DISQUALIFIERS_ABSENT`, `VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`, `AUDIT_EXHAUSTED`, `SPAN_NOT_IN_SOURCE`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, `GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`, `GROUNDING_VERDICT_MISSING`, `SECTION_UNSUPPORTED_CLAIM` |
+| `write --section <id> --block <id> --draft <path> --audit <path> [--evidence <path>] [--style <path>] [--guidance <dir>] [--transcript <path>] [--grounding <path>] [--expect-digest <sha256>]` | With `--expect-digest`, first refuses `BLOCK_CHANGED_SINCE_READ` when the block's recorded digest is no longer the one read, and checks it again at `substitute`. Before any draft/audit byte is read: refuses if this block's own phase wave is not yet writable, then refuses if this block's own section citation folder is not fully ready, then runs packet assembly for this block. Then reconciles the already-drafted, already-audited block against its real contract, evidence set and mode; substitutes on success, reports fired bullets on a first failure, refuses and escalates on exhaustion. `--style` records the sampler's account as `R` and runs the eight-token tripwire against the styled draft before `substitute`. For a `transposition`-mode block with at least one resolved bound section, `check_source_section_verbatim` then runs against the same draft, after the style tripwire and before `substitute`. `--grounding` records the section-grounding-auditor's account and reconciles it against every subject sentence, after the verbatim check and before `substitute` | `BLOCK_CHANGED_SINCE_READ`, `PHASE_NOT_READY`, `CITATION_FOLDER_ABSENT`, `CITATION_NOT_INGESTED`, `CITATION_FOLDER_UNCLASSIFIED`, `GUIDANCE_MARKDOWN_UNREADABLE`, `MODE_ABSENT`, `DRAFT_NOT_ENGLISH`, `DRAFT_PLACEHOLDER_TEXT`, `DRAFT_BOLD_LEAD_IN`, `DRAFT_SECTION_HEADING`, `EVIDENCE_SET_REQUIRED`, `UNBOUND_SENTENCE`, `BINDING_ORPHANED`, `EVIDENCE_ID_UNKNOWN`, `FACT_NOT_LICENSED`, `DECLARATION_NOT_LICENSED`, `STRUCTURAL_CARRIES_CLAIM`, `DECLARATION_UNDECLARED`, `DECLARATION_VALUE_ABSENT`, `DECLARATION_CARRIES_CLAIM`, `MODE_VIOLATION`, `DISQUALIFIERS_ABSENT`, `VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`, `AUDIT_EXHAUSTED`, `SPAN_NOT_IN_SOURCE`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, `GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`, `GROUNDING_VERDICT_MISSING`, `SECTION_UNSUPPORTED_CLAIM` |
+| `write --section <id> --block <id> --draft <path> --precheck [--evidence <path>] [--style <path>] [--guidance <dir>] [--expect-digest <sha256>]` | Runs every deterministic check `write` runs, in its order, before any judge is spawned: the digest, phase and citation gates, packet assembly, language, lead-ins, headings, the evidence audit and binding, the disqualifier extraction, table lint, the style tripwire and the verbatim-from-source check. Reads no judge account: `--audit` and `--grounding` beside `--precheck` are invocation errors (exit 2). Writes no attempt ledger, substitutes nothing. Returns `"status": "precheck-passed"` with `attempt` (the attempt the next `write` would be), `disqualifiers` (every bullet the contract judge must rule on), `rowCount` (contract 05's measured synthesis-table finding, or `null`), `groundingSubjects` (the sentences the grounding judge must rule on; empty means no grounding judge is needed), `tableLint` and `language` | the same codes as `write` before its contract audit, plus `DISQUALIFIERS_ABSENT`, `STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`, and `AUDIT_EXHAUSTED` when the block already escalated to the operator |
 
 **The phase gate stops the write path, it does not merely report it.**
 Unit 6 wired `PHASE_NOT_READY` onto the read-only `phases` verb alone;
@@ -94,20 +95,62 @@ named, currently-unused exception reserved for a sibling skill's own
 `latexmk` integration — see `tests/test_paper_writing.py`,
 `NoSubprocessScanTests`). `write` cannot run unattended, by construction:
 
-1. The orchestrating agent (you) assembles the redactor's inputs and
-   delegates to the `redactor` agent, which returns
-   `{"latex": ..., "bindings": [...]}`. Write that JSON to a file.
-2. The orchestrating agent also delegates to the `contract-auditor` agent
-   and writes its JSON verdict envelope to a second file.
-3. Run `write --draft <path> --audit <path> --expect-digest <sha256>`,
-   passing the block digest `status` listed before step 1 (record it then,
-   every time you delegate a draft). A block another session wrote in the
-   meantime refuses `BLOCK_CHANGED_SINCE_READ` before any gate runs or any
-   attempt is spent. On `"status": "written"` the
-   block is done. On `"status": "audit-fired"`, hand the returned `fired`
-   bullets and spans back to the redactor as explicit feedback and re-draft
-   **exactly once** — a third submission under the same contract/evidence/
-   mode refuses `AUDIT_EXHAUSTED`.
+1. The orchestrating agent (you) runs `packet` and spawns the `redactor`
+   agent (subagent name `redactor`, never a generic agent) with the packet
+   for this one block. The redactor checks its draft against every
+   disqualifier bullet that applies to the block before returning, reports
+   which it checked, and returns `{"latex": ..., "bindings": [...]}`. Write
+   that JSON to a file.
+2. Run `write --draft <path> --precheck --expect-digest <sha256>` (same
+   `--evidence`/`--style` as the real call), passing the block digest
+   `status` listed before step 1 (record it then, every time you delegate a
+   draft). Every deterministic refusal surfaces here, before any judge
+   runs; it spends no attempt. Fix the draft with the redactor and precheck
+   again until it passes. `precheck-passed` lists the `disqualifiers` the
+   contract judge rules on and the `groundingSubjects` the grounding judge
+   rules on.
+3. Spawn the judges **in parallel, on the same draft**: the
+   `contract-auditor` agent always, and the `section-grounding-auditor`
+   agent too when `groundingSubjects` is not empty. Write each JSON
+   envelope to its own file.
+4. Run one `write --draft <path> --audit <path> [--grounding <path>]
+   --expect-digest <sha256>`. The block is written only when every judge
+   passes: the contract audit fires on no bullet and every grounding
+   subject is supported or undecidable. A block another session wrote in
+   the meantime refuses `BLOCK_CHANGED_SINCE_READ` before any gate runs or
+   any attempt is spent. On `"status": "written"` the block is done.
+5. On `"status": "audit-fired"`, or a refusal after the contract audit that
+   only a re-draft answers (`STYLE_OVERLAP`, `SOURCE_SECTION_VERBATIM`,
+   `SECTION_UNSUPPORTED_CLAIM`), hand ALL of it back to the redactor as
+   explicit feedback: every `fired` bullet and span, and the whole
+   `grounding` record — every subject sentence's verdict under `verdicts`
+   and the refusal detail that names every unsupported sentence, never only
+   the first (the `audit-fired` envelope carries it; after a refusal, read
+   it from the ledger, `paper/.paper-writing/attempts/<block>.json`, keys
+   `refusal` and `grounding`). Re-draft **exactly once**, then
+   repeat steps 2 to 4 (a re-draft makes both earlier verdicts stale, so
+   both judges run again).
+6. When the re-draft still fires, or still refuses after the contract
+   audit, `write` records the ledger's terminal `escalated` state with the
+   judges' verdicts (`paper/.paper-writing/attempts/<block>.json`) and
+   refuses `AUDIT_EXHAUSTED`. **Stop and ask the operator**, showing the
+   fired bullets, their spans and every grounding verdict. No further
+   re-draft runs, every later `write` or `--precheck` under the same
+   contract, evidence set and mode refuses `AUDIT_EXHAUSTED`, and nothing
+   passes automatically. A changed contract, evidence set or mode is a new
+   attempt key and opens a fresh budget; only the operator decides it.
+
+An incomplete judge account (`VERDICT_MISSING`, `VERDICT_BULLET_UNKNOWN`,
+`GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`,
+`GROUNDING_VERDICT_MISSING`) spends no attempt: ask the same judge again for
+the missing verdicts, never re-draft for it.
+
+**The contract judge rules on every bullet.** No contract marks a
+disqualifier bullet as belonging to one block (a bullet such as "Block 3 in
+other than two paragraphs" names its block in prose only), so `write`
+extracts every bullet of the section and `VERDICT_MISSING` forces a verdict
+on each. A bullet about another block is `clear` for this draft unless the
+draft itself breaches it; the judge never skips it.
 
 **Measure this before delegating (redactor/contract-auditor):** confirm the
 contract's own `sections/*.md` file and its evidence set are both already

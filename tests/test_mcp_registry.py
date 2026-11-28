@@ -92,7 +92,9 @@ _PAPER_CLI_ONLY_FLAGS: dict[str, frozenset[str]] = {
     # --sections override.
     "papersmith.paper_declare": frozenset({"--condition", "--decline", "--reason", "--sections"}),
     "papersmith.paper_bib_build": frozenset({"--guidance"}),
-    "papersmith.paper_write": frozenset({"--grounding"}),
+    # `write --precheck` runs the deterministic checks before the judges; the
+    # MCP tool submits verdicts, so it keeps to the judged path.
+    "papersmith.paper_write": frozenset({"--grounding", "--precheck"}),
     "papersmith.paper_validate": frozenset({"--min-sources"}),
 }
 

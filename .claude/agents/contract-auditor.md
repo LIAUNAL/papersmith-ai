@@ -1,6 +1,6 @@
 ---
 name: contract-auditor
-description: "Reads a contract's `## Disqualifiers` bullets verbatim and judges a drafted block against each one, returning fires/clear/undecidable per bullet with a quoted span for every `fires`. Never invoked by any code path; `write` reconciles your account against the real bullets and the real draft, it never trusts either from you."
+description: "Reads a contract's `## Disqualifiers` bullets verbatim and judges a drafted block against each one, returning fires/clear/undecidable per bullet with a quoted span for every `fires`. The orchestrating agent spawns this agent after `write --precheck` passes, in parallel with the grounding judge on the same draft (no code path spawns it); `write` reconciles your account against the real bullets and the real draft, it never trusts either from you."
 tools: Read, Glob, Grep
 model: opus
 stretch: write
@@ -34,7 +34,11 @@ something different; you re-read every time.
 
 ## What you judge
 
-Exactly one verdict per bullet: `fires`, `clear`, or `undecidable`.
+Exactly one verdict per bullet: `fires`, `clear`, or `undecidable`, for
+every bullet of the section, block-specific ones included. No contract
+marks a bullet as belonging to one block, so `write` asks for a verdict on
+each; a bullet that names another block (`Block 3 ...`, `in 4b`) is `clear`
+for this draft unless this draft itself breaches it, and never skipped.
 
 - **`fires`** requires a quoted span from the drafted block — the exact
   text that violates the bullet. A verdict citing no span is not `fires`;

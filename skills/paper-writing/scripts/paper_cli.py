@@ -2965,13 +2965,15 @@ def cmd_write(args: argparse.Namespace) -> dict:
         sections_dir, guidance_dir, args.section, args.block, corpus=corpus, paper_dir=paper_dir,
     )
 
+    precheck = bool(getattr(args, "precheck", False))
     draft_path = _resolve_repo_path(args.draft)
-    audit_path = _resolve_repo_path(args.audit)
     if args.transcript:
         _resolve_repo_path(args.transcript)
 
     draft = _load_draft_envelope(draft_path)
-    audit_account = _load_audit_envelope(audit_path)
+    audit_account = None
+    if not precheck:
+        audit_account = _load_audit_envelope(_resolve_repo_path(args.audit))
 
     # `the-block-asserts-only-what-its-section-carries`, design.md D7:
     # `--grounding` stays `default=None` -- requiring it would break every
@@ -3020,6 +3022,11 @@ def cmd_write(args: argparse.Namespace) -> dict:
         licensed_declarations=licensed_declarations,
         declared=declared,
     )
+    if precheck:
+        # `--precheck`: the deterministic checks only, before any judge is
+        # spawned -- no ledger write and no substitution (S4 of
+        # `odd/tasks/efficiency-stage-b.md`).
+        return paper_write.precheck_block(paper_dir, contract, draft)
     res = paper_write.write_block(
         paper_dir, contract, draft, audit_account, grounding_account=grounding_account,
         expected_digest=expected_digest,
@@ -4466,7 +4473,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_write = sub.add_parser(
         "write",
-        help="judge an already-drafted, already-audited block: reconcile, then substitute or report why not",
+        help="judge an already-drafted, already-audited block: reconcile, then substitute or report "
+             "why not; --precheck runs the deterministic checks alone, before the judges",
     )
     p_write.add_argument(
         "--paper", default=None,
@@ -4485,9 +4493,19 @@ def build_parser() -> argparse.ArgumentParser:
              "requires_declarations lists, or ai-usage for the AI-use blocks) or structural; "
              "must resolve inside the repository root",
     )
-    p_write.add_argument(
-        "--audit", required=True,
-        help="path to the contract-auditor's JSON envelope: {verdicts}; must resolve inside the repository root",
+    p_write_judge = p_write.add_mutually_exclusive_group(required=True)
+    p_write_judge.add_argument(
+        "--audit", default=None,
+        help="path to the contract-auditor's JSON envelope: {verdicts}, one verdict per "
+             "## Disqualifiers bullet; must resolve inside the repository root",
+    )
+    p_write_judge.add_argument(
+        "--precheck", action="store_true",
+        help="run every deterministic check write runs (gates, language, lead-ins, headings, "
+             "evidence audit and binding, table lint, style tripwire, verbatim-from-source) "
+             "before any judge is spawned, refusing with the same codes; reads no --audit and "
+             "refuses --grounding beside it, writes no attempt ledger, substitutes nothing, and lists the "
+             "bullets and grounding subject sentences the judges must rule on",
     )
     p_write.add_argument(
         "--evidence", default=None,
@@ -4957,12 +4975,23 @@ _COMMANDS = {
 }
 
 
+def _reject_conflicting_options(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Option pairs argparse's single exclusive group cannot express. `write
+    --precheck` reads no judge account, so `--grounding` beside it is an
+    invocation error (exit 2, the same exit argparse gives `--audit` beside
+    `--precheck`), never silently ignored."""
+    if getattr(args, "command", None) == "write" and getattr(args, "precheck", False) and args.grounding:
+        parser.error("argument --grounding: not allowed with argument --precheck "
+                     "(the precheck reads no judge account)")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = None
     try:
         _require_supported_python()
         parser = build_parser()
         args = parser.parse_args(argv)
+        _reject_conflicting_options(parser, args)
         result = _COMMANDS[args.command](args)
     except Refused as exc:
         refusal = {"status": "refused", "code": exc.code, "detail": exc.detail}

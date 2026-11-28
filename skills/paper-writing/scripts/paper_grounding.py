@@ -19,7 +19,11 @@ Public surface:
     subjects_for(bindings, source_sections) -> list[Binding]
     reconcile_support(subjects, account, source_sections, *, block_id) -> list[dict]
         (raises GROUNDING_ACCOUNT_ABSENT, GROUNDING_SENTENCE_UNKNOWN,
-         GROUNDING_VERDICT_MISSING, SECTION_UNSUPPORTED_CLAIM)
+         GROUNDING_VERDICT_MISSING, then SECTION_UNSUPPORTED_CLAIM naming
+         every unsupported sentence)
+    judge_support(subjects, account, source_sections, *, block_id) -> list[dict]
+        (the same reconciliation, unsupported verdicts returned, not refused)
+    refuse_unsupported(reconciled, *, block_id) -> None  (raises SECTION_UNSUPPORTED_CLAIM)
     source_grounding_report(subjects, reconciled) -> dict
 """
 from __future__ import annotations
@@ -79,6 +83,16 @@ def subjects_for(bindings: list, source_sections: tuple) -> list:
 
 
 def reconcile_support(subjects: list, account: dict | None, source_sections: tuple, *, block_id: str) -> list:
+    """`_reconcile` below, then `SECTION_UNSUPPORTED_CLAIM` naming every
+    `unsupported` sentence when the account holds any (`refuse_unsupported`).
+    The account is reconciled in full before the claim refusal, so an
+    incomplete account refuses its own code first."""
+    reconciled = _reconcile(subjects, account, source_sections, block_id=block_id)
+    refuse_unsupported(reconciled, block_id=block_id)
+    return reconciled
+
+
+def _reconcile(subjects: list, account: dict | None, source_sections: tuple, *, block_id: str) -> list:
     """Reconciles an agent's per-sentence support account against subjects
     and section bytes re-derived independently, in both directions
     (`transposition-grounding` spec, `Requirement: The Account Is
@@ -99,8 +113,9 @@ def reconcile_support(subjects: list, account: dict | None, source_sections: tup
     Raises `GROUNDING_ACCOUNT_ABSENT` (subjects exist, `account is None`),
     `GROUNDING_SENTENCE_UNKNOWN` (a relevant entry's sentence matches no
     subject), `GROUNDING_VERDICT_MISSING` (a subject has no relevant
-    entry), `SECTION_UNSUPPORTED_CLAIM` (a relevant entry's verdict is
-    `unsupported`). A `supported` verdict whose span is empty, or not byte-
+    entry); an `unsupported` verdict is kept, never raised here --
+    `reconcile_support` refuses `SECTION_UNSUPPORTED_CLAIM` once the whole
+    account is reconciled, naming every one. A `supported` verdict whose span is empty, or not byte-
     present in that fact's own bound section text, downgrades to
     `undecidable` with the span cleared (D1's inversion of `contract-
     audit`'s own asymmetry) -- this is the one check this whole change
@@ -150,14 +165,6 @@ def reconcile_support(subjects: list, account: dict | None, source_sections: tup
         span = entry.get("span") or ""
         downgraded = False
 
-        if verdict == "unsupported":
-            first = own_sections[0]
-            raise Refused(
-                "SECTION_UNSUPPORTED_CLAIM",
-                f"{block_id}: fact {subject.ref!r} (lineage {first['lineage']!r}, section "
-                f"{first['title']!r}) claims something its bound section never states: "
-                f"{subject.sentence!r}",
-            )
         if verdict == "supported":
             byte_present_own = bool(span) and any(span in _body_of(section) for section in own_sections)
             if not byte_present_own:
@@ -176,6 +183,38 @@ def reconcile_support(subjects: list, account: dict | None, source_sections: tup
             "downgraded": downgraded,
         })
     return reconciled
+
+
+def judge_support(subjects: list, account: dict | None, source_sections: tuple, *, block_id: str) -> list:
+    """`reconcile_support` without its final `SECTION_UNSUPPORTED_CLAIM`:
+    every subject's reconciled verdict, `unsupported` ones included, so a
+    caller can hand the whole account to a re-draft. Still refuses every
+    incomplete-account code. Never a pass: `write` only ever substitutes
+    after `reconcile_support`, which refuses on any `unsupported`."""
+    return _reconcile(subjects, account, source_sections, block_id=block_id)
+
+
+def refuse_unsupported(reconciled: list, *, block_id: str) -> None:
+    """Refuses `SECTION_UNSUPPORTED_CLAIM` naming EVERY `unsupported`
+    sentence of the account, never only the first, so the one re-draft
+    answers all of them at once."""
+    unsupported = []
+    for entry in reconciled:
+        verdict = entry["verdict"]
+        if verdict == "unsupported":
+            unsupported.append(entry)
+    if not unsupported:
+        return
+    claims = "; ".join(
+        f"fact {entry['fact']!r} (lineage {entry['lineage']!r}, section {entry['title']!r}): "
+        f"{entry['sentence']!r}"
+        for entry in unsupported
+    )
+    raise Refused(
+        "SECTION_UNSUPPORTED_CLAIM",
+        f"{block_id}: {len(unsupported)} of {len(reconciled)} subject sentence(s) claim something "
+        f"their bound section never states: {claims}",
+    )
 
 
 def source_grounding_report(subjects: list, reconciled: list) -> dict:

@@ -12,9 +12,20 @@ audits, never spawns anything — it reconciles what it is given against
 Public surface:
 
     BlockContract                    -> the pipeline's one immutable input shape
+    precheck_block(paper_dir, contract, draft) -> dict
+        (every deterministic check `write_block` runs, before any LLM judge:
+         no audit read, no ledger write, no substitution)
     write_block(paper_dir, contract, draft, audit_account) -> dict
         (raises MODE_ABSENT, EVIDENCE_SET_REQUIRED, AUDIT_EXHAUSTED,
          plus every code `paper_bindings`/`paper_audit` themselves raise)
+
+The one bounded re-draft is shared by every judge (`odd/tasks/efficiency-
+stage-b.md`, S4): a fired contract audit, or a refusal after it that a
+re-draft must answer (`REDRAFT_REFUSALS`), spends it; the same outcome on
+the re-draft records the ledger's terminal `escalated` state with the
+judges' verdicts and refuses `AUDIT_EXHAUSTED`, and every later submission
+under the same key refuses too until the operator decides. Never an
+automatic pass.
 """
 from __future__ import annotations
 
@@ -100,6 +111,42 @@ def _write_ledger(paper_dir: Path, block_id: str, entry: dict) -> None:
     path = _ledger_path(paper_dir, block_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(entry), encoding="utf-8")
+
+
+#: Ledger states. `open`: the first judged attempt failed and the one
+#: re-draft is owed. `escalated`: the re-draft failed too; terminal until
+#: the operator decides (a changed contract, evidence set or mode is a new
+#: key and opens a fresh budget).
+LEDGER_OPEN = "open"
+LEDGER_ESCALATED = "escalated"
+
+#: Refusals raised after the contract audit that only a re-draft answers:
+#: they spend the one re-draft like a fired audit. An incomplete judge
+#: account (`GROUNDING_ACCOUNT_ABSENT`, `GROUNDING_SENTENCE_UNKNOWN`,
+#: `GROUNDING_VERDICT_MISSING`) is not a draft outcome and spends nothing,
+#: the same standing `VERDICT_MISSING` has.
+REDRAFT_REFUSALS = frozenset({"STYLE_OVERLAP", "SOURCE_SECTION_VERBATIM", "SECTION_UNSUPPORTED_CLAIM"})
+
+_ASK_OPERATOR = (
+    "stop and ask the operator with the judges' verdicts recorded in "
+    "paper/.paper-writing/attempts/{block}.json; no further re-draft runs under this "
+    "contract, evidence set and mode, and a changed one opens a new attempt budget"
+)
+
+
+def _next_attempt(contract: BlockContract, paper_dir: Path, key: str) -> int:
+    """The attempt number this submission would be, refusing `AUDIT_EXHAUSTED`
+    when the same key already escalated to the operator."""
+    ledger = _read_ledger(paper_dir, contract.block_id)
+    if ledger is None or ledger.get("key") != key:
+        return 1
+    if ledger.get("state") == LEDGER_ESCALATED:
+        raise Refused(
+            "AUDIT_EXHAUSTED",
+            f"{contract.block_id}: escalated to the operator on attempt {ledger.get('attempts')}; "
+            + _ASK_OPERATOR.format(block=contract.block_id),
+        )
+    return ledger.get("attempts", 0) + 1
 
 
 def _stage_readiness(contract: BlockContract) -> None:
@@ -232,6 +279,111 @@ def _stage_contract_audit(contract: BlockContract, draft: dict, audit_account: d
     )
 
 
+def _check_draft_shape(draft: dict) -> None:
+    if not isinstance(draft, dict) or "latex" not in draft or not isinstance(draft["latex"], str):
+        raise Refused("DRAFT_UNREADABLE", "draft must be a dict with string 'latex'")
+    if "bindings" not in draft or not isinstance(draft["bindings"], list):
+        raise Refused("DRAFT_UNREADABLE", "draft must be a dict with list 'bindings'")
+
+
+def _stage_prose_checks(paper_dir: Path, contract: BlockContract, draft: dict) -> dict:
+    """The deterministic prose stages before the evidence audit, shared by
+    `precheck_block` and `write_block`: language, lead-ins and headings.
+    Returns the language report."""
+    language = _stage_language(paper_dir, draft)
+    check_lead_ins(contract.block_id, draft["latex"])
+    check_body_headings(contract.block_id, draft["latex"])
+    return language
+
+
+def _table_lint(paper_dir: Path, draft: dict) -> dict:
+    # Spec S5 (figure-and-table-quality): a table that shrinks to fit is a
+    # warning in both envelopes, never a refusal -- the same standing an
+    # `Overfull` box has in `paper_latex.parse_log`.
+    try:
+        return paper_latex.table_lint_report(draft["latex"], Path(paper_dir) / "main.tex")
+    except Exception as exc:  # a lint failure never blocks a write
+        return {"status": "unmeasured", "warning": f"table lint failed: {type(exc).__name__}: {exc}"}
+
+
+def _grounds(contract: BlockContract) -> bool:
+    return bool(contract.source_sections) and contract.mode == paper_vocabulary.MODE_TRANSPOSITION
+
+
+def _grounding_feedback(contract: BlockContract, bindings: list, grounding_account: dict | None) -> dict | None:
+    """The grounding judge's whole outcome on a draft that did not reach
+    `substitute`: every subject's reconciled verdict under `verdicts`, and
+    the `SECTION_UNSUPPORTED_CLAIM` code and detail naming every unsupported
+    sentence when there is one, so the one re-draft answers all of them at
+    once. `None` when the block grounds nothing or no account was handed
+    in. Feedback only: a block is substituted solely through
+    `_post_audit_stages`' `reconcile_support`, which refuses on any
+    `unsupported`."""
+    if not _grounds(contract) or grounding_account is None:
+        return None
+    import paper_grounding  # noqa: PLC0415
+    subjects = paper_grounding.subjects_for(bindings, contract.source_sections)
+    try:
+        reconciled = paper_grounding.judge_support(
+            subjects, grounding_account, contract.source_sections, block_id=contract.block_id,
+        )
+    except Refused as exc:  # an incomplete account: nothing to hand on but its refusal
+        return {"status": "refused", "code": exc.code, "detail": exc.detail}
+    report = {**paper_grounding.source_grounding_report(subjects, reconciled), "verdicts": reconciled}
+    try:
+        paper_grounding.refuse_unsupported(reconciled, block_id=contract.block_id)
+    except Refused as exc:
+        return {**report, "status": "refused", "code": exc.code, "detail": exc.detail}
+    return report
+
+
+def precheck_block(paper_dir: Path, contract: BlockContract, draft: dict) -> dict:
+    """`write --precheck`: every deterministic check `write_block` runs, in
+    its order, before any LLM judge is spawned -- readiness, language,
+    lead-ins, headings, evidence audit and binding, the disqualifier
+    extraction, table lint, the style tripwire and the verbatim-from-source
+    check -- refusing with the same codes. Reads no audit, writes no ledger
+    and substitutes nothing, so it spends no attempt; it refuses
+    `AUDIT_EXHAUSTED` when the block already escalated, so no judge runs on
+    a block only the operator can reopen.
+
+    Returns the bullets the contract judge must rule on (every bullet: no
+    contract marks a bullet as belonging to one block), the deterministic
+    row-count finding when that bullet is present, and the subject
+    sentences the grounding judge must rule on (empty: no grounding judge
+    is needed)."""
+    _stage_readiness(contract)
+    _check_draft_shape(draft)
+    language = _stage_prose_checks(paper_dir, contract, draft)
+    bindings = _stage_evidence_audit(contract, draft)
+    bullets = paper_audit.extract_disqualifiers(contract.contract_prose, source_name=contract.contract_source)
+    attempt = _next_attempt(contract, paper_dir, _attempt_key(contract))
+    table_lint = _table_lint(paper_dir, draft)
+    subjects = []
+    if contract.style_set:
+        import paper_leak  # noqa: PLC0415
+        paper_leak.check_tripwire(draft["latex"], contract.style_set)
+    if _grounds(contract):
+        import paper_grounding  # noqa: PLC0415
+        import paper_leak  # noqa: PLC0415
+        paper_leak.check_source_section_verbatim(
+            draft["latex"], contract.contract_prose, contract.source_sections,
+            block_id=contract.block_id,
+        )
+        subjects = paper_grounding.subjects_for(bindings, contract.source_sections)
+    return {
+        "status": "precheck-passed",
+        "block": contract.block_id,
+        "attempt": attempt,
+        "disqualifiers": bullets,
+        "rowCount": paper_audit.row_count_finding(draft["latex"])
+        if paper_audit.ROW_COUNT_BULLET in bullets else None,
+        "groundingSubjects": [{"sentence": subject.sentence, "fact": subject.ref} for subject in subjects],
+        "tableLint": table_lint,
+        "language": language,
+    }
+
+
 def write_block(
     paper_dir: Path, contract: BlockContract, draft: dict, audit_account: dict,
     *, grounding_account: dict | None = None, expected_digest: str | None = None,
@@ -259,50 +411,121 @@ def write_block(
     when another write moved it meanwhile. `None` compares nothing.
     """
     _stage_readiness(contract)
-    if not isinstance(draft, dict) or "latex" not in draft or not isinstance(draft["latex"], str):
-        raise Refused("DRAFT_UNREADABLE", "draft must be a dict with string 'latex'")
-    if "bindings" not in draft or not isinstance(draft["bindings"], list):
-        raise Refused("DRAFT_UNREADABLE", "draft must be a dict with list 'bindings'")
+    _check_draft_shape(draft)
     if not isinstance(audit_account, dict) or "verdicts" not in audit_account or not isinstance(audit_account["verdicts"], list):
         raise Refused("AUDIT_UNREADABLE", "audit_account must be a dict with list 'verdicts'")
-    language = _stage_language(paper_dir, draft)
-    check_lead_ins(contract.block_id, draft["latex"])
-    check_body_headings(contract.block_id, draft["latex"])
+    language = _stage_prose_checks(paper_dir, contract, draft)
     bindings = _stage_evidence_audit(contract, draft)
 
     key = _attempt_key(contract)
-    ledger = _read_ledger(paper_dir, contract.block_id)
-    attempt = 1
-    if ledger is not None and ledger.get("key") == key:
-        attempt = ledger.get("attempts", 0) + 1
+    attempt = _next_attempt(contract, paper_dir, key)
 
     audit_result = _stage_contract_audit(contract, draft, audit_account)
-    # Spec S5 (figure-and-table-quality): a table that shrinks to fit is a
-    # warning in both envelopes, never a refusal -- the same standing an
-    # `Overfull` box has in `paper_latex.parse_log`.
-    try:
-        table_lint = paper_latex.table_lint_report(draft["latex"], Path(paper_dir) / "main.tex")
-    except Exception as exc:  # a lint failure never blocks a write
-        table_lint = {"status": "unmeasured", "warning": f"table lint failed: {type(exc).__name__}: {exc}"}
+    table_lint = _table_lint(paper_dir, draft)
 
     if audit_result["blocks"]:
         fired = [{"bullet": entry["bullet"], "span": entry["span"]} for entry in audit_result["fired"]]
+        grounding = _grounding_feedback(contract, bindings, grounding_account)
+        entry = {"key": key, "attempts": attempt, "fired": fired,
+                 "verdicts": audit_result["verdicts"], "grounding": grounding}
         if attempt >= 2:
+            # The terminal state is recorded BEFORE the refusal, so the
+            # escalation and the judges' verdicts survive the refusal.
+            _write_ledger(paper_dir, contract.block_id, {**entry, "state": LEDGER_ESCALATED})
             raise Refused(
                 "AUDIT_EXHAUSTED",
-                f"{contract.block_id}: contract-audit still fires on attempt {attempt}: "
-                f"{[entry['bullet'] for entry in fired]}",
+                f"{contract.block_id}: contract-audit still fires on attempt {attempt} after the one "
+                f"re-draft: {[item['bullet'] for item in fired]}; "
+                + _ASK_OPERATOR.format(block=contract.block_id),
             )
-        _write_ledger(paper_dir, contract.block_id, {"key": key, "attempts": attempt, "fired": fired})
+        _write_ledger(paper_dir, contract.block_id, {**entry, "state": LEDGER_OPEN})
         return {
             "status": "audit-fired",
             "block": contract.block_id,
             "attempt": attempt,
             "fired": fired,
             "verdicts": audit_result["verdicts"],
+            "grounding": grounding,
             "tableLint": table_lint,
         }
 
+    try:
+        source_fidelity, source_grounding, style_report = _post_audit_stages(
+            contract, draft, bindings, grounding_account,
+        )
+    except Refused as exc:
+        if exc.code not in REDRAFT_REFUSALS:
+            raise
+        entry = {"key": key, "attempts": attempt, "fired": [], "verdicts": audit_result["verdicts"],
+                 "refusal": {"code": exc.code, "detail": exc.detail},
+                 "grounding": _grounding_feedback(contract, bindings, grounding_account)}
+        if attempt > 1:  # the one re-draft is spent, the same bound as a fired audit
+            _write_ledger(paper_dir, contract.block_id, {**entry, "state": LEDGER_ESCALATED})
+            raise Refused(
+                "AUDIT_EXHAUSTED",
+                f"{contract.block_id}: the re-draft (attempt {attempt}) still refuses {exc.code}: "
+                f"{exc.detail}; " + _ASK_OPERATOR.format(block=contract.block_id),
+            ) from exc
+        _write_ledger(paper_dir, contract.block_id, {**entry, "state": LEDGER_OPEN})
+        raise
+
+    body = own_paragraph_body(contract.block_id, draft["latex"])
+    # Record the contract this block was judged against, the same provenance
+    # `substitute --contract` records, so `verify`'s `contract-currency` reads
+    # a block written here as current rather than against an older record.
+    contract_path = Path(contract.contract_source) if contract.contract_source else None
+    if contract_path is not None and not contract_path.is_file():
+        contract_path = None
+    result = paper_block.substitute(
+        paper_dir, contract.block_id, new_body=body.encode("utf-8"), contract=contract_path,
+        expected_digest=expected_digest,
+    )
+
+    # `the-block-asserts-only-what-its-section-carries` skill's own
+    # falsifier ("over ten or more recorded real `write` runs...") needs a
+    # place to accumulate real runs against. Two constraints, both load-
+    # bearing:
+    #
+    # 1. AFTER substitute, never before. The falsifier counts blocks that
+    #    REACHED `written`. Appending before this point and then having
+    #    `substitute` raise would record a run that never happened.
+    # 2. Every `written` run, not only a measured one. This call sits here
+    #    -- after every grounding branch above, unconditionally -- rather
+    #    than inside the `contract.mode == MODE_TRANSPOSITION` branch,
+    #    because an `argument`-mode block (or one with no `source_sections`)
+    #    still leaves `source_grounding` at the interim `{"status":
+    #    "unmeasured", "subjects": 0}` envelope and is still a real write
+    #    run that belongs in the "ten or more" denominator the falsifier
+    #    counts against.
+    paper_evidence.append_grounding_run(paper_dir, contract.block_id, source_grounding)
+
+    import paper_ai_metrics  # noqa: PLC0415
+    style_quality = paper_ai_metrics.analyze_style(draft["latex"])
+
+    return {
+        "status": "written",
+        "block": contract.block_id,
+        "verdicts": audit_result["verdicts"],
+        "styleChannel": style_report,
+        "sourceFidelity": source_fidelity,
+        "sourceGrounding": source_grounding,
+        "styleQuality": style_quality,
+        # Deprecated alias of `styleQuality`, removed in the next release.
+        "aiStylometry": style_quality,
+        "tableLint": table_lint,
+        "language": language,
+        **result,
+    }
+
+
+def _post_audit_stages(
+    contract: BlockContract, draft: dict, bindings: list, grounding_account: dict | None,
+) -> tuple:
+    """The stages after the contract audit clears and before `substitute`,
+    in order: style tripwire, verbatim-from-source check, grounding
+    reconciliation. Returns `(source_fidelity, source_grounding,
+    style_report)`; any refusal propagates to `write_block`, which decides
+    whether it spends the one re-draft."""
     if contract.style_set:
         # Local import, not module-level: `paper_write.py` is a Work Unit 1
         # file and must stay importable (and `write_block` callable with an
@@ -391,54 +614,7 @@ def write_block(
             subjects, grounding_account, contract.source_sections, block_id=contract.block_id,
         )
         source_grounding = paper_grounding.source_grounding_report(subjects, reconciled)
-
-    body = own_paragraph_body(contract.block_id, draft["latex"])
-    # Record the contract this block was judged against, the same provenance
-    # `substitute --contract` records, so `verify`'s `contract-currency` reads
-    # a block written here as current rather than against an older record.
-    contract_path = Path(contract.contract_source) if contract.contract_source else None
-    if contract_path is not None and not contract_path.is_file():
-        contract_path = None
-    result = paper_block.substitute(
-        paper_dir, contract.block_id, new_body=body.encode("utf-8"), contract=contract_path,
-        expected_digest=expected_digest,
-    )
-
-    # `the-block-asserts-only-what-its-section-carries` skill's own
-    # falsifier ("over ten or more recorded real `write` runs...") needs a
-    # place to accumulate real runs against. Two constraints, both load-
-    # bearing:
-    #
-    # 1. AFTER substitute, never before. The falsifier counts blocks that
-    #    REACHED `written`. Appending before this point and then having
-    #    `substitute` raise would record a run that never happened.
-    # 2. Every `written` run, not only a measured one. This call sits here
-    #    -- after every grounding branch above, unconditionally -- rather
-    #    than inside the `contract.mode == MODE_TRANSPOSITION` branch,
-    #    because an `argument`-mode block (or one with no `source_sections`)
-    #    still leaves `source_grounding` at the interim `{"status":
-    #    "unmeasured", "subjects": 0}` envelope and is still a real write
-    #    run that belongs in the "ten or more" denominator the falsifier
-    #    counts against.
-    paper_evidence.append_grounding_run(paper_dir, contract.block_id, source_grounding)
-
-    import paper_ai_metrics  # noqa: PLC0415
-    style_quality = paper_ai_metrics.analyze_style(draft["latex"])
-
-    return {
-        "status": "written",
-        "block": contract.block_id,
-        "verdicts": audit_result["verdicts"],
-        "styleChannel": style_report,
-        "sourceFidelity": source_fidelity,
-        "sourceGrounding": source_grounding,
-        "styleQuality": style_quality,
-        # Deprecated alias of `styleQuality`, removed in the next release.
-        "aiStylometry": style_quality,
-        "tableLint": table_lint,
-        "language": language,
-        **result,
-    }
+    return source_fidelity, source_grounding, style_report
 
 
 def source_fidelity_report(source_sections: tuple, measured: dict | None = None) -> dict:

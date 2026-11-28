@@ -6263,7 +6263,12 @@ class SourceSectionVerbatimWriteGateTests(unittest.TestCase):
         result = paper_write.write_block(self.paper_dir, contract, draft, _CLEAN_AUDIT)
         self.assertEqual(result["status"], "written")
 
-    def test_a_refusal_here_writes_nothing_to_the_attempt_ledger(self) -> None:
+    def test_a_refusal_here_spends_the_one_redraft_in_the_attempt_ledger(self) -> None:
+        """S4 of `odd/tasks/efficiency-stage-b.md` (5): a refusal after the
+        contract audit is answered only by a re-draft, so it spends the one
+        re-draft like a fired audit (it used to spend nothing, leaving the
+        loop uncapped). `write --precheck` runs this check before any judge,
+        so a verbatim copy normally never reaches this point."""
         run = _n_token_run(17)
         section = self._bound_section(f"Framing text. {run} Trailing text.")
         contract = _write_contract(
@@ -6273,7 +6278,9 @@ class SourceSectionVerbatimWriteGateTests(unittest.TestCase):
         with self.assertRaises(Refused) as ctx:
             paper_write.write_block(self.paper_dir, contract, draft, _CLEAN_AUDIT)
         self.assertEqual(ctx.exception.code, "SOURCE_SECTION_VERBATIM")
-        self.assertIsNone(paper_write._read_ledger(self.paper_dir, "mm-proposal"))
+        ledger = paper_write._read_ledger(self.paper_dir, "mm-proposal")
+        self.assertEqual((ledger["attempts"], ledger["state"]), (1, "open"))
+        self.assertEqual(ledger["refusal"]["code"], "SOURCE_SECTION_VERBATIM")
 
     def test_an_argument_mode_block_with_the_identical_binding_is_never_checked(self) -> None:
         run = _n_token_run(17)
@@ -15590,6 +15597,247 @@ class WriteBlockGroundingWiringTests(unittest.TestCase):
             )
 
         self.assertEqual(ctx.exception.code, "SOURCE_SECTION_VERBATIM")
+
+
+class WriteLoopEscalationTests(unittest.TestCase):
+    """S4 of `odd/tasks/efficiency-stage-b.md`: the one bounded re-draft is
+    shared by every judge. A refusal after the contract audit (style
+    tripwire, verbatim copy, unsupported claim) spends it like a fired
+    audit, and the same refusal on the re-draft stops and escalates to the
+    operator as `AUDIT_EXHAUSTED`, recording the terminal state first --
+    never another blind redraft and never an automatic pass."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.paper_dir = Path(self._tmp.name) / "paper"
+        _write_fixture(self.paper_dir, _marker_pair("mm-proposal", b"Old body.\n"))
+        self.pre = (self.paper_dir / "main.tex").read_bytes()
+
+    def _styled(self):
+        sample = {"reference": "paperA",
+                  "span": "The quick brown fox jumps over the lazy dog again today."}
+        contract = _write_contract(citations_regime="none", evidence_set=(), style_set=(sample,))
+        lifted = "The quick brown fox jumps over the lazy dog again today."
+        draft = {"latex": lifted, "bindings": [{"sentence": lifted, "binding": "structural"}]}
+        return contract, draft
+
+    def test_a_post_audit_refusal_spends_the_one_redraft_and_keeps_its_code(self) -> None:
+        contract, draft = self._styled()
+        with self.assertRaises(Refused) as ctx:
+            paper_write.write_block(self.paper_dir, contract, draft, _CLEAN_AUDIT)
+        self.assertEqual(ctx.exception.code, "STYLE_OVERLAP")
+        ledger = paper_write._read_ledger(self.paper_dir, "mm-proposal")
+        self.assertEqual((ledger["attempts"], ledger["state"]), (1, "open"))
+        self.assertEqual(ledger["refusal"]["code"], "STYLE_OVERLAP")
+        self.assertEqual((self.paper_dir / "main.tex").read_bytes(), self.pre)
+
+    def test_the_same_refusal_on_the_redraft_escalates_and_records_the_terminal_state(self) -> None:
+        contract, draft = self._styled()
+        with self.assertRaises(Refused):
+            paper_write.write_block(self.paper_dir, contract, draft, _CLEAN_AUDIT)
+        with self.assertRaises(Refused) as ctx:
+            paper_write.write_block(self.paper_dir, contract, draft, _CLEAN_AUDIT)
+        self.assertEqual(ctx.exception.code, "AUDIT_EXHAUSTED")
+        self.assertIn("STYLE_OVERLAP", ctx.exception.detail)
+        self.assertIn("ask the operator", ctx.exception.detail)
+        ledger = paper_write._read_ledger(self.paper_dir, "mm-proposal")
+        self.assertEqual((ledger["attempts"], ledger["state"]), (2, "escalated"))
+        self.assertEqual(ledger["refusal"]["code"], "STYLE_OVERLAP")
+        self.assertEqual([entry["verdict"] for entry in ledger["verdicts"]], ["clear"])
+        self.assertEqual((self.paper_dir / "main.tex").read_bytes(), self.pre)
+
+    def test_an_unsupported_claim_on_the_redraft_escalates(self) -> None:
+        section = _bound_section(fact="calibration-regime",
+                                 text="The constant never changes across trials.")
+        contract = _write_contract(citations_regime="none", evidence_set=(),
+                                   requires_facts=("calibration-regime",),
+                                   source_sections=(section,))
+        sentence = "Calibration was repeated after every third trial."
+        draft = {"latex": sentence,
+                 "bindings": [{"sentence": sentence, "binding": "fact:calibration-regime"}]}
+        account = _grounding_account([{"sentence": sentence, "fact": "calibration-regime",
+                                       "verdict": "unsupported"}])
+        with self.assertRaises(Refused) as first:
+            paper_write.write_block(self.paper_dir, contract, draft, _CLEAN_AUDIT,
+                                    grounding_account=account)
+        self.assertEqual(first.exception.code, "SECTION_UNSUPPORTED_CLAIM")
+        with self.assertRaises(Refused) as second:
+            paper_write.write_block(self.paper_dir, contract, draft, _CLEAN_AUDIT,
+                                    grounding_account=account)
+        self.assertEqual(second.exception.code, "AUDIT_EXHAUSTED")
+        self.assertIn("SECTION_UNSUPPORTED_CLAIM", second.exception.detail)
+        self.assertEqual(paper_write._read_ledger(self.paper_dir, "mm-proposal")["state"],
+                         "escalated")
+
+    _S1 = "Calibration was repeated after every third trial."
+    _S2 = "Calibration drifted on the second day."
+
+    def _two_subjects(self):
+        section = _bound_section(fact="calibration-regime",
+                                 text="The constant never changes across trials.")
+        contract = _write_contract(citations_regime="none", evidence_set=(),
+                                   requires_facts=("calibration-regime",),
+                                   source_sections=(section,))
+        draft = {"latex": f"{self._S1} {self._S2}",
+                 "bindings": [{"sentence": self._S1, "binding": "fact:calibration-regime"},
+                              {"sentence": self._S2, "binding": "fact:calibration-regime"}]}
+        return contract, draft
+
+    def _account(self, *verdicts):
+        return _grounding_account([
+            {"sentence": sentence, "fact": "calibration-regime", "verdict": verdict}
+            for sentence, verdict in zip((self._S1, self._S2), verdicts)])
+
+    def test_a_grounding_refusal_names_every_unsupported_sentence(self) -> None:
+        contract, draft = self._two_subjects()
+        with self.assertRaises(Refused) as ctx:
+            paper_write.write_block(self.paper_dir, contract, draft, _CLEAN_AUDIT,
+                                    grounding_account=self._account("unsupported", "unsupported"))
+        self.assertEqual(ctx.exception.code, "SECTION_UNSUPPORTED_CLAIM")
+        self.assertIn(self._S1, ctx.exception.detail)
+        self.assertIn(self._S2, ctx.exception.detail)
+        ledger = paper_write._read_ledger(self.paper_dir, "mm-proposal")
+        self.assertIn(self._S1, ledger["refusal"]["detail"])
+        self.assertIn(self._S2, ledger["refusal"]["detail"])
+        self.assertEqual([entry["verdict"] for entry in ledger["grounding"]["verdicts"]],
+                         ["unsupported", "unsupported"])
+        self.assertEqual((self.paper_dir / "main.tex").read_bytes(), self.pre)
+
+    def test_a_fired_audit_carries_every_unsupported_sentence(self) -> None:
+        contract, draft = self._two_subjects()
+        firing = {"verdicts": [{"bullet": _SAMPLE_DISQUALIFIER, "verdict": "fires",
+                                "span": "repeated after every third trial"}]}
+        result = paper_write.write_block(self.paper_dir, contract, draft, firing,
+                                         grounding_account=self._account("unsupported", "unsupported"))
+        self.assertEqual(result["status"], "audit-fired")
+        grounding = result["grounding"]
+        self.assertEqual(grounding["code"], "SECTION_UNSUPPORTED_CLAIM")
+        self.assertIn(self._S1, grounding["detail"])
+        self.assertIn(self._S2, grounding["detail"])
+        self.assertEqual([(entry["sentence"], entry["verdict"]) for entry in grounding["verdicts"]],
+                         [(self._S1, "unsupported"), (self._S2, "unsupported")])
+
+    def test_incomplete_grounding_on_the_redraft_spends_nothing(self) -> None:
+        contract, draft = self._two_subjects()
+        with self.assertRaises(Refused):
+            paper_write.write_block(self.paper_dir, contract, draft, _CLEAN_AUDIT,
+                                    grounding_account=self._account("unsupported", "unsupported"))
+        with self.assertRaises(Refused) as ctx:
+            paper_write.write_block(self.paper_dir, contract, draft, _CLEAN_AUDIT,
+                                    grounding_account=self._account("undecidable"))
+        self.assertEqual(ctx.exception.code, "GROUNDING_VERDICT_MISSING")
+        ledger = paper_write._read_ledger(self.paper_dir, "mm-proposal")
+        self.assertEqual((ledger["attempts"], ledger["state"]), (1, "open"))
+        self.assertEqual((self.paper_dir / "main.tex").read_bytes(), self.pre)
+
+    def test_a_redraft_answering_every_unsupported_sentence_is_written(self) -> None:
+        contract, draft = self._two_subjects()
+        with self.assertRaises(Refused):
+            paper_write.write_block(self.paper_dir, contract, draft, _CLEAN_AUDIT,
+                                    grounding_account=self._account("unsupported", "unsupported"))
+        result = paper_write.write_block(self.paper_dir, contract, draft, _CLEAN_AUDIT,
+                                         grounding_account=self._account("undecidable", "undecidable"))
+        self.assertEqual(result["status"], "written")
+
+    def test_one_unsupported_sentence_of_two_still_refuses(self) -> None:
+        contract, draft = self._two_subjects()
+        with self.assertRaises(Refused) as ctx:
+            paper_write.write_block(self.paper_dir, contract, draft, _CLEAN_AUDIT,
+                                    grounding_account=self._account("undecidable", "unsupported"))
+        self.assertEqual(ctx.exception.code, "SECTION_UNSUPPORTED_CLAIM")
+        self.assertIn(self._S2, ctx.exception.detail)
+        self.assertEqual((self.paper_dir / "main.tex").read_bytes(), self.pre)
+
+    def test_an_incomplete_grounding_account_spends_no_attempt(self) -> None:
+        section = _bound_section(fact="calibration-regime",
+                                 text="The constant never changes across trials.")
+        contract = _write_contract(citations_regime="none", evidence_set=(),
+                                   requires_facts=("calibration-regime",),
+                                   source_sections=(section,))
+        sentence = "Calibration was repeated after every third trial."
+        draft = {"latex": sentence,
+                 "bindings": [{"sentence": sentence, "binding": "fact:calibration-regime"}]}
+        with self.assertRaises(Refused) as ctx:
+            paper_write.write_block(self.paper_dir, contract, draft, _CLEAN_AUDIT)
+        self.assertEqual(ctx.exception.code, "GROUNDING_ACCOUNT_ABSENT")
+        self.assertIsNone(paper_write._read_ledger(self.paper_dir, "mm-proposal"))
+
+    def test_a_fired_audit_also_carries_the_grounding_judge_verdict(self) -> None:
+        """Both judges run on the same draft: the one re-draft receives the
+        contract judge's fired bullets and the grounding judge's finding
+        together, instead of discovering the second after a blind redraft."""
+        section = _bound_section(fact="calibration-regime",
+                                 text="The constant never changes across trials.")
+        contract = _write_contract(citations_regime="none", evidence_set=(),
+                                   requires_facts=("calibration-regime",),
+                                   source_sections=(section,))
+        sentence = "Calibration was repeated after every third trial."
+        draft = {"latex": sentence,
+                 "bindings": [{"sentence": sentence, "binding": "fact:calibration-regime"}]}
+        account = _grounding_account([{"sentence": sentence, "fact": "calibration-regime",
+                                       "verdict": "unsupported"}])
+        firing = {"verdicts": [{"bullet": _SAMPLE_DISQUALIFIER, "verdict": "fires",
+                                "span": "repeated after every third trial"}]}
+        result = paper_write.write_block(self.paper_dir, contract, draft, firing,
+                                         grounding_account=account)
+        self.assertEqual(result["status"], "audit-fired")
+        self.assertEqual(result["grounding"]["code"], "SECTION_UNSUPPORTED_CLAIM")
+        ledger = paper_write._read_ledger(self.paper_dir, "mm-proposal")
+        self.assertEqual(ledger["grounding"]["code"], "SECTION_UNSUPPORTED_CLAIM")
+        self.assertEqual((self.paper_dir / "main.tex").read_bytes(), self.pre)
+
+
+class PrecheckBlockTests(unittest.TestCase):
+    """S4 of `odd/tasks/efficiency-stage-b.md` (1): `precheck_block` runs the
+    deterministic checks that `write_block` runs after the contract audit
+    (style tripwire, verbatim-from-source) before any judge, with the same
+    codes, and writes neither the ledger nor `main.tex`."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.paper_dir = Path(self._tmp.name) / "paper"
+        _write_fixture(self.paper_dir, _marker_pair("mm-proposal", b"Old body.\n"))
+        self.pre = (self.paper_dir / "main.tex").read_bytes()
+
+    def tearDown(self) -> None:
+        self.assertEqual((self.paper_dir / "main.tex").read_bytes(), self.pre)
+        self.assertIsNone(paper_write._read_ledger(self.paper_dir, "mm-proposal"))
+
+    def test_a_lifted_style_sample_refuses_style_overlap(self) -> None:
+        sample = {"reference": "paperA",
+                  "span": "The quick brown fox jumps over the lazy dog again today."}
+        contract = _write_contract(citations_regime="none", evidence_set=(), style_set=(sample,))
+        lifted = "The quick brown fox jumps over the lazy dog again today."
+        with self.assertRaises(Refused) as ctx:
+            paper_write.precheck_block(self.paper_dir, contract, {
+                "latex": lifted, "bindings": [{"sentence": lifted, "binding": "structural"}]})
+        self.assertEqual(ctx.exception.code, "STYLE_OVERLAP")
+
+    def test_a_verbatim_copy_of_the_bound_section_refuses_source_section_verbatim(self) -> None:
+        run = _n_token_run(17)
+        section = _bound_section(fact="calibration-regime", text=f"Framing text. {run} Trailing text.")
+        contract = _write_contract(citations_regime="none", evidence_set=(), source_sections=(section,))
+        sentence = f"This passage states directly that {run} without changing anything."
+        with self.assertRaises(Refused) as ctx:
+            paper_write.precheck_block(self.paper_dir, contract, {
+                "latex": sentence, "bindings": [{"sentence": sentence, "binding": "structural"}]})
+        self.assertEqual(ctx.exception.code, "SOURCE_SECTION_VERBATIM")
+
+    def test_a_grounded_block_lists_the_subject_sentences_the_grounding_judge_rules_on(self) -> None:
+        section = _bound_section(fact="calibration-regime",
+                                 text="The constant never changes across trials.")
+        contract = _write_contract(citations_regime="none", evidence_set=(),
+                                   requires_facts=("calibration-regime",),
+                                   source_sections=(section,))
+        sentence = "Calibration stays constant across trials."
+        result = paper_write.precheck_block(self.paper_dir, contract, {
+            "latex": sentence, "bindings": [{"sentence": sentence, "binding": "fact:calibration-regime"}]})
+        self.assertEqual(result["status"], "precheck-passed")
+        self.assertEqual(result["groundingSubjects"],
+                         [{"sentence": sentence, "fact": "calibration-regime"}])
+        self.assertEqual(result["disqualifiers"], [_SAMPLE_DISQUALIFIER])
 
 
 class GroundingThresholdObligationTests(unittest.TestCase):
