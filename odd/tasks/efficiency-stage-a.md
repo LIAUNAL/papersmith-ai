@@ -7,7 +7,7 @@ Branch: feat/efficiency-stage-a · Delivery: ask-on-risk · Runner: `.micromamba
 - S2 — Skill descriptions are trigger-first and at most 250 characters, keeping each skill's trigger phrases and verb names, dropping internals and guarantees. Pi refuses descriptions over 1024 chars and Claude truncates at 1536; all four harnesses read the same `skills/*/SKILL.md`.
 - S3 — The generated command body runs the deterministic prompt gate first and reads `skills/prompt-gate/SKILL.md` only when the verdict is not a pass, instead of reading it on every call. Applies to the three command harnesses (Claude, OpenCode, Pi) and to agy's rules in `.agents/AGENTS.md` (see L5).
 - S4 — `experiments-walk` and `implementation-walk` no longer contradict themselves about the rehearsal: the description says the rehearsal is left to a person while the body says "The rehearsal is yours … run it rather than offering it". One consistent statement, matching what the skills and tests require.
-- S5 — `skill-audit` (and its `audit-report` agent) stop shipping to paper workspaces and live as a maintainer tool of the forge, the way `maintainer/skills/backlog-steward` does; `smith audit .` stays. (Assumption: the phase-11 card keeps `smith audit .` and drops `/skill-audit`.)
+- S5 — (dropped, L11) `skill-audit` (and its `audit-report` agent) stop shipping to paper workspaces and live as a maintainer tool of the forge, the way `maintainer/skills/backlog-steward` does; `smith audit .` stays. (Assumption: the phase-11 card keeps `smith audit .` and drops `/skill-audit`.)
 - S6 — Harness parity holds: `python scripts/sync-repo-harness.py --check` is clean, the generated `.claude/commands`, `.opencode/commands`, `.pi/prompts`, `.opencode/agents`, `.agents/agents`, `.pi/agents` are regenerated, and the full Python and node suites pass.
 
 ## Tasks
@@ -16,8 +16,8 @@ Branch: feat/efficiency-stage-a · Delivery: ask-on-risk · Runner: `.micromamba
 - [x] T2 — S4 walk agents rehearsal wording · route: inline · commit: 6487e71b (test_agents 19 passed; sync --check clean)
 - [x] T3 — S3 prompt gate first in command body · route: inline · commit: 03e6a36c (RED 4 failed → GREEN 224 passed)
 - [x] T4 — S2 skill descriptions ≤250 chars · route: inline · commit: 4c630c38 (RED budget test → GREEN; full suite 12195 passed)
-- [ ] T5 — S5 skill-audit out of the workspace kit · route: inline · commit: —
-- [ ] T6 — S6 parity and full suites · route: inline (suites may run in a worker) · commit: —
+- [~] T5 — S5 skill-audit out of the workspace kit · dropped by the user (L11) · commit: —
+- [x] T6 — S6 parity and full suites · route: inline · evidence: L9; sync --check clean (179 files) after 4c630c38
 
 ## Log
 
@@ -31,3 +31,4 @@ Branch: feat/efficiency-stage-a · Delivery: ask-on-risk · Runner: `.micromamba
 - L8: /tmp (tmpfs) hit EDQUOT during the full suite; suites now run with TMPDIR under ~/.cache/psm-stage-a.*.
 - L9: Full suite after T1-T4 (TMPDIR outside /tmp): python 12195 passed, 13 failed; node exit 0. Of the 13: 10 proposal-implementation discovery tests fail only because TMPDIR sat under a dot-directory (`~/.cache`) and pass with a plain TMPDIR; `test_description_names_the_driver_and_the_pinned_sdk` was real and now reads the Scope paragraph; `test_missing_transcripts_never_fail` fails on main too (agy installed on this machine reads a real history DB); `test_shipped_changes_since_the_last_release_moved_the_version` fails by design until the release bump.
 - L10: After T4 the per-session cost of `skill-audit` is a 237-char description; T5's remaining gain is about 60 tokens per session against ~40 files and a phase-11 card in all eight lines. Recommendation: drop T5.
+- L11 (2026-11-28, user choice): "Descartar T5 (Recommended)" — skill-audit keeps shipping; stage A closes with T1-T4 and work moves to stage B.
