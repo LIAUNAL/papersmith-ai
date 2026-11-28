@@ -1,9 +1,11 @@
 ---
 name: ui-github
-description: "Trigger: an operator wants to share the paper's dashboard (the Paper Command Center of `smith ui`) as a read-only web page on GitHub Pages, for viewing only. Exports a static snapshot of every panel (nothing runs: no server, no terminal, no agent, no phase execution), commits it as one orphan commit on the `gh-pages` branch of the workspace's GitHub remote, force-pushes it, enables Pages for that branch with `gh api` and reports the public URL. The site is PUBLIC even for a private repository. The masked AI history is included by default; `--no-ai-history` leaves it out. Runs only after the operator confirms the public URL and the AI-history choice; never edits a workspace file or the workspace's branches."
+description: "Trigger: share the paper's dashboard as a read-only GitHub Pages snapshot of `smith ui`. The site is PUBLIC even for a private repository; runs only after the operator confirms the URL and the AI-history choice."
 ---
 
 # UI on GitHub Pages
+
+**Scope.** An operator wants to share the paper's dashboard (the Paper Command Center of `smith ui`) as a read-only web page on GitHub Pages, for viewing only. Exports a static snapshot of every panel (nothing runs: no server, no terminal, no agent, no phase execution), commits it as one orphan commit on the `gh-pages` branch of the workspace's GitHub remote, force-pushes it, enables Pages for that branch with `gh api` and reports the public URL. The site is PUBLIC even for a private repository. The masked AI history is included by default; `--no-ai-history` leaves it out. Runs only after the operator confirms the public URL and the AI-history choice; never edits a workspace file or the workspace's branches.
 
 `smith ui` serves a live dashboard on the operator's machine. This skill puts a
 **read-only copy** of it on the web, at

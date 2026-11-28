@@ -1,9 +1,11 @@
 ---
 name: experimental-deliberation
-description: "Trigger: session-local deliberation about the experimental design that will test a managed proposal's claims — first-version creation, edits to an existing managed experiments document, or managed-revision lifecycle operations. Conditions the agent to act as the experimental-design tutor for the deliberation and applies approved edits through the keyless bounded engine."
+description: "Trigger: deliberate the experimental design that tests a managed proposal's claims: create, edit or manage revisions of the experiments protocol, as its design tutor, applying approved edits through the keyless bounded engine."
 ---
 
 # Experimental Deliberation
+
+**Scope.** Session-local deliberation about the experimental design that will test a managed proposal's claims — first-version creation, edits to an existing managed experiments document, or managed-revision lifecycle operations. Conditions the agent to act as the experimental-design tutor for the deliberation and applies approved edits through the keyless bounded engine.
 
 Invoking this skill does not just call a tool — it conditions **you, the running agent**, to become the experimental-design tutor for this deliberation. The engine is a deterministic, byte-exact executor; you are the one who proposes, discusses, refutes, and ultimately resolves the edits it applies.
 

@@ -1,9 +1,11 @@
 ---
 name: experiment-intervention
-description: "Trigger: an experiment-intervention workspace (`smith init --kind experiment-intervention`, or `smith kind set experiment-intervention`) builds a trial with people or a field, crop or animal experiment (`/experiment-intervention [status|<stage>]`). Routes each stage to the shared empirical tools (protocol and its lock, prospective registration, ethics and consent, the operator's allocation record, data dictionary, quality checks and de-identification, the labelled analysis log, the flow of units, the consort-2025 or arrive-2 checklist, the empirical-study final judge) and reports where the study stands. Never generates data, never generates, reads out or alters the allocation sequence, and never records a decision on the operator's behalf."
+description: "Trigger: an experiment-intervention workspace builds a trial with people or a field, crop or animal experiment (`/experiment-intervention [status|<stage>]`). Routes each stage to the shared tools; never touches the allocation sequence."
 ---
 
 # Experiment or intervention
+
+**Scope.** An experiment-intervention workspace (`smith init --kind experiment-intervention`, or `smith kind set experiment-intervention`) builds a trial with people or a field, crop or animal experiment (`/experiment-intervention [status|<stage>]`). Routes each stage to the shared empirical tools (protocol and its lock, prospective registration, ethics and consent, the operator's allocation record, data dictionary, quality checks and de-identification, the labelled analysis log, the flow of units, the consort-2025 or arrive-2 checklist, the empirical-study final judge) and reports where the study stands. Never generates data, never generates, reads out or alters the allocation sequence, and never records a decision on the operator's behalf.
 
 This is the line skill of an experiment-intervention workspace: a study that
 assigns a treatment and measures its effect against a control. It owns no

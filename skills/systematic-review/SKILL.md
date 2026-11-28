@@ -1,9 +1,11 @@
 ---
 name: systematic-review
-description: "Trigger: a review workspace (`smith init --kind review`) builds a systematic review paper with no experiments, following PRISMA 2020 (`/systematic-review scope|protocol|search|screen|appraise|extract|synthesize|checklist`). Keeps every stage's record under review/ (protocol, logged searches, deduplicated records, two-reviewer screening with Cohen's kappa, appraisal, extraction), counts the PRISMA flow and draws its diagram, and reports the 27-item checklist. Keyless: OpenAlex, Crossref and Europe PMC, plus RIS/BibTeX exports from Scopus, Web of Science, IEEE Xplore or ACM."
+description: "Trigger: a review workspace builds a PRISMA 2020 systematic review (`/systematic-review scope|protocol|search|screen|appraise|extract|synthesize|checklist`), keeping every stage's record under review/. Keyless."
 ---
 
 # Systematic review (PRISMA 2020)
+
+**Scope.** A review workspace (`smith init --kind review`) builds a systematic review paper with no experiments, following PRISMA 2020 (`/systematic-review scope|protocol|search|screen|appraise|extract|synthesize|checklist`). Keeps every stage's record under review/ (protocol, logged searches, deduplicated records, two-reviewer screening with Cohen's kappa, appraisal, extraction), counts the PRISMA flow and draws its diagram, and reports the 27-item checklist. Keyless: OpenAlex, Crossref and Europe PMC, plus RIS/BibTeX exports from Scopus, Web of Science, IEEE Xplore or ACM.
 
 A systematic review earns its place in a journal by being reproducible: a
 reader must be able to rerun the search, see why each study left, and check

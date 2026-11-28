@@ -1,9 +1,11 @@
 ---
 name: plausibility
-description: "Trigger: explore a research idea before any ingestion — scout ~25 SOTA references from their abstracts, map the pool to one solar-system constellation HTML, then discuss the hypothesis' plausibility against that SOTA with quoted evidence. Three stretches, one command, no ingestion."
+description: "Trigger: explore a research idea before any ingestion: scout ~25 SOTA references from their abstracts, map them to a constellation HTML, and discuss the hypothesis' plausibility with quoted evidence. One command, no ingestion."
 ---
 
 # Plausibility
+
+**Scope.** Explore a research idea before any ingestion — scout ~25 SOTA references from their abstracts, map the pool to one solar-system constellation HTML, then discuss the hypothesis' plausibility against that SOTA with quoted evidence. Three stretches, one command, no ingestion.
 
 Before a single PDF is ingested, an idea needs two things: a map of the
 territory, and an honest reading of where the idea stands on it. This skill

@@ -1,9 +1,11 @@
 ---
 name: figure-review
-description: "Trigger: after `render` has already written a compiled figure to `paper/Figures/<id>.pdf`, and a reader needs to know whether the picture itself reads — not the prose that describes it. Turns an already-compiled PDF into pixels and computes the geometric facts a raster can actually support: whether ink runs off the canvas, whether ink regions collide, and how much of the canvas is occupied. Also reads the figure PDF's own text layer and drawing for four declared rules: every text span prints between 0.70 and 0.90 x the manuscript body, no full-page background, no margin wider than 4 pt, no in-figure title. Reports advisories beside them: values printed inside the figure, floats under 90% of the text width, float-only pages and large gaps in the compiled manuscript. Never repairs a figure, never compiles LaTeX, never judges style. Verbs: `probe` names the rasterizer this machine will use; `raster` produces the PNG and its provenance; `measure` reports every dimension."
+description: "Trigger: check whether a compiled `paper/Figures/<id>.pdf` reads as a picture: rasterize and measure overflow, collisions, occupancy, text size, background and margins (`probe`, `raster`, `measure`). Reports only; never repairs or compiles."
 ---
 
 # Figure Review
+
+**Scope.** After `render` has already written a compiled figure to `paper/Figures/<id>.pdf`, and a reader needs to know whether the picture itself reads — not the prose that describes it. Turns an already-compiled PDF into pixels and computes the geometric facts a raster can actually support: whether ink runs off the canvas, whether ink regions collide, and how much of the canvas is occupied. Also reads the figure PDF's own text layer and drawing for four declared rules: every text span prints between 0.70 and 0.90 x the manuscript body, no full-page background, no margin wider than 4 pt, no in-figure title. Reports advisories beside them: values printed inside the figure, floats under 90% of the text width, float-only pages and large gaps in the compiled manuscript. Never repairs a figure, never compiles LaTeX, never judges style. Verbs: `probe` names the rasterizer this machine will use; `raster` produces the PNG and its provenance; `measure` reports every dimension.
 
 `render` compiles a diagram source to a PDF and stops there. `figure audit`
 then checks that PDF's declared manifest against the prose that describes it.

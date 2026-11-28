@@ -1,9 +1,11 @@
 ---
 name: lab-simulation
-description: "Trigger: a lab-simulation workspace (`smith init --kind lab-simulation`, or `smith kind set lab-simulation`) builds a laboratory or simulation study, variant materials or modelling-simulation (`/lab-simulation [status|<stage>]`). Routes each stage to the shared empirical tools and the measurement core (study protocol and its lock, instruments and calibration against known values, registered raw data, GUM uncertainty budgets, the labelled analysis log, the gum-reporting checklist, the measurement-science final judge) and reports where the study stands. Never generates measurements or data and never records a decision on the operator's behalf."
+description: "Trigger: a lab-simulation workspace builds a laboratory, materials or modelling-simulation study (`/lab-simulation [status|<stage>]`). Routes each stage to the shared empirical tools and the measurement core; never generates data."
 ---
 
 # Laboratory and simulation study
+
+**Scope.** A lab-simulation workspace (`smith init --kind lab-simulation`, or `smith kind set lab-simulation`) builds a laboratory or simulation study, variant materials or modelling-simulation (`/lab-simulation [status|<stage>]`). Routes each stage to the shared empirical tools and the measurement core (study protocol and its lock, instruments and calibration against known values, registered raw data, GUM uncertainty budgets, the labelled analysis log, the gum-reporting checklist, the measurement-science final judge) and reports where the study stands. Never generates measurements or data and never records a decision on the operator's behalf.
 
 This is the line skill of a lab-simulation workspace: a physical-science study
 that defines its samples or its model, calibrates against known values, sweeps

@@ -1,9 +1,11 @@
 ---
 name: experiment-diagrams
-description: "Trigger: a product's proof of concept (`AGREED.md`) or full experiments (`Experimental_AGREED.md`) approval is settled and the operator must verify it in the Experimentos panel. Draws one TikZ diagram per approval -- `poc` or `experiments` -- that states the experiment's single scientific claim along one reading spine, compiles it to PDF and PNG, and reviews the picture against a fixed design discipline, grayscale included. Verbs: `derive` drafts the spec from the product's evidence, `render` writes .tex/.pdf/.png at print size and audits it, `audit` re-runs the overflow, overlap, font-floor, background and margin checks, `status` reports what exists and its validation (`absent`, `pending`, `validated`, `stale`) and how it was validated, `validate` records the operator's approval given in the agent chat. Never runs an experiment, never edits the approval, never validates a diagram on its own initiative: the operator does, in the dashboard or by approving it explicitly in the conversation."
+description: "Trigger: draw and audit the TikZ diagram of a settled proof-of-concept (`AGREED.md`) or full-experiments (`Experimental_AGREED.md`) approval (`/experiment-diagrams poc|experiments`). Verbs: `derive`, `render`, `audit`, `status`, `validate`."
 ---
 
 # Experiment diagrams
+
+**Scope.** A product's proof of concept (`AGREED.md`) or full experiments (`Experimental_AGREED.md`) approval is settled and the operator must verify it in the Experimentos panel. Draws one TikZ diagram per approval -- `poc` or `experiments` -- that states the experiment's single scientific claim along one reading spine, compiles it to PDF and PNG, and reviews the picture against a fixed design discipline, grayscale included. Verbs: `derive` drafts the spec from the product's evidence, `render` writes .tex/.pdf/.png at print size and audits it, `audit` re-runs the overflow, overlap, font-floor, background and margin checks, `status` reports what exists and its validation (`absent`, `pending`, `validated`, `stale`) and how it was validated, `validate` records the operator's approval given in the agent chat. Never runs an experiment, never edits the approval, never validates a diagram on its own initiative: the operator does, in the dashboard or by approving it explicitly in the conversation.
 
 Two figures per product folder, each drawn when its approval lands:
 

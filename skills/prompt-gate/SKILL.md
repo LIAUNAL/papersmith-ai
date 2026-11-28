@@ -1,9 +1,11 @@
 ---
 name: prompt-gate
-description: "Trigger: before any phase skill runs its `$ARGUMENTS` (every slash command applies it first), or when the operator asks to review, debug or improve a prompt (`/prompt-gate /<skill> <prompt>`). Measures the prompt's quality with a deterministic per-skill score (`python -m skills._core.command_center.prompt_gate check`) and a rubric from published prompt-engineering guidance; under the threshold or on a critical failure it alerts that the prompt is not clear, proposes an improved prompt and waits for approval, or asks clarifying questions when the operator's input is too thin, builds the prompt from the answers and launches it. Never invents requirements; a prompt carrying `[prompt-gate: approved]` passes untouched."
+description: "Trigger: a slash command's deterministic prompt check did not pass, or the operator asks to review or improve a prompt (`/prompt-gate /<skill> <prompt>`). Proposes an improved prompt or asks clarifying questions; never invents requirements."
 ---
 
 # Prompt Gate
+
+**Scope.** Before any phase skill runs its `$ARGUMENTS` (every slash command applies it first), or when the operator asks to review, debug or improve a prompt (`/prompt-gate /<skill> <prompt>`). Measures the prompt's quality with a deterministic per-skill score (`python -m skills._core.command_center.prompt_gate check`) and a rubric from published prompt-engineering guidance; under the threshold or on a critical failure it alerts that the prompt is not clear, proposes an improved prompt and waits for approval, or asks clarifying questions when the operator's input is too thin, builds the prompt from the answers and launches it. Never invents requirements; a prompt carrying `[prompt-gate: approved]` passes untouched.
 
 The phase skills are only as good as the text they receive. This gate measures
 that text before a skill acts on it, and when it is not clear enough it either

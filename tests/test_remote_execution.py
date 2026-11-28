@@ -19942,11 +19942,21 @@ def _declared_names(parser):
     return names
 
 
-class FrontDoorRosterTests(unittest.TestCase):
-    """The frontmatter claims a FULL front door, so it must name every command.
+def _commands_section(text: str) -> str:
+    """The body's `## The commands` section: the closed roster of the front door.
 
-    That line is what a model reads to decide whether to load this skill, and
-    it has drifted before: one change ago it still said this adapter shells out
+    The frontmatter description used to carry this roster; it is loaded in every
+    session of every harness, so it now routes only and the roster lives here."""
+    start = text.index("\n## The commands\n")
+    end = text.index("\n## ", start + 1)
+    return text[start:end]
+
+
+class FrontDoorRosterTests(unittest.TestCase):
+    """`## The commands` claims a FULL front door, so it must name every command.
+
+    The roster is what a model reads to know what this skill can do, and it
+    has drifted before: one change ago it still said this adapter shells out
     to a command line tool it had stopped invoking. Prose describing a closed
     set with nothing deriving it goes stale the next time the set grows, and
     the growth is exactly when nobody rereads the sentence.
@@ -19966,7 +19976,7 @@ class FrontDoorRosterTests(unittest.TestCase):
         text = (REPOSITORY_ROOT
                 / "skills/remote-execution/SKILL.md").read_text(
                     encoding="utf-8")
-        description = text.split("---", 2)[1]
+        description = _commands_section(text)
         # Every accepted name -- at any nesting depth -- must be named at its
         # own backtick boundary. A nested command is written the way a
         # person types it -- `smoke record` -- but that string does not
@@ -19982,7 +19992,7 @@ class FrontDoorRosterTests(unittest.TestCase):
             if f"`{name}`" not in description)
         self.assertEqual(
             missing, [],
-            "the frontmatter calls itself the full front door and does not "
+            "`## The commands` calls itself the full front door and does not "
             f"name: {missing}. A closed set stated by hand goes stale the "
             "next time it grows")
 
@@ -20006,11 +20016,11 @@ class FrontDoorRosterTests(unittest.TestCase):
         text = (REPOSITORY_ROOT
                 / "skills/remote-execution/SKILL.md").read_text(
                     encoding="utf-8")
-        description = text.split("---", 2)[1]
+        description = _commands_section(text)
         self.assertIn(
             "`record`", description,
-            "`record` must be named at its own backtick boundary in the "
-            "frontmatter, independent of `smoke`")
+            "`record` must be named at its own backtick boundary in "
+            "`## The commands`, independent of `smoke`")
 
     def test_the_parser_nests_exactly_one_level_below_the_top(self):
         """The two-probe roster assumption (one probe file per nesting
@@ -20277,10 +20287,18 @@ class DoctrinePinTests(unittest.TestCase):
         description = self._description().lower()
         self.assertNotIn("stdlib-only, no venv", description)
 
-    def test_description_names_the_driver_and_the_pinned_sdk(self) -> None:
-        description = self._description()
-        self.assertIn("kaggle_driver.py", description)
-        self.assertIn("kagglesdk", description)
+    def _scope(self) -> str:
+        """The body's **Scope.** paragraph: the long form of the description,
+        kept out of the always-loaded listing and read when the skill runs."""
+        text = SKILL_MD.read_text(encoding="utf-8")
+        match = re.search(r"^\*\*Scope\.\*\* (.*)$", text, re.MULTILINE)
+        self.assertIsNotNone(match, "SKILL.md's body has no **Scope.** paragraph")
+        return match.group(1)
+
+    def test_scope_names_the_driver_and_the_pinned_sdk(self) -> None:
+        scope = self._scope()
+        self.assertIn("kaggle_driver.py", scope)
+        self.assertIn("kagglesdk", scope)
 
     # -- ## Environment retirement (Decision 7) ----------------------------
 

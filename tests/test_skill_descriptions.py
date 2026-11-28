@@ -29,6 +29,10 @@ SKILLS = FORGE_ROOT / "skills"
 #: Pi's ceiling, mirroring `MAX_DESCRIPTION_LENGTH` in `dist/core/skills.js`.
 PI_DESCRIPTION_LIMIT = 1024
 
+#: The budget every description stays within: it is loaded in every session of
+#: every harness, so it carries the trigger and leaves the detail to the body.
+LISTING_BUDGET = 250
+
 #: Skill front matter carries a long `Trigger: ...` paragraph on one line.
 #: Single-line is the shape every harness's parser reads, so it is asserted
 #: rather than assumed.
@@ -82,6 +86,19 @@ class SkillDescriptionTests(unittest.TestCase):
             f"a skill description exceeds Pi's {PI_DESCRIPTION_LIMIT}-unit "
             f"ceiling (measured in UTF-16 code units, the unit JS `length` "
             f"counts): {over}")
+
+    def test_every_skill_description_stays_within_the_listing_budget(self) -> None:
+        """Every harness loads every description into every session, so the
+        description routes and the body explains: trigger first, at most
+        `LISTING_BUDGET` units. Pi's ceiling above is the hard limit; this is
+        the budget that keeps the always-loaded listing small."""
+        over = [(path.relative_to(FORGE_ROOT).as_posix(), length)
+                for path, _, length in _measured()
+                if length > LISTING_BUDGET]
+        self.assertEqual(
+            over, [],
+            f"a skill description exceeds the {LISTING_BUDGET}-unit listing "
+            f"budget; move the detail into the SKILL.md body: {over}")
 
     def test_every_skill_name_matches_its_directory(self) -> None:
         mismatched = [(path.parent.name, _name(path)) for path in _skill_files()

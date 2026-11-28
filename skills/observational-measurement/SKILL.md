@@ -1,9 +1,11 @@
 ---
 name: observational-measurement
-description: "Trigger: an observational-measurement workspace (`smith init --kind observational-measurement`, or `smith kind set observational-measurement`) builds an observational, diagnostic-validation or measurement-instrument study (`/observational-measurement [status|<stage>]`). Routes each stage to the shared empirical tools (study protocol and its lock, ethics and registration records, own data with dictionary, QC and de-identification, the labelled analysis log, the participant flow, the reporting checklist of the agreed variant: STROBE, STARD 2015 or COSMIN) and reports where the study stands. Never generates measurements or data and never records a decision on the operator's behalf."
+description: "Trigger: an observational-measurement workspace builds an observational, diagnostic-validation or instrument study (`/observational-measurement [status|<stage>]`). Routes each stage to the shared empirical tools; never generates data."
 ---
 
 # Observational and measurement study
+
+**Scope.** An observational-measurement workspace (`smith init --kind observational-measurement`, or `smith kind set observational-measurement`) builds an observational, diagnostic-validation or measurement-instrument study (`/observational-measurement [status|<stage>]`). Routes each stage to the shared empirical tools (study protocol and its lock, ethics and registration records, own data with dictionary, QC and de-identification, the labelled analysis log, the participant flow, the reporting checklist of the agreed variant: STROBE, STARD 2015 or COSMIN) and reports where the study stands. Never generates measurements or data and never records a decision on the operator's behalf.
 
 This is the line skill of an observational-measurement workspace: a study of
 data the operator collects or holds, without assigning an intervention. It

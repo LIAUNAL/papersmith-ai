@@ -1,9 +1,11 @@
 ---
 name: paper-writing
-description: "Trigger: create or re-enter the paper/ tree; write one named block of paper/main.tex without touching another byte; read what sections/*.md declares about itself; see which writing phase is unlocked and open the section/block skeleton once; assemble a block's redactor packet (contract prose, reference heading outlines, bound source sections); record or reopen a declaration or fact and see the paper's plan; resolve a citation against Asta/OpenAlex/Crossref/arXiv and rebuild refs.bib; validate a citation's verdict and placement; judge a drafted, audited block against its evidence and contract; compile a standalone diagram and prove it against the contract's figure: obligation; check the cross-section couplings, citation integrity and contract currency; or adapt the manuscript to a chosen journal (venue select, requirements, acquire, diff, plan, approve, build under paper/venues/<slug>/, never touching the canonical main.tex). Stdlib-only, keyless by default, fail-closed CLI (paper_cli.py)."
+description: "Trigger: build or re-enter the paper/ tree: scaffold, record declarations, write one named block of main.tex, resolve citations and refs.bib, verify, compile diagrams, review, adapt to a venue or translate. Fail-closed CLI (paper_cli.py)."
 ---
 
 # Paper Writing
+
+**Scope.** Create or re-enter the paper/ tree; write one named block of paper/main.tex without touching another byte; read what sections/*.md declares about itself; see which writing phase is unlocked and open the section/block skeleton once; assemble a block's redactor packet (contract prose, reference heading outlines, bound source sections); record or reopen a declaration or fact and see the paper's plan; resolve a citation against Asta/OpenAlex/Crossref/arXiv and rebuild refs.bib; validate a citation's verdict and placement; judge a drafted, audited block against its evidence and contract; compile a standalone diagram and prove it against the contract's figure: obligation; check the cross-section couplings, citation integrity and contract currency; or adapt the manuscript to a chosen journal (venue select, requirements, acquire, diff, plan, approve, build under paper/venues/<slug>/, never touching the canonical main.tex). Stdlib-only, keyless by default, fail-closed CLI (paper_cli.py).
 
 `paper/main.tex` is edited one named block at a time, byte-for-byte. A block
 is delimited by two LaTeX-comment marker lines carrying its id and a sha256

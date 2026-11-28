@@ -1,9 +1,11 @@
 ---
 name: paper-ingestion
-description: "Trigger: ingest reference PDFs into high-fidelity Markdown (LaTeX equations, Markdown tables, figures as files), locally and keyless, routing each page to a fast text-layer path or to Docling only when it needs it. License-unrestricted engines. One folder per paper: pdf + lean .md + .json page map + figure images."
+description: "Trigger: ingest reference PDFs into high-fidelity Markdown (LaTeX equations, Markdown tables, figures as files), locally and keyless, using Docling only for pages that need it. One folder per paper: pdf, .md, page map, figures."
 ---
 
 # Paper Ingestion
+
+**Scope.** Ingest reference PDFs into high-fidelity Markdown (LaTeX equations, Markdown tables, figures as files), locally and keyless, routing each page to a fast text-layer path or to Docling only when it needs it. License-unrestricted engines. One folder per paper: pdf + lean .md + .json page map + figure images.
 
 Convert each source PDF into a lean, high-fidelity Markdown file an agent can
 read directly — body text in reading order, equations as LaTeX, tables as

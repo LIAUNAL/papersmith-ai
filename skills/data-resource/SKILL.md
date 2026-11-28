@@ -1,9 +1,11 @@
 ---
 name: data-resource
-description: "Trigger: a data-resource workspace (`smith init --kind data-resource`, or `smith kind set data-resource`) builds a data descriptor for a corpus, dataset or benchmark the operator collected (`/data-resource [status|<stage>]`). Routes each stage to the shared empirical tools and the datasets skill (collection protocol and its lock, ethics and consent, own-data statement or licence, data dictionary, quality checks and de-identification, the labelled analysis log for baselines, the operator's deposit record, the datasheets checklist, the data-descriptor final judge) and reports where the resource stands. Never generates, labels or alters data and never records a decision on the operator's behalf."
+description: "Trigger: a data-resource workspace builds a data descriptor for a corpus, dataset or benchmark (`/data-resource [status|<stage>]`). Routes each stage to the shared empirical tools and reports where it stands; never alters data."
 ---
 
 # Data resource
+
+**Scope.** A data-resource workspace (`smith init --kind data-resource`, or `smith kind set data-resource`) builds a data descriptor for a corpus, dataset or benchmark the operator collected (`/data-resource [status|<stage>]`). Routes each stage to the shared empirical tools and the datasets skill (collection protocol and its lock, ethics and consent, own-data statement or licence, data dictionary, quality checks and de-identification, the labelled analysis log for baselines, the operator's deposit record, the datasheets checklist, the data-descriptor final judge) and reports where the resource stands. Never generates, labels or alters data and never records a decision on the operator's behalf.
 
 This is the line skill of a data-resource workspace: a corpus, dataset or
 benchmark that the operator collected and releases, written as a data
