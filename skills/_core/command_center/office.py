@@ -544,6 +544,8 @@ def agent_roster(defined: list, activity: dict, ring: list,
             "stages": list(agent.get("stages") or []),
             "skill": agent.get("skill") or "",
             "model": agent.get("model") or None,
+            "models": list(agent.get("models") or []),
+            "model_alerts": list(agent.get("model_alerts") or []),
             "state": state,
         })
     return roster

@@ -170,12 +170,37 @@ Who is in the office:
 
 - **One desk per agent defined in smith**: every `.claude/agents/*.md` of
   the workspace, read through `agents_view.get_agents_view` (29 today). The
-  card shows the role, the model (`model:` frontmatter, else "inherits the
-  orchestrator's model"), the stretch, the phases and the current task.
+  card shows the role, one model line per harness the agent is projected to
+  (below), the stretch, the phases and the current task, and the agent's
+  model alerts as badges; each badge opens to say how to pin another model.
 - **The orchestrator** at the front desk with three monitors: the main CLI
   session (claude, opencode, pi, …) that runs the skills and calls the
   agents. The CLI programs are not desks; the card names the CLIs where the
   orchestrator runs. Without a live agent CLI session its chair is empty.
+
+Which model each agent runs on (`agent_models.py`; the same report in a
+terminal: `python -m skills._core.command_center.agent_models . [--json]`).
+`smith` writes `model:` only into `.claude/agents/*.md`; the OpenCode, Pi and
+Antigravity projections drop it, so there the agent inherits its session's
+model unless that harness's own config pins it. Only the model keys of these
+files are read, never a credential:
+
+| Harness | Pinned when | Otherwise inherits, read from | Pin that survives `smith upgrade` |
+| --- | --- | --- | --- |
+| Claude Code | `model:` in the definition (not `inherit`), or `CLAUDE_CODE_SUBAGENT_MODEL` with `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` | `env.CLAUDE_CODE_SUBAGENT_MODEL`, else `model`, in `.claude/settings.local.json` › `.claude/settings.json` › `~/.claude/settings.json` | none per agent: `smith upgrade` rewrites `.claude/agents/*.md`. `CLAUDE_CODE_SUBAGENT_MODEL` in `.claude/settings.local.json` (smith never writes it) moves every inheriting agent; with `_FORCE=1`, every agent |
+| OpenCode | never (the projection drops `model`) | `model` in `.opencode/opencode.json(c)` › `opencode.json(c)` › `~/.config/opencode/opencode.json(c)` | none documented: `smith upgrade` regenerates `.opencode/agents/` and `opencode.json`, and OpenCode does not say whether a config `agents` entry wins over a Markdown agent. Set the session's `model` in `~/.config/opencode/opencode.json` |
+| Pi (pi-subagents) | `subagents.agentOverrides.<name>.model` | `subagents.defaultModel`, else `defaultProvider`/`defaultModel`, in `.pi/settings.json` › `~/.pi/agent/settings.json` (`PI_CODING_AGENT_DIR`) | `subagents.agentOverrides.<name>.model` in `.pi/settings.json`, which `smith upgrade` never overwrites |
+| Antigravity | never (`model` takes only `inherit`, `flash`, `pro`) | no documented settings file: "the session's model" (`/model` in `agy`, `agy models` lists ids) | none per agent: `smith upgrade` regenerates `.agents/agents/`. `/model` in `agy` persists across sessions, or `agy --model <id>` |
+
+Managed settings, `--model` and `ANTHROPIC_MODEL` (Claude Code) and
+OpenCode's system config can still override these at launch; they are not
+read. A judge (`contract-auditor`, `section-grounding-auditor`, `ai-auditor`,
+`paper-reviewer`) whose model in a harness is not a top-tier one (a name with
+`opus` or `fable`, or `best`; `opusplan` is not) or cannot be read gets a
+**warning** badge; every inherited model gets a **note** badge naming it.
+Sources: code.claude.com/docs/en/sub-agents and /settings,
+opencode.ai/docs/agents and /config, pi-mono `docs/settings.md`,
+pi-subagents `docs/models.md`, antigravity.google/docs/subagents and /models.
 
 Each person shows one state, measured by `office.py` from the output tail of
 the live CLI sessions (each line read up to 400 characters, so any output scans in linear time), never invented:
