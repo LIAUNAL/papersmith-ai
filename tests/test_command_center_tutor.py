@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import subprocess as sp
 import tempfile
 import unittest
 from pathlib import Path
@@ -172,6 +173,49 @@ class TurnTests(_Root):
         self.assertIn("--strict-mcp-config", argv)
         self.assertEqual(json.loads(argv[argv.index("--json-schema") + 1])["required"],
                          tutor.TURN_SCHEMA["required"])
+
+    def test_the_claude_command_carries_a_declared_model_and_only_then(self) -> None:
+        argv = tutor.claude_argv("/bin/claude", "SYS", "PROMPT", model="sonnet")
+        self.assertEqual(argv[argv.index("--model") + 1], "sonnet")
+        self.assertEqual(argv[-1], "PROMPT")
+        self.assertNotIn("--model", tutor.claude_argv("/bin/claude", "SYS", "PROMPT"))
+
+    def _agent_file(self, model_line: str) -> None:
+        agents = self.root / ".claude" / "agents"
+        agents.mkdir(parents=True, exist_ok=True)
+        (agents / "math-tutor.md").write_text(
+            f"---\nname: math-tutor\ndescription: \"tutor\"\ntools: Read\n{model_line}---\n\n# Body\nmodel: opus\n",
+            encoding="utf-8")
+
+    def _converse_argv(self, available: tuple[str, ...]) -> list[str]:
+        calls = []
+        original_run, original_find = tutor.subprocess.run, tutor.find_executable
+        tutor.find_executable = lambda name: f"/bin/{name}" if name in available else None
+        tutor.subprocess.run = lambda argv, **kw: calls.append(argv) or sp.CompletedProcess(
+            argv, 0, json.dumps({"structured_output": TURN, "response": json.dumps(TURN)}), "")
+        self.addCleanup(setattr, tutor.subprocess, "run", original_run)
+        self.addCleanup(setattr, tutor, "find_executable", original_find)
+        tutor.converse(tutor.MATH, self.root, {"mode": "ask", "message": "hi"}, lambda thread: "P", [])
+        return calls[0]
+
+    def test_a_claude_turn_runs_the_model_its_agent_file_declares(self) -> None:
+        self._agent_file("model: sonnet\n")
+        argv = self._converse_argv(("claude",))
+        self.assertEqual(argv[argv.index("--model") + 1], "sonnet")
+
+    def test_a_turn_without_a_declared_model_inherits_the_session_model(self) -> None:
+        self._agent_file("")
+        self.assertNotIn("--model", self._converse_argv(("claude",)))
+
+    def test_a_model_value_that_is_not_a_plain_name_is_ignored(self) -> None:
+        self._agent_file("model: --dangerously-skip-permissions\n")
+        self.assertNotIn("--model", self._converse_argv(("claude",)))
+
+    def test_agy_and_pi_keep_inheriting_their_own_model(self) -> None:
+        # A Claude alias is not an agy or Pi model slug, so neither gets --model.
+        self._agent_file("model: sonnet\n")
+        self.assertNotIn("--model", self._converse_argv(("agy",)))
+        self.assertNotIn("--model", self._converse_argv(("pi",)))
 
 
 class RouteTests(_Root):
