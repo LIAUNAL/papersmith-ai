@@ -1,0 +1,20 @@
+Objective: stage B of the 2026-11-28 efficiency audit — paper-writing agents load only the slices they need, and the per-block audit loop stops spinning, without losing quality, on Claude Code, OpenCode, Pi and Antigravity.
+Branch: feat/efficiency-stage-b (stacked on feat/efficiency-stage-a) · Delivery: ask-on-risk · Runner: `TMPDIR=<non-hidden home dir> .micromamba/envs/papersmith/bin/pytest -n 8 --dist loadfile` + `npm run -s test:node` + `scripts/sync-repo-harness.py --check`
+
+## Specs
+
+- S1 — `skills/paper-writing/SKILL.md` (2,838 lines, 220 KB) becomes a core the orchestrator reads (what ships, every read starts the same way, the four verbs, the delegation fallback, Decision Gates, the refusal roster, and one delegation map with each agent's exact "delegates to the `X` agent" phrase, its "Measure this before delegating" precondition and its slice file) plus `skills/paper-writing/references/*.md` slices. Nothing is lost: every rule of the old file lives in exactly one place (core or one reference). Each file is under 50 KB, the Pi/OpenCode single-read cap.
+- S2 — Each of the 13 paper-writing agents (redactor, contract-auditor, section-grounding-auditor, ai-auditor, style-sampler, insumos-observer, translator, translation-style-reviewer, diagram-author, figure-auditor, figure-visual-reviewer, venue-adapter, paper-reviewer) keeps its `Skill:` line first and names the reference slices it reads and when; none is told to load the whole SKILL.md. Projected copies for OpenCode, Pi and Antigravity are regenerated.
+- S3 — Tests that pin raw paper-writing SKILL.md text read the expanded skill (core + named references) through `tests/skill_text.py`; a new test asserts every reference a paper-writing agent or the core names exists, every reference file is named by the core, and each file stays under 50 KB.
+- S4 — The audit loop: deterministic checks run before any LLM audit, `AUDIT_EXHAUSTED` and the uncapped post-audit refusals escalate to the operator instead of another redraft, and the drafting stretch actually runs on `redactor`. (Design to settle after S1-S3; see L3.)
+
+## Tasks
+
+- [ ] B1 — S1, S2, S3 split paper-writing into core + references, point agents at slices, retarget tests · route: delegated (writer; context backstop) · Risk: item 3 (mirrored agent prompts consumed by four harnesses) · commit: —
+- [ ] B2 — S4 audit loop and redactor usage · route: tbd after B1 · commit: —
+
+## Log
+
+- L1 (2026-11-28, user, verbatim): "realiza una revision exahustiva del los proceos en smith, tienpos de ejecucion en cada fase, errores o reprocesos que hemos cometidos en proyectos usando smith (mira proyectos y engram para ver proyectos) revisa cada agentr dentro de smith y cada skill, mira si debemos depurar o quitar agentes o skills, o mejorarlas con tu skill creator, buscamos eficiencia sin perder calidad"
+- L2 (2026-11-28, user choice): "Descartar T5 (Recommended)" — whose option text read: "Cierro la etapa A con T1–T4 y paso a la etapa B (secciones por agente en paper-writing), que es donde está el ahorro grande." Stage B was proposed as: secciones por agente en paper-writing, investigar por qué se usa `general-purpose` en vez de `redactor`, y limitar las re-auditorías a 2 antes de escalar al operador.
+- L3: Mapping evidence (explorer, 2026-11-28): in one read no agent reaches `write` (from :1524; 50 KB ≈ :657, Claude ~100 KB ≈ :1378). Drafting drifts to general-purpose because redactor has no Write (redactor.md:4, :91) and its description says "Never invoked by any code path" (:3); SKILL :1640-1642 wrongly says OpenCode/Pi have no sub-agents. The contract audit judges every disqualifier of the whole section on every block (paper_audit.py:34, :120); only contract-audit fires spend attempts (paper_write.py:288-296); post-audit refusals have no cap; `AUDIT_EXHAUSTED` has no escalation row. No test requires "Load it and follow it"; `bound_skill()` needs the `Skill:` line first; 13 "delegates to the `X` agent" phrases and "Measure this before delegating" must stay findable.
