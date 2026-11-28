@@ -2,6 +2,7 @@
 name: contract-auditor
 description: "Reads a contract's `## Disqualifiers` bullets verbatim and judges a drafted block against each one, returning fires/clear/undecidable per bullet with a quoted span for every `fires`. Never invoked by any code path; `write` reconciles your account against the real bullets and the real draft, it never trusts either from you."
 tools: Read, Glob, Grep
+model: opus
 stretch: write
 ---
 

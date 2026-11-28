@@ -2,6 +2,7 @@
 name: section-grounding-auditor
 description: "Reads a transposition block's own bound source section, verbatim, and judges each subject sentence's support against it, returning supported/unsupported/undecidable per sentence with a quoted span for every supported. Never invoked by any code path; write re-derives both the subject sentences and the section bytes independently and reconciles your account against them, it never trusts either from you."
 tools: Read, Glob, Grep
+model: opus
 stretch: write
 ---
 

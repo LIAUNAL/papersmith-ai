@@ -2,6 +2,7 @@
 name: ai-auditor
 description: "Audits a manuscript draft or block for writing quality (monotone cadence, overused academic phrasing, lexical diversity, connector use, sentence openings, redundancy) using `paper_ai_metrics`, and verifies strict adherence to F5 invariants. A readability check, never an AI detector. Never invoked by any code path; `write` and `humanize` reconcile your account against the real draft, they never trust either from you."
 tools: Read, Glob, Grep
+model: opus
 stretch: write
 ---
 
