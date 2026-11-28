@@ -10,11 +10,15 @@ Generated from `.claude/` by `papersmith` {{version}}.
 - Antigravity invokes each skill as `/<name>` through the `.agents/skills` link
   to `skills/`; no command files are generated. Read the skill's
   `skills/<name>/SKILL.md` first.
-- Before acting on the text given to `/<name>`, apply the prompt gate of
-  `skills/prompt-gate/SKILL.md` to it: score it, and when it fails, alert,
-  propose an improved prompt or ask clarifying questions, and wait for the
-  operator. Skip the gate when the text carries `[prompt-gate: approved]`,
-  when the operator asked to launch it as is, or for `/prompt-gate` itself.
+- Before acting on the text given to `/<name>`, score it with the prompt gate:
+  pipe the text verbatim on stdin to
+  `python -m skills._core.command_center.prompt_gate check --skill <name>`.
+  On `"verdict": "pass"` follow the skill with the text unchanged; on `fail`,
+  or when the command cannot run, read `skills/prompt-gate/SKILL.md` and
+  follow it: alert, propose an improved prompt or ask clarifying questions,
+  and wait for the operator. Skip the gate when the text carries
+  `[prompt-gate: approved]`, when the operator asked to launch it as is, or
+  for `/prompt-gate` itself.
 - Keep research artifacts under their declared workspace directories.
 
 ## Research topic

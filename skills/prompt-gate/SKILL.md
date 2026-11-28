@@ -17,8 +17,10 @@ terminal, the dashboard's embedded terminal, and the dashboard's phase cards
 
 1. **Automatically, on every phase slash command.** The body of each projected
    command (`.claude/commands`, `.opencode/commands`, `.pi/prompts`) and the
-   Antigravity rules (`.agents/AGENTS.md`) tell the agent to apply this gate to
-   `$ARGUMENTS` before following the skill.
+   Antigravity rules (`.agents/AGENTS.md`) run Step 1 on `$ARGUMENTS` before
+   following the skill, and send the agent here only when the verdict is
+   `fail` or the score could not be computed. Arriving that way, Step 1 has
+   already run: start from its result.
 2. **On request.** `/prompt-gate /<skill> <prompt>` reviews `<prompt>` as the
    input of `/<skill>`; on approval it follows `skills/<skill>/SKILL.md` with the
    improved prompt. `/prompt-gate <prompt>` without a skill reviews it with the

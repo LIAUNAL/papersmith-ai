@@ -200,6 +200,27 @@ class GeneratorsTests(unittest.TestCase):
             derive_command_description(_skill_description(workspace, "paper-ingestion"))
         ) in head
 
+    def test_every_harness_measures_the_prompt_before_reading_the_gate_skill(self) -> None:
+        # The deterministic score runs first; the gate's SKILL.md is read only
+        # when the verdict is not a pass, never on every call.
+        from skills._core.command_center.ai_transcripts import command_of
+
+        workspace = _workspace(self.new_tmp())
+        for tool, path in (("claude", ".claude/commands/paper-ingestion.md"),
+                           ("opencode", ".opencode/commands/paper-ingestion.md"),
+                           ("pi", ".pi/prompts/paper-ingestion.md")):
+            with self.subTest(tool=tool):
+                body = render_files(workspace, tools=(tool,))[path].partition("\n---\n")[2]
+                assert "prompt_gate check --skill paper-ingestion" in body
+                check, _, rest = body.partition("prompt_gate check --skill paper-ingestion")
+                assert "skills/prompt-gate/SKILL.md" not in check
+                assert "skills/prompt-gate/SKILL.md" in rest
+                assert body.count("$ARGUMENTS") == 2  # the closing label and the placeholder
+                expanded = body.replace("$ARGUMENTS\n", "ingest guidance/x.pdf\n").strip()
+                assert command_of(expanded) == ("paper-ingestion", "ingest guidance/x.pdf")
+        rules = render_files(workspace, tools=("antigravity",))[".agents/AGENTS.md"]
+        assert "prompt_gate check --skill <name>" in rules
+
     def test_pi_agent_projection_is_scoped_to_pi(self) -> None:
         workspace = _workspace(self.new_tmp())
         assert [agent["name"] for agent in collect_pi_agents(workspace, warnings=[])] == list(AGENT_NAMES)
