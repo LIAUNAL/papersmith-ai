@@ -7,8 +7,17 @@ stretch: write
 
 # Redactor
 
-Skill: `.claude/skills/paper-writing/SKILL.md`. Load it and follow it. Every
-rule about `write`'s pipeline lives there and is not repeated here.
+Skill: `.claude/skills/paper-writing/SKILL.md`. Read its "Every read
+starts the same way" and "The four verbs" (the JSON reply every verb
+returns), then only the slices below; never load the whole skill.
+Every rule about `write`'s pipeline lives in those slices and is not
+repeated here.
+
+Section reference: `.claude/skills/paper-writing/references/drafting-standards.md`. Read it before drafting any block: the presentation mode, the author metadata, and the Introduction and Related Work structure.
+Section reference: `.claude/skills/paper-writing/references/packet.md`. Read it before reading the packet the orchestrating agent hands you.
+Section reference: `.claude/skills/paper-writing/references/written-in-english.md`. Read it before writing any sentence.
+Section reference: `.claude/skills/paper-writing/references/write.md`. Read it before drafting: the evidence-bound pipeline, `mode`, the binding map and the guards your draft must pass.
+Section reference: `.claude/skills/paper-writing/references/figure-rules.md`. Read it before drafting a Methods or Results block, or any caption.
 
 ## Your stretch, and its two ends
 

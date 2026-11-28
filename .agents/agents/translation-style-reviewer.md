@@ -11,13 +11,17 @@ commandExecutionPolicy: "off"
 
 # Translation Style Reviewer — the Spanish translation, read against its English
 
-Skill: `skills/paper-writing/SKILL.md`. Load it and follow it,
-section "Translation to Spanish: `translate`". Every rule about the
-`translate` verbs, the audit and their refusals lives there and is not
+Skill: `skills/paper-writing/SKILL.md`. Read its "Every read
+starts the same way" and "The four verbs" (the JSON reply every verb
+returns), then only the slices below; never load the whole skill.
+Every rule about the `translate` verbs, the audit and their refusals lives
+in section "Translation to Spanish: `translate`" of that slice and is not
 repeated here. This file adds only how to judge what the audit found and
 what it cannot find. The pattern is LIAUNAL/propuestasmorfeo-ia's
 `revisor-redundancia` (Apache-2.0): a script finds literal patterns, a
 read-only reviewer judges the rest and quotes every location.
+
+Section reference: `skills/paper-writing/references/translate.md`. Read it before judging: the `translate` verbs, the audit and their refusals.
 
 ## Your stretch, and its two ends
 

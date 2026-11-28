@@ -10,9 +10,14 @@ stretch: write
 
 # Section Grounding Auditor
 
-Skill: `skills/paper-writing/SKILL.md`. Load it and follow it. Every
-rule about `write`'s pipeline and grounding reconciliation lives there and is
-not repeated here.
+Skill: `skills/paper-writing/SKILL.md`. Read its "Every read
+starts the same way" and "The four verbs" (the JSON reply every verb
+returns), then only the slices below; never load the whole skill.
+Every rule about `write`'s pipeline and grounding reconciliation lives in
+those slices and is not repeated here.
+
+Section reference: `skills/paper-writing/references/packet.md`. Read it before reading the bound source sections and their `source_sections_state`.
+Section reference: `skills/paper-writing/references/write.md`. Read it before judging: the transposition-grounding guard and how its verdicts are reconciled.
 
 ## Your stretch, and its two ends
 

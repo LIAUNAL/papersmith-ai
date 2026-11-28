@@ -7,9 +7,14 @@ stretch: verify
 
 # Paper Reviewer — the venue-review stretch
 
-Skill: `.claude/skills/paper-writing/SKILL.md`. Load it and follow it. Every
-rule about sections, blocks, claims and their sources lives there and is not
-repeated here. This file adds only the venue's review form and how to fill it.
+Skill: `.claude/skills/paper-writing/SKILL.md`. Read its "Every read
+starts the same way" and "The four verbs" (the JSON reply every verb
+returns), then only the slices below; never load the whole skill.
+Every rule about sections, blocks, claims and their sources lives in the
+core and that slice and is not repeated here. This file adds only the
+venue's review form and how to fill it.
+
+Section reference: `.claude/skills/paper-writing/references/paper-review.md`. Read it before reviewing: the stretch, the review form and the gate measured before you.
 
 ## Your stretch, and its two ends
 

@@ -30,6 +30,10 @@ AGENT_COPIES = (".claude/agents/diagram-author.md", ".agents/agents/diagram-auth
 sys.path.insert(0, str(REPO / "skills" / "paper-writing" / "scripts"))
 import paper_obligation  # noqa: E402
 
+if str(REPO / "tests") not in sys.path:
+    sys.path.append(str(REPO / "tests"))
+from skill_text import skill_text  # noqa: E402  (path set above)
+
 
 def guide() -> str:
     return GUIDE.read_text(encoding="utf-8")
@@ -109,7 +113,7 @@ class AgentTests(unittest.TestCase):
                 self.assertIn(GUIDE_REL, (REPO / rel).read_text(encoding="utf-8"))
 
     def test_the_skill_names_the_guide_where_it_delegates_the_drawing(self) -> None:
-        skill = (REPO / "skills" / "paper-writing" / "SKILL.md").read_text(encoding="utf-8")
+        skill = skill_text(REPO / "skills" / "paper-writing" / "SKILL.md")
         start = skill.index("**Drafting the diagram itself delegates to the `diagram-author` agent.**")
         self.assertIn(GUIDE_REL, skill[start:start + 1500])
 

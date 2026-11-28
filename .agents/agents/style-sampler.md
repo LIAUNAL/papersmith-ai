@@ -11,9 +11,14 @@ commandExecutionPolicy: "off"
 
 # Style Sampler
 
-Skill: `skills/paper-writing/SKILL.md`. Load it and follow it. Every
-rule about the style channel and the leak proof lives there and is not
-repeated here.
+Skill: `skills/paper-writing/SKILL.md`. Read its "Every read
+starts the same way" and "The four verbs" (the JSON reply every verb
+returns), then only the slices below; never load the whole skill.
+Every rule about the style channel and the leak proof lives in those slices
+and is not repeated here.
+
+Section reference: `skills/paper-writing/references/packet.md`. Read it before reading what a block's packet carries.
+Section reference: `skills/paper-writing/references/write.md`. Read it before sampling: the style channel the shuttle procedure feeds and the style-leak proof.
 
 ## Your stretch, and its two ends
 

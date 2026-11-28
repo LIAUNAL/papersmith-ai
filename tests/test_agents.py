@@ -29,7 +29,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from skill_text import stage_references  # noqa: E402  (path set above)
+from skill_text import skill_text, stage_references  # noqa: E402  (path set above)
 
 ROOT = Path(__file__).resolve().parent.parent
 AGENTS = ROOT / ".claude" / "agents"
@@ -361,7 +361,7 @@ class AgentBindingTests(unittest.TestCase):
             if not doc.is_file():
                 continue
             for agent in re.findall(r"delegates to the `([\w-]+)` agent", 
-                                    doc.read_text(encoding="utf-8")):
+                                    skill_text(doc)):
                 named.add((skill.name, agent))
         self.assertTrue(named, "no skill delegates a stretch to any agent")
         for skill, agent in sorted(named):
@@ -380,7 +380,7 @@ class AgentBindingTests(unittest.TestCase):
             doc = skill / "SKILL.md"
             if doc.is_file():
                 invoked.update(re.findall(r"delegates to the `([\w-]+)` agent",
-                                          doc.read_text(encoding="utf-8")))
+                                          skill_text(doc)))
         orphans = sorted(path.stem for path in self.agents()
                          if path.stem not in invoked)
         self.assertEqual(orphans, [],
@@ -486,11 +486,10 @@ class AgentBindingTests(unittest.TestCase):
         """
         delegating = [skill for skill in sorted(SKILLS.iterdir())
                       if (skill / "SKILL.md").is_file()
-                      and "delegates to the `" in (skill / "SKILL.md").read_text(
-                          encoding="utf-8")]
+                      and "delegates to the `" in skill_text(skill / "SKILL.md")]
         self.assertTrue(delegating)
         for skill in delegating:
-            doc = (skill / "SKILL.md").read_text(encoding="utf-8")
+            doc = skill_text(skill / "SKILL.md")
             self.assertIn("Measure this before delegating", doc,
                           f"{skill.name} delegates a stretch and names no "
                           f"precondition to read first")

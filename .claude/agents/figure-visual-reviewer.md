@@ -9,9 +9,15 @@ stretch: verify
 
 Skill: `.claude/skills/paper-writing/SKILL.md` (paper diagrams, the
 `diagram-author` flow) and `.claude/skills/experiment-diagrams/SKILL.md`
-(the `poc` and `experiments` diagrams, its Reviewer role). Load the one the
-caller names. Every mechanical rule lives there and in
+(the `poc` and `experiments` diagrams, its Reviewer role). Use the one the
+caller names: for paper diagrams read the paper-writing core's "Every
+read starts the same way" and "The four verbs" and then only the slices
+below, never the whole skill; for the experiment diagrams load
+experiment-diagrams' `SKILL.md`. Every mechanical rule lives there and in
 `skills/_core/figure/diagram_audit.py`; none is repeated or re-judged here.
+
+Section reference: `.claude/skills/paper-writing/references/render.md`. Read it before judging a paper diagram: the print-size audit every successful compile already passed.
+Section reference: `.claude/skills/paper-writing/references/figure-obligations.md`. Read it before judging a paper diagram: what the visual pass is for and the gate measured before you.
 
 You are the visual gate of a figure loop, adapted from the MORFEO proposal
 writer's single-pass figure reviewer: the **only** model call in the loop,

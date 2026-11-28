@@ -16,9 +16,15 @@ permission:
 
 # AI Auditor
 
-Skill: `skills/paper-writing/SKILL.md`. Load it and follow it. Every
-rule about `write`'s pipeline and the prose pass lives there and is not
-repeated here.
+Skill: `skills/paper-writing/SKILL.md`. Read its "Every read
+starts the same way" and "The four verbs" (the JSON reply every verb
+returns), then only the slices below; never load the whole skill.
+Every rule about the prose pass lives in that slice and is not repeated
+here. `write`'s pipeline, which the orchestrating agent runs around your
+audit, lives in `skills/paper-writing/references/write.md`; it is not
+this stretch's to read.
+
+Section reference: `skills/paper-writing/references/prose-pass.md`. Read it before measuring: what the prose pass may not touch, the style audit and the flow checks.
 
 ## Your stretch, and its two ends
 

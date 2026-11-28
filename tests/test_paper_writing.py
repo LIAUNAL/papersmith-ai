@@ -75,6 +75,7 @@ import figure_dimensions  # noqa: E402
 
 sys.path.insert(0, str(FORGE_ROOT / "tests"))
 from paper_mutation import _run_against_mutant  # noqa: E402
+from skill_text import skill_text  # noqa: E402  (`tests/` is on the path above)
 # `the-figure-nobody-looked-at`, Phase 4: reuses the stub `latexmk`
 # `tests/test_paper_figure.py` already installs for its own repair-budget
 # ledger tests -- the same shape `tests/test_implementation_domain_
@@ -2248,7 +2249,7 @@ class SealStrengthFourSurfaceTests(unittest.TestCase):
             )
 
         # (d) `SKILL.md` -- this skill's only documentation surface.
-        skill_md = (SKILL_SCRIPTS.parent / "SKILL.md").read_text(encoding="utf-8")
+        skill_md = skill_text(SKILL_SCRIPTS.parent / "SKILL.md")
         self.assertIn(strength, skill_md, "SKILL.md")
 
     def test_mutation_weakening_seal_strength_reddens_the_four_surface_test(self) -> None:
@@ -5676,7 +5677,7 @@ class SkillMdModeCountAccuracyTests(unittest.TestCase):
         return with_mode, len(paths)
 
     def _claimed_count(self) -> tuple[int, int]:
-        text = self.SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(self.SKILL_MD)
         match = _SKILL_MD_MODE_COUNT_RE.search(text)
         self.assertIsNotNone(
             match,
@@ -5727,7 +5728,7 @@ class SkillMdModeCountAccuracyTests(unittest.TestCase):
         stems = {path.stem for path in sorted(SECTIONS_DIR.glob("*.md"))}
         self.assertTrue(stems, "no shipped contracts found to derive stems from")
 
-        surfaces = {"SKILL.md": self.SKILL_MD.read_text(encoding="utf-8")}
+        surfaces = {"SKILL.md": skill_text(self.SKILL_MD)}
         parser = paper_cli.build_parser()
         for action in parser._actions:
             if not isinstance(action, argparse._SubParsersAction):
@@ -15752,7 +15753,7 @@ class GroundingThresholdObligationTests(unittest.TestCase):
     def test_the_falsifier_is_still_shipped_where_a_reader_will_find_it(self) -> None:
         """The tripwire above is worthless if the obligation it points at has
         been quietly edited out of the shipped doctrine."""
-        skill_md = (SKILL_SCRIPTS.parent / "SKILL.md").read_text(encoding="utf-8")
+        skill_md = skill_text(SKILL_SCRIPTS.parent / "SKILL.md")
         self.assertIn("Falsifier:", skill_md)
         self.assertIn("downgraded > 0", skill_md)
         self.assertIn("decided == 0", skill_md)

@@ -2366,8 +2366,9 @@ text. The text changes the plan calls for are applied only through the existing
 `write` loop (redactor, contract-auditor, `write --draft --audit`), one block at
 a time, after the approval; a section the venue needs and smith lacks is a plan
 item the operator decides, never something drafted on the agent's authority. It
-never submits. The literal contract is the "Venue adaptation" section of
-`skills/paper-writing/SKILL.md` and `.claude/agents/venue-adapter.md`.
+never submits. The literal contract is the "Venue adaptation" section, in
+`skills/paper-writing/references/venue.md` (reached from
+`skills/paper-writing/SKILL.md`), and `.claude/agents/venue-adapter.md`.
 
 **The substitution engine is four of those thirty-one** — `scaffold`, `status`,
 `open`, `substitute` — and they carry one rule: **there is no `--force`**. Nothing

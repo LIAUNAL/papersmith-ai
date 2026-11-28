@@ -8,8 +8,13 @@ that restates a redactor input count must agree with it.
 from __future__ import annotations
 
 import re
+import sys
 import unittest
 from pathlib import Path
+
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.append(str(Path(__file__).resolve().parent))
+from skill_text import skill_text  # noqa: E402  (path set above)
 
 ROOT = Path(__file__).resolve().parent.parent
 AGENT = ROOT / ".claude" / "agents" / "redactor.md"
@@ -37,7 +42,7 @@ def counts_in(text: str) -> set[int]:
 class RedactorPacketContractTest(unittest.TestCase):
     def test_redactor_packet_contract_matches_agent_inputs(self) -> None:
         n = declared_count()
-        skill = SKILL.read_text(encoding="utf-8")
+        skill = skill_text(SKILL)
         self.assertIn("redactor", skill)
         self.assertEqual(sorted(counts_in(skill) - {n}), [],
                          "paper-writing/SKILL.md restates a redactor input "

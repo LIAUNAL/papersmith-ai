@@ -13,9 +13,14 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.append(str(Path(__file__).resolve().parent))
+from skill_text import skill_text  # noqa: E402  (path set above)
 
 REPO = Path(__file__).resolve().parents[1]
 CONTRACT = REPO / "sections" / "09-title-and-keywords.md"
@@ -46,7 +51,7 @@ LONG_NAIVE_AUTHOR = (
 
 def contract_template(path: Path = CONTRACT) -> str:
     """The first ```latex block after the revealed-metadata heading."""
-    text = path.read_text(encoding="utf-8")
+    text = skill_text(path)
     starts = [text.index(h) for h in HEADINGS if h in text]
     if not starts:
         raise AssertionError(f"no revealed-metadata heading in {path}")

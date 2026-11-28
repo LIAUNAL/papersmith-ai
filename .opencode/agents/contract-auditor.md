@@ -16,9 +16,15 @@ permission:
 
 # Contract Auditor
 
-Skill: `skills/paper-writing/SKILL.md`. Load it and follow it. Every
-rule about `write`'s pipeline and the audit reconciliation lives there and
-is not repeated here.
+Skill: `skills/paper-writing/SKILL.md`. Read its "Every read
+starts the same way" and "The four verbs" (the JSON reply every verb
+returns), then only the slices below; never load the whole skill.
+Every rule about `write`'s pipeline and the audit reconciliation lives in
+those slices and is not repeated here.
+
+Section reference: `skills/paper-writing/references/drafting-standards.md`. Read it before judging an Introduction, Related Work or synthesis-table block.
+Section reference: `skills/paper-writing/references/section-contract.md`. Read it before reading the contract the draft was written from.
+Section reference: `skills/paper-writing/references/write.md`. Read it before judging: the shuttle procedure that reconciles your verdict envelope, and the binding map.
 
 ## Your stretch, and its two ends
 
