@@ -11,6 +11,46 @@ reader expects a kept one.
 Versions follow [semantic versioning](https://semver.org): while the first
 number is `0`, breaking changes can still arrive without a major bump.
 
+## Unreleased
+
+- **Agents read only what they apply.** `skills/paper-writing/SKILL.md` was 220 KB and 13
+  agents were told to load it whole; Pi and OpenCode read 50 KB per call and Claude Code about
+  25k tokens, so no agent reached the `write` pipeline in one read. The skill is now a 23 KB
+  core with a delegation map and 22 reference slices under `references/`, each under 50 KB, and
+  every agent names only the slices it applies. Nothing was reworded; a test pins that the
+  slices are lossless, ordered and resolvable from every harness.
+- **A strong-model judge always verifies the writing.** `contract-auditor`,
+  `section-grounding-auditor`, `ai-auditor` and `paper-reviewer` pin `model: opus` (Claude Code;
+  the other harnesses run them on their session's model).
+- **See which model each agent runs on.** The office card and
+  `python -m skills._core.command_center.agent_models . [--json]` show, for every agent and each
+  harness (Claude Code, OpenCode, Pi, Antigravity), whether its model is pinned or inherited and
+  which model that is. A judge not confirmed on a top-tier model gets a warning, and every alert
+  says how to pin another model in that harness by a means that survives `smith upgrade`, or that
+  none exists.
+- **Fewer blind redrafts behind the same two-judge gate.**
+  - `write --precheck` runs every deterministic check before a judge is spawned.
+  - The contract and grounding judges run in parallel on one draft; a block is written only when
+    both pass, and a refusal names every unsupported sentence.
+  - The one bounded re-draft is shared by every judge. When it fails again, `write` records a
+    terminal `escalated` state and refuses `AUDIT_EXHAUSTED`: stop and ask the operator. A block
+    is never passed automatically.
+  - The redactor self-checks its draft against the contract before returning and stays
+    read-only; the skill names its spawn.
+- **Disqualifiers can name their block.** A leading `[block: <id>[, <id>]]` marks a rule judged on
+  those blocks only; unmarked rules stay section-wide, and a marker naming no declared block is
+  ignored, so older or customized contracts behave as before. 88 rules of the shipped contracts
+  carry one.
+- **Every skill description fits a 250-unit listing budget.** All four harnesses load every
+  description into every session; each now carries its trigger and verbs, and its former long
+  text is the skill's **Scope** paragraph, read only when the skill runs.
+- **The prompt gate scores first.** Slash commands (Claude Code, OpenCode, Pi) and the Antigravity
+  rules run `prompt_gate check` themselves and read `skills/prompt-gate/SKILL.md` only when the
+  prompt fails.
+- **Fixed:** the dashboard tutors now run the model their agent file declares (`claude -p`
+  received no `--model`); the walk agents no longer contradict the doctrine that a rehearsal is
+  run, not offered; `paper-writing` no longer says OpenCode, Pi and Antigravity have no sub-agents.
+
 ## 0.87.0
 
 - **The board follows the current iteration.** Pillars, hypotheses and the problem tree take

@@ -21,6 +21,10 @@ from fastapi.testclient import TestClient
 
 from skills._core.command_center import atlas_coverage, atlas_reference, server
 
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.append(str(Path(__file__).resolve().parent))
+from skill_text import skill_text  # noqa: E402  (path set above)
+
 REPO = Path(__file__).resolve().parents[1]
 FIXTURE = REPO / "tests" / "fixtures" / "atlas_manuscript"
 
@@ -102,7 +106,7 @@ class FlowTests(unittest.TestCase):
         for path in ("skills/proposal-deliberation/SKILL.md", "skills/experimental-deliberation/SKILL.md",
                      "skills/paper-writing/SKILL.md", "skills/plausibility/SKILL.md", "CLAUDE.md"):
             with self.subTest(path=path):
-                self.assertIn("smith atlas coverage", (REPO / path).read_text(encoding="utf-8"))
+                self.assertIn("smith atlas coverage", skill_text(REPO / path))
 
 
 if __name__ == "__main__":

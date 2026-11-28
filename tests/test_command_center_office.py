@@ -60,6 +60,16 @@ class RosterTests(unittest.TestCase):
         self.assertIsNone(agents["sota-scout"]["model"])
         self.assertEqual(agents["novelty-screener"]["model"], "sonnet")
 
+    def test_the_model_per_harness_and_its_alerts_travel_to_the_desk(self) -> None:
+        models = [{"harness": "claude", "label": "Claude Code", "status": "pinned", "model": "opus",
+                   "source": ".claude/agents/paper-reviewer.md", "how_to_see": "x"}]
+        alerts = [{"level": "warning", "harness": "pi", "message": "m", "suggestion": "s"}]
+        defined = [{"name": "paper-reviewer", "model": "opus", "models": models, "model_alerts": alerts}]
+        desk = office.agent_roster(defined, {}, [], NOW)[0]
+        self.assertEqual(desk["models"], models)
+        self.assertEqual(desk["model_alerts"], alerts)
+        self.assertEqual(by_id(state(""))["sota-scout"]["models"], [])
+
     def test_idle_agents_are_available(self) -> None:
         for agent in state("").get("agents"):
             self.assertEqual(agent["state"], "available", agent["id"])
@@ -536,6 +546,64 @@ class EventsModelTests(unittest.TestCase):
         self.assertEqual([e["kind"] for e in closed], ["offline"])
         busy = self.run_events(self.snap({}, orch="available"), self.snap({}, orch="saving"))["events"]
         self.assertEqual(busy, [], "a state change of a live session is not an online/offline event")
+
+
+CARD_HARNESS = r"""
+const fs = require('fs');
+const cfg = JSON.parse(fs.readFileSync(0, 'utf8'));
+global.window = { i18n: { t: (k, v) => k + (v ? ' ' + JSON.stringify(v) : '') } };
+global.document = { addEventListener() {}, getElementById: () => null };
+eval(fs.readFileSync(process.argv[1], 'utf8'));
+const m = window.officeModel;
+console.log(JSON.stringify({ rows: m.modelRows(cfg.agent), alerts: m.modelAlerts(cfg.agent) }));
+"""
+
+
+@unittest.skipUnless(__import__("shutil").which("node"), "node is not installed")
+class CardModelTests(unittest.TestCase):
+    """The card's model line per harness and its alert badges, run in node."""
+
+    def run_card(self, agent: dict) -> dict:
+        import json
+        import subprocess
+        done = subprocess.run(["node", "-e", CARD_HARNESS, str(STATIC / "office-panel.js")],
+                              input=json.dumps({"agent": agent}),
+                              capture_output=True, text=True, timeout=30, check=True)
+        return json.loads(done.stdout)
+
+    def test_one_row_per_harness_says_pinned_inherited_or_unknown(self) -> None:
+        out = self.run_card({"id": "paper-reviewer", "model": "opus", "models": [
+            {"harness": "claude", "label": "Claude Code", "status": "pinned", "model": "opus", "source": "f.md"},
+            {"harness": "opencode", "label": "OpenCode", "status": "inherits", "model": "a/b", "source": "opencode.json"},
+            {"harness": "antigravity", "label": "Antigravity", "status": "inherits", "model": None,
+             "source": None, "how_to_see": "run /model in agy"},
+        ]})
+        rows = out["rows"]
+        self.assertEqual([r[0] for r in rows], [
+            'office.modelIn {"harness":"Claude Code"}', 'office.modelIn {"harness":"OpenCode"}',
+            'office.modelIn {"harness":"Antigravity"}'])
+        self.assertEqual(rows[0][1], 'office.modelPinned {"model":"opus","source":"f.md"}')
+        self.assertEqual(rows[1][1], 'office.modelInherits {"model":"a/b","source":"opencode.json"}')
+        self.assertEqual(rows[2][1], 'office.modelInheritsUnknown {"how":"run /model in agy"}')
+
+    def test_a_payload_without_models_keeps_the_single_model_line(self) -> None:
+        self.assertEqual(self.run_card({"id": "x", "model": "sonnet"})["rows"], [["office.model", "sonnet"]])
+        self.assertEqual(self.run_card({"id": "x"})["rows"], [["office.model", "office.modelInherited"]])
+
+    def test_alerts_become_badges_warnings_first_with_how_to_pin(self) -> None:
+        out = self.run_card({"id": "paper-reviewer", "model_alerts": [
+            {"level": "info", "harness": "pi", "message": "note", "suggestion": "pin in pi"},
+            {"level": "warning", "harness": "pi", "message": "judge", "suggestion": "pin it"},
+        ]})
+        self.assertEqual(out["alerts"], [
+            {"badge": "badge--warn", "label": "office.modelAlert.warning", "message": "judge", "suggestion": "pin it"},
+            {"badge": "badge--info", "label": "office.modelAlert.info", "message": "note", "suggestion": "pin in pi"},
+        ])
+
+    def test_the_card_renders_the_model_rows_and_the_alert_badges(self) -> None:
+        panel = (STATIC / "office-panel.js").read_text(encoding="utf-8")
+        self.assertIn("rows.push(...modelRows(agent));", panel)
+        self.assertIn('<span class="badge ${a.badge}">', panel)
 
 
 class WiringTests(unittest.TestCase):

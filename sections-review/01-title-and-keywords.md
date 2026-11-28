@@ -99,10 +99,10 @@ Measured on the group's MDPI review A029 (Cardona-Álvarez, Álvarez-Meza and Ca
 
 ## Disqualifiers
 
-- A title that does not name the review type (systematic review, scoping review, mapping study, meta-analysis).
-- A promotional or evaluative word in the title (*Revolutionizing*, *Transforming*, *Novel*).
-- A keyword that repeats a word of the title.
-- An acronym in the title that the abstract does not expand.
+- [block: title] A title that does not name the review type (systematic review, scoping review, mapping study, meta-analysis).
+- [block: title] A promotional or evaluative word in the title (*Revolutionizing*, *Transforming*, *Novel*).
+- [block: title, keywords] A keyword that repeats a word of the title.
+- [block: title] An acronym in the title that the abstract does not expand.
 
 ## Sources
 

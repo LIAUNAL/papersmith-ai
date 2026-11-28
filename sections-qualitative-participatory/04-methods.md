@@ -371,7 +371,7 @@ No paper of this line has been measured yet: the rules below carry the group's w
 - Themes described from a codebook version or a sign-off that is stale or absent.
 - A trustworthiness technique claimed that the operator did not apply.
 - A consensus-foresight block (`m-consensus-panel`, `m-consensus-definition`, `m-consensus-rounds`) written in a workspace of another variant, or a threshold presented as pre-specified that the protocol and the consensus plan do not hold.
-- An experience-report block (`m-experience-setting`, `m-experience-innovation`) written in a workspace of another variant.
+- [block: m-experience-setting, m-experience-innovation] An experience-report block (`m-experience-setting`, `m-experience-innovation`) written in a workspace of another variant.
 
 ## Inputs
 

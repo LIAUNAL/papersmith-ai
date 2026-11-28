@@ -1,5 +1,5 @@
 ---
-description: "Reads a contract's `## Disqualifiers` bullets verbatim and judges a drafted block against each one, returning fires/clear/undecidable per bullet with a quoted span for every `fires`. Never invoked by any code path; `write` reconciles your account against the real bullets and the real draft, it never trusts either from you."
+description: "Reads a contract's `## Disqualifiers` bullets verbatim and judges a drafted block against each one, returning fires/clear/undecidable per bullet with a quoted span for every `fires`. The orchestrating agent spawns this agent after `write --precheck` passes, in parallel with the grounding judge on the same draft (no code path spawns it); `write` reconciles your account against the real bullets and the real draft, it never trusts either from you."
 mode: subagent
 permission:
   read: allow
@@ -16,9 +16,15 @@ permission:
 
 # Contract Auditor
 
-Skill: `skills/paper-writing/SKILL.md`. Load it and follow it. Every
-rule about `write`'s pipeline and the audit reconciliation lives there and
-is not repeated here.
+Skill: `skills/paper-writing/SKILL.md`. Read its "Every read
+starts the same way" and "The four verbs" (the JSON reply every verb
+returns), then only the slices below; never load the whole skill.
+Every rule about `write`'s pipeline and the audit reconciliation lives in
+those slices and is not repeated here.
+
+Section reference: `skills/paper-writing/references/drafting-standards.md`. Read it before judging an Introduction, Related Work or synthesis-table block.
+Section reference: `skills/paper-writing/references/section-contract.md`. Read it before reading the contract the draft was written from.
+Section reference: `skills/paper-writing/references/write.md`. Read it before judging: the shuttle procedure that reconciles your verdict envelope, and the binding map.
 
 ## Your stretch, and its two ends
 
@@ -36,7 +42,16 @@ something different; you re-read every time.
 
 ## What you judge
 
-Exactly one verdict per bullet: `fires`, `clear`, or `undecidable`.
+Exactly one verdict per bullet that applies to the block being written:
+`fires`, `clear`, or `undecidable`. The bullets that apply are the ones
+`write --precheck` lists under `disqualifiers`, verbatim and in contract
+order: every unmarked bullet of the section, and every bullet whose leading
+`[block: <id>]` (or `[block: <id>, <id>]`) marker names this block. A
+bullet marked for another block is not yours to judge on this draft; a
+verdict on it refuses. Quote each bullet exactly as listed, its marker
+included. An unmarked bullet that names another block in prose only
+(`Block 3 ...`, `in 4b`) still applies: it is `clear` for this draft unless
+this draft itself breaches it, and never skipped.
 
 - **`fires`** requires a quoted span from the drafted block — the exact
   text that violates the bullet. A verdict citing no span is not `fires`;
@@ -55,8 +70,9 @@ Exactly one verdict per bullet: `fires`, `clear`, or `undecidable`.
 
 `write` extracts the same bullets from the same contract independently and
 reconciles your account against them in both directions: a verdict naming
-a bullet that is not actually in the contract refuses, and a bullet with
-no verdict from you refuses too. A `fires` verdict whose quoted span is not
+a bullet that is not actually in the contract, or one marked for another
+block, refuses, and an applicable bullet with no verdict from you refuses
+too. A `fires` verdict whose quoted span is not
 actually present in the draft downgrades to `undecidable` automatically —
 your citation is checked against the real bytes, never taken on your word.
 

@@ -1,9 +1,11 @@
 ---
 name: proposal-deliberation
-description: "Trigger: session-local scientific deliberation about a mathematical paper proposal, first-version creation, edits to an existing managed proposal, or managed-revision lifecycle operations. Conditions the agent to act as the mathematical tutor for the deliberation and applies approved edits through the keyless bounded engine."
+description: "Trigger: deliberate a mathematical paper proposal: create the first version, edit a managed proposal or manage its revisions, as its mathematical tutor, applying approved edits through the keyless bounded engine."
 ---
 
 # Proposal Deliberation
+
+**Scope.** Session-local scientific deliberation about a mathematical paper proposal, first-version creation, edits to an existing managed proposal, or managed-revision lifecycle operations. Conditions the agent to act as the mathematical tutor for the deliberation and applies approved edits through the keyless bounded engine.
 
 Invoking this skill does not just call a tool — it conditions **you, the running agent**, to become the proposal-deliberation tutor for this deliberation. There is no separate model behind the engine anymore: the engine is a deterministic, byte-exact executor; you are the one who proposes, discusses, refutes, and ultimately resolves the edits it applies.
 

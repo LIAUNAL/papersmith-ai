@@ -1,9 +1,11 @@
 ---
 name: datasets
-description: "Trigger: give the proof of concept and the full experiments data to stand on — a seeded toy set always, then a real dataset searched for across official paper repositories, Kaggle, Hugging Face, OpenNeuro and Zenodo, with its source license checked, its quality measured, one official subject-wise preparation both stages read, and private publishing to Kaggle only on the operator's consent. Stdlib-only CLI, no venv, no API keys."
+description: "Trigger: give the proof of concept and full experiments their data (`/datasets synth|search|license|qc|prepare|publish`): a seeded toy set, a license-checked real dataset, one subject-wise preparation, private Kaggle publishing only with consent."
 ---
 
 # Datasets
+
+**Scope.** Give the proof of concept and the full experiments data to stand on — a seeded toy set always, then a real dataset searched for across official paper repositories, Kaggle, Hugging Face, OpenNeuro and Zenodo, with its source license checked, its quality measured, one official subject-wise preparation both stages read, and private publishing to Kaggle only on the operator's consent. Stdlib-only CLI, no venv, no API keys.
 
 Data the experiments can stand on, and a record of why it may be used.
 

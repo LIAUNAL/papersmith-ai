@@ -1,9 +1,11 @@
 ---
 name: study-protocol-deliberation
-description: "Trigger: session-local deliberation about the protocol of an empirical study (observational or measurement, experiment or intervention, qualitative or participatory, hardware, lab or simulation, data resource) before any datum is collected or analysed — first-version creation, amendments of an existing managed protocol, or managed-revision lifecycle operations. Keeps the protocol as labelled fields (research question, one primary outcome, secondary outcomes, design, eligibility, sample size and its justification, analysis plan) in protocol/study-protocol-<slug>-vNN.md through the keyless bounded engine. Never invents data, a sample size from data it has not seen, or the choice of the primary outcome."
+description: "Trigger: deliberate the protocol of an empirical study before any datum is collected: create, amend or manage revisions of protocol/study-protocol-<slug>-vNN.md through the keyless engine. Never invents data or the primary outcome."
 ---
 
 # Study Protocol Deliberation
+
+**Scope.** Session-local deliberation about the protocol of an empirical study (observational or measurement, experiment or intervention, qualitative or participatory, hardware, lab or simulation, data resource) before any datum is collected or analysed — first-version creation, amendments of an existing managed protocol, or managed-revision lifecycle operations. Keeps the protocol as labelled fields (research question, one primary outcome, secondary outcomes, design, eligibility, sample size and its justification, analysis plan) in protocol/study-protocol-<slug>-vNN.md through the keyless bounded engine. Never invents data, a sample size from data it has not seen, or the choice of the primary outcome.
 
 Invoking this skill conditions **you, the running agent**, to become the
 methodologist for this deliberation. The engine is a deterministic, byte-exact

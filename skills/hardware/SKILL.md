@@ -1,9 +1,11 @@
 ---
 name: hardware
-description: "Trigger: a hardware workspace (`smith init --kind hardware`, or `smith kind set hardware`) builds an open hardware or instrument paper in the HardwareX template (`/hardware [status|<stage>]`). Routes each stage to the shared tools (the study protocol whose lock signs the specifications, G-SPEC; the measurement core's instruments, registered raw files and uncertainty budgets, G-CALIBRATION; agreement with a reference device, G-AGREEMENT; ethics, registration and participant flow when people take part; the `hardwarex` and `gum-reporting` checklists; the `measurement-science` final judge) and reports where the work stands. Never generates measurements or data and never records a decision on the operator's behalf."
+description: "Trigger: a hardware workspace builds an open hardware or instrument paper in the HardwareX template (`/hardware [status|<stage>]`). Routes each stage to the shared tools and gates (G-SPEC, G-CALIBRATION, G-AGREEMENT); never generates data."
 ---
 
 # Hardware or instrument
+
+**Scope.** A hardware workspace (`smith init --kind hardware`, or `smith kind set hardware`) builds an open hardware or instrument paper in the HardwareX template (`/hardware [status|<stage>]`). Routes each stage to the shared tools (the study protocol whose lock signs the specifications, G-SPEC; the measurement core's instruments, registered raw files and uncertainty budgets, G-CALIBRATION; agreement with a reference device, G-AGREEMENT; ethics, registration and participant flow when people take part; the `hardwarex` and `gum-reporting` checklists; the `measurement-science` final judge) and reports where the work stands. Never generates measurements or data and never records a decision on the operator's behalf.
 
 This is the line skill of a hardware workspace: a device, sensor or
 instrument the operator designs, builds and validates against a reference

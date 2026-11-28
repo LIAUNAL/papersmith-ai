@@ -1,9 +1,11 @@
 ---
 name: journal-finder
-description: "Trigger: the paper has a title and an abstract and the operator wants journals worth sending it to, in a quartile range they choose (`/journal-finder Q1-Q2 [--oa-only] [--max-apc <usd>] [--limit N]`), or Colombian A1/A2/B journals of Publindex (`/journal-finder --scope national`), with submission-to-publication time and whether they take Spanish and English. Runs a bounded OpenAlex search for works like the paper (Ai2's Asta picks them first when its key is set; free Crossref, Europe PMC and DOAJ fallbacks when OpenAlex is unavailable), ranks the journals that published them with quartile (SCImago SJR when imported, a labelled OpenAlex proxy, else unknown), open-access state, APC, h-index and a review-time estimate, then reads each shortlisted journal's aims and scope and writes `paper/journal-candidates.md`. Never submits, never contacts an editor, never invents a quartile, impact factor, APC or acceptance rate."
+description: "Trigger: find journals for a paper with a title and abstract, by SJR quartile (`/journal-finder Q1-Q2 [--oa-only] [--max-apc <usd>]`) or Colombian Publindex (`--scope national`), with review time and languages. Never invents a quartile."
 ---
 
 # Journal finder
+
+**Scope.** The paper has a title and an abstract and the operator wants journals worth sending it to, in a quartile range they choose (`/journal-finder Q1-Q2 [--oa-only] [--max-apc <usd>] [--limit N]`), or Colombian A1/A2/B journals of Publindex (`/journal-finder --scope national`), with submission-to-publication time and whether they take Spanish and English. Runs a bounded OpenAlex search for works like the paper (Ai2's Asta picks them first when its key is set; free Crossref, Europe PMC and DOAJ fallbacks when OpenAlex is unavailable), ranks the journals that published them with quartile (SCImago SJR when imported, a labelled OpenAlex proxy, else unknown), open-access state, APC, h-index and a review-time estimate, then reads each shortlisted journal's aims and scope and writes `paper/journal-candidates.md`. Never submits, never contacts an editor, never invents a quartile, impact factor, APC or acceptance rate.
 
 A paper is ready to leave the lab when its text is settled; where it goes is a
 separate decision, and it deserves evidence rather than a hunch. This skill

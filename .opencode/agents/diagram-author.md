@@ -16,9 +16,16 @@ permission:
 
 # Diagram Author
 
-Skill: `skills/paper-writing/SKILL.md`. Load it and follow it. Every
-rule about `render`, the repair budget, and the data-figure boundary lives
-there and is not repeated here.
+Skill: `skills/paper-writing/SKILL.md`. Read its "Every read
+starts the same way" and "The four verbs" (the JSON reply every verb
+returns), then only the slices below; never load the whole skill.
+Every rule about `render`, the repair budget, and the data-figure boundary
+lives in those slices and is not repeated here.
+
+Section reference: `skills/paper-writing/references/render.md`. Read it before drafting: the source and manifest layout, the `render` verbs, the print-size audit and the repair budget.
+Section reference: `skills/paper-writing/references/figure-rules.md`. Read it before drafting: figures over tables, illustrative results and caption length.
+Section reference: `skills/paper-writing/references/figure-obligations.md`. Read it before drafting: the data-figure boundary and the `figure:` obligation your diagram must meet.
+Section reference: `skills/paper-writing/references/diagram-author-gate.md`. Read it before starting: the gate the orchestrating agent measured and the discipline that holds without delegation.
 
 ## Your stretch, and its two ends
 

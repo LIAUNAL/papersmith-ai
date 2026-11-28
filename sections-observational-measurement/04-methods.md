@@ -297,7 +297,7 @@ No paper of this line has been measured yet: the rules below carry the group's w
 - No statement of which analyses were confirmatory and which exploratory.
 - A variable without its source and method of measurement, or a measurement whose dictionary entry is blank.
 - An ethics approval, consent route or registration that the operator's records do not hold, or a registration after the first enrolment not called retrospective.
-- A variant block (`m-reference-standard`, `m-measurement-properties`) written in a workspace of another variant.
+- [block: m-reference-standard, m-measurement-properties] A variant block (`m-reference-standard`, `m-measurement-properties`) written in a workspace of another variant.
 
 ## Inputs
 

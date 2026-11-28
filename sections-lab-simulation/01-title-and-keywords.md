@@ -107,12 +107,12 @@ No paper of this line has been measured yet: the rules below carry the group's w
 
 ## Disqualifiers
 
-- A title that names no observable, no material or system, or no method.
-- A title that states a result as a verb, or an improvement the results do not quantify with its uncertainty.
+- [block: title] A title that names no observable, no material or system, or no method.
+- [block: title] A title that states a result as a verb, or an improvement the results do not quantify with its uncertainty.
 - A simulated quantity named as a measured one.
-- A promotional or evaluative word in the title (*Novel*, *Revolutionizing*, *Comprehensive*).
-- A keyword that repeats a word of the title.
-- An acronym in the title that the abstract does not expand.
+- [block: title] A promotional or evaluative word in the title (*Novel*, *Revolutionizing*, *Comprehensive*).
+- [block: title, keywords] A keyword that repeats a word of the title.
+- [block: title] An acronym in the title that the abstract does not expand.
 
 ## Sources
 

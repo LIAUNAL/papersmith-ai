@@ -2363,11 +2363,12 @@ templates, and proposes a plan only when one is prudent: with an audit clean
 except class and preamble there is nothing to plan and it stops at `venue
 build`. It iterates the plan with the operator until they approve its exact
 text. The text changes the plan calls for are applied only through the existing
-`write` loop (redactor, contract-auditor, `write --draft --audit`), one block at
+`write` loop (redactor, `write --precheck`, contract-auditor and section-grounding-auditor in parallel, `write --draft --audit`), one block at
 a time, after the approval; a section the venue needs and smith lacks is a plan
 item the operator decides, never something drafted on the agent's authority. It
-never submits. The literal contract is the "Venue adaptation" section of
-`skills/paper-writing/SKILL.md` and `.claude/agents/venue-adapter.md`.
+never submits. The literal contract is the "Venue adaptation" section, in
+`skills/paper-writing/references/venue.md` (reached from
+`skills/paper-writing/SKILL.md`), and `.claude/agents/venue-adapter.md`.
 
 **The substitution engine is four of those thirty-one** — `scaffold`, `status`,
 `open`, `substitute` — and they carry one rule: **there is no `--force`**. Nothing
@@ -2418,7 +2419,7 @@ nothing was asserted without a run having checked it.
 | `scripts/paper_audit.py` | Extracts `## Disqualifiers` verbatim and reconciles the auditor's account against the real draft. |
 | `scripts/paper_style.py` | Resolution and recording of the equivalent block in every `style-reference` folder — the record, not the content. |
 | `scripts/paper_leak.py` | The three-draft test (register distance + n-gram overlap) and the eight-token tripwire — separated by signature on purpose, so that adjusting the tripwire can never move the test. |
-| `scripts/paper_write.py` | The `write` pipeline: readiness, gate, draft, evidence audit, contract audit, `substitute --contract` — with exactly one bounded re-draft, controlled by an on-disk ledger. |
+| `scripts/paper_write.py` | The `write` pipeline: readiness, gate, draft, evidence audit, contract audit, `substitute --contract` — with exactly one bounded re-draft shared by every judge, controlled by an on-disk ledger whose terminal `escalated` state stops the loop and escalates to the operator (`AUDIT_EXHAUSTED`). `write --precheck` runs its deterministic checks before any judge, spending no attempt. |
 | `scripts/paper_resolve.py` | Pure `urllib` client for resolving citations and metadata against OpenAlex, Crossref and arXiv. No key. |
 | `scripts/paper_bib.py` | Rebuilds `paper/refs.bib` exclusively from cached, resolved metadata — "never by hand" is a checked property. |
 | `scripts/paper_validate.py` | The only citation gate: verdict, placement by regime, and a search loop bounded to three rounds that never lets a half-cited block through. |

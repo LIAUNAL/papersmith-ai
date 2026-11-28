@@ -1,9 +1,11 @@
 ---
 name: experimental-implementation
-description: "Trigger: turn the latest experiments protocol into working Python against a target repository, run its declared measurements, and verify an existing implementation's layout and revision fidelity against both the experiments protocol and the mathematical proposal it answers to. Isolated venv, keyless, fail-closed. The second host on the shared implementation engine (change `the-second-skill-the-seam-was-for`, slice A; change `the-second-document-verified-on-its-own-terms`, slice C) -- two declared documents, each verified on its own claim vocabulary, zero engine bytes."
+description: "Trigger: turn the latest experiments protocol into working Python in a target repository, run its declared measurements, and verify layout and fidelity against the protocol and the proposal. Isolated venv, keyless, fail-closed."
 ---
 
 # Experimental Implementation
+
+**Scope.** Turn the latest experiments protocol into working Python against a target repository, run its declared measurements, and verify an existing implementation's layout and revision fidelity against both the experiments protocol and the mathematical proposal it answers to. Isolated venv, keyless, fail-closed. The second host on the shared implementation engine (change `the-second-skill-the-seam-was-for`, slice A; change `the-second-document-verified-on-its-own-terms`, slice C) -- two declared documents, each verified on its own claim vocabulary, zero engine bytes.
 
 Turn the current experiments revision (`experiments/experiments-<slug>-vNN.md`)
 into Python that runs, in a target repository, and prove it: complete runs whose

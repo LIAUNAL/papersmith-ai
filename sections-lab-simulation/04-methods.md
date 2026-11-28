@@ -259,7 +259,7 @@ No paper of this line has been measured yet: the rules below carry the group's w
 - An uncertainty budget that leaves out a component without saying why, or an expanded uncertainty without its coverage factor and level of confidence.
 - A model parameter without its value, unit and source, or a simulation without its convergence study.
 - An analysis described as planned that the locked analysis plan does not contain, or no statement of which analyses were confirmatory and which exploratory.
-- A variant block (`m-sample-matrix`, `m-model-definition`) written in a workspace of another variant.
+- [block: m-sample-matrix, m-model-definition] A variant block (`m-sample-matrix`, `m-model-definition`) written in a workspace of another variant.
 
 ## Inputs
 

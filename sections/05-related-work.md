@@ -426,25 +426,25 @@ same thing at different depths.
 
 ## Disqualifiers
 
-- A block that corresponds to no stated problem.
+- [block: rw-problem-blocks] A block that corresponds to no stated problem.
 - A stated problem with no block.
-- A preamble that reviews a family, or that carries a citation.
-- A panorama that attributes a limitation to a particular family.
+- [block: rw-preamble] A preamble that reviews a family, or that carries a citation.
+- [block: rw-panorama] A panorama that attributes a limitation to a particular family.
 - A paragraph that does not close on a limitation.
-- A block that does not close on what none of its families resolved.
+- [block: rw-problem-blocks] A block that does not close on what none of its families resolved.
 - A block that does not start from the close of the previous one.
 - A limitation attributed without a citation.
 - A paragraph over 300 words.
 - Blocks of grossly unequal weight.
 - The closing paragraph missing.
-- Fronts named in the closing that do not match the number of blocks.
+- [block: rw-problem-blocks, rw-closing] Fronts named in the closing that do not match the number of blocks.
 - The synthesis artefact missing.
 - An artefact whose dimensions are not the properties the proposal declares.
 - Dimensions named only in the table header and not in the body.
-- Fewer than 7 or more than 12 works in the synthesis table, the proposal's row not counted.
-- A family of this section with no row in the synthesis table.
-- A synthesis-table column not tied to a pillar, contribution or property the proposal declares, or one every row shares.
-- A sentence or clause as prose in a synthesis-table cell, or a symbol neither the caption nor the table note decodes.
+- [block: rw-problem-blocks, rw-synthesis-artefact] Fewer than 7 or more than 12 works in the synthesis table, the proposal's row not counted.
+- [block: rw-problem-blocks, rw-synthesis-artefact] A family of this section with no row in the synthesis table.
+- [block: rw-problem-blocks, rw-synthesis-artefact] A synthesis-table column not tied to a pillar, contribution or property the proposal declares, or one every row shares.
+- [block: rw-problem-blocks, rw-synthesis-artefact] A sentence or clause as prose in a synthesis-table cell, or a symbol neither the caption nor the table note decodes.
 - An artefact that appears before any reference to it, or that nothing references at
   all.
 - A citation used as a noun phrase.

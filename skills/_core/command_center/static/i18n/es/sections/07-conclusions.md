@@ -255,14 +255,14 @@ una fila de cadena interna.
   la sección de resultados no contiene ya.
 - Una lista de componentes que discrepa de la introducción o de la sección de métodos en número,
   orden o nombres.
-- Una contribución sin párrafo de hallazgo en el bloque 2.
+- [block: concl-block-2] Una contribución sin párrafo de hallazgo en el bloque 2.
 - El bloque 1 que no va primero, o el bloque 4 que no va al final.
-- El bloque 1 que cierra con un número en lugar de con la propiedad distintiva.
+- [block: concl-block-1] El bloque 1 que cierra con un número en lugar de con la propiedad distintiva.
 - Un número que difiere de la sección de resultados, en valor, unidad o precisión.
 - Más de una cifra principal para una misma contribución.
 - Una dirección de trabajo futuro que no responde a ninguna limitación declarada.
-- Un bloque de trabajo futuro que continúa el párrafo anterior en lugar de abrir el suyo.
-- Una cita en cualquier lugar fuera del bloque de trabajo futuro.
+- [block: concl-block-4] Un bloque de trabajo futuro que continúa el párrafo anterior en lugar de abrir el suyo.
+- [block: concl-block-1, concl-block-2, concl-block-3] Una cita en cualquier lugar fuera del bloque de trabajo futuro.
 - Una dirección de trabajo futuro sin referencia.
 - Una dirección de trabajo futuro demasiado vaga para ser un artículo.
 - Una ecuación, una figura o una tabla.

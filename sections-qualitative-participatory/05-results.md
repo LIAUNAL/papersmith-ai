@@ -194,7 +194,7 @@ No paper of this line has been measured yet: the rules below carry the group's w
 - A theme supported only by a count of participants presented as prevalence.
 - A `qualitative-mixed` paper whose results leave `r-links-to-data` unopened, or a theme with no participant's words behind it.
 - A participant quote not written `\pquote{<code>}{<text>}`, not found verbatim in a current registered transcript of that participant, or attributed to a name.
-- A consensus-foresight block (`r-consensus-rounds`, `r-consensus-dissent`, `r-consensus-micmac`, `r-consensus-scenarios`) written in a workspace of another variant.
+- [block: r-consensus-rounds, r-consensus-dissent, r-consensus-micmac, r-consensus-scenarios] A consensus-foresight block (`r-consensus-rounds`, `r-consensus-dissent`, `r-consensus-micmac`, `r-consensus-scenarios`) written in a workspace of another variant.
 - An agreement figure, median or interquartile range that differs from the round results, or an item reported as agreed below the pre-specified threshold.
 - Items without consensus left out, or reworded as agreement.
 - A MICMAC rank or quadrant from a stale or absent computation, or a scenario presented as a computed result.

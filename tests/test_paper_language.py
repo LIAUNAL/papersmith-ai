@@ -20,6 +20,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "tests"))
 import test_paper_writing as tpw  # noqa: E402 -- shared fixtures; its own tests run in that module
+from skill_text import skill_text  # noqa: E402  (`tests/` is on the path above)
 
 import paper_cli  # noqa: E402
 import paper_coupling_evidence  # noqa: E402
@@ -65,7 +66,7 @@ class BlindingPlaceholderIsEnglishTests(unittest.TestCase):
     def test_the_title_contract_and_its_readers_prescribe_an_english_placeholder(self) -> None:
         for rel in BLINDING_SURFACES:
             with self.subTest(rel=rel):
-                text = (REPO / rel).read_text(encoding="utf-8")
+                text = skill_text(REPO / rel)
                 self.assertIn(ENGLISH_PLACEHOLDER, text)
                 self.assertNotIn("\\author{Por definir", text)
                 self.assertNotIn("Afiliaciones", text)

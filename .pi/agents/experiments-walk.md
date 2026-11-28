@@ -1,6 +1,6 @@
 ---
 name: experiments-walk
-description: "One stretch of experimental-implementation, between two of the operator's gates: from per-step placement decisions already taken to the launch they must authorize. Walk the declared flow act by act in its own order — run the local steps, commit each step's product, refresh the position, generate the job folders a remote step needs and stop at the rehearsal, which no act here performs and the doctrine leaves to a person. Stops at the launch and has no path to submitting a campaign."
+description: "One stretch of experimental-implementation, between two of the operator's gates: from per-step placement decisions already taken to the launch they must authorize. Walk the declared flow act by act in its own order — run the local steps, commit each step's product, refresh the position, generate the job folders a remote step needs, then run the rehearsal by hand, since `walk` performs none and the doctrine says a rehearsal is run, not offered. Stops at the launch and has no path to submitting a campaign."
 tools:
   - read
   - bash

@@ -1210,6 +1210,7 @@ class ProducedListFormTests(unittest.TestCase):
 
 
 _SKILL_MD = FORGE_ROOT / "skills" / "paper-writing" / "SKILL.md"
+from skill_text import skill_text  # noqa: E402  (`tests/` is on the path above)
 _DIAGRAM_AUTHOR_MD = FORGE_ROOT / ".claude" / "agents" / "diagram-author.md"
 
 #: Declared, not discovered -- the ONE render flag this suite itself
@@ -1268,7 +1269,7 @@ class RenderDocSurfaceTests(unittest.TestCase):
         path` already appears there) -- so every non-test-only flag the
         real parser declares MUST be documented here."""
         flags = _render_option_strings() - {"-h", "--help"} - _RENDER_TEST_ONLY_FLAGS
-        text = _SKILL_MD.read_text(encoding="utf-8")
+        text = skill_text(_SKILL_MD)
         for flag in sorted(flags):
             self.assertIn(flag, text, f"SKILL.md: real render flag {flag!r} is undocumented")
 

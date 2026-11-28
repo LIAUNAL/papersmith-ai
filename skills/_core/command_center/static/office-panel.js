@@ -113,7 +113,34 @@
     return t(`office.event.${event.kind}`, { agent: event.label, from: t('office.orchestrator') });
   }
 
-  window.officeModel = { phaseRunsStore, runningRuns, decorate, counts, taskOf, diffEvents, eventText };
+  /** One card row per harness the agent is projected to: the model it runs
+   *  on there (`agent.models`, from agent_models.py), else the legacy line. */
+  function modelRows(agent) {
+    const models = agent.models || [];
+    if (!models.length) return [[t('office.model'), agent.model || t('office.modelInherited')]];
+    return models.map((m) => {
+      let value;
+      if (m.status === 'pinned') value = t('office.modelPinned', { model: m.model, source: m.source });
+      else if (m.model) value = t('office.modelInherits', { model: m.model, source: m.source });
+      else value = t('office.modelInheritsUnknown', { how: m.how_to_see });
+      return [t('office.modelIn', { harness: m.label || m.harness }), value];
+    });
+  }
+
+  /** The agent's model alerts, warnings first: badge class, badge label,
+   *  message and how to pin another model in that harness. */
+  function modelAlerts(agent) {
+    const alerts = (agent.model_alerts || []).slice();
+    alerts.sort((a, b) => (a.level === 'warning' ? 0 : 1) - (b.level === 'warning' ? 0 : 1));
+    return alerts.map((a) => ({
+      badge: a.level === 'warning' ? 'badge--warn' : 'badge--info',
+      label: t(a.level === 'warning' ? 'office.modelAlert.warning' : 'office.modelAlert.info'),
+      message: a.message || '',
+      suggestion: a.suggestion || '',
+    }));
+  }
+
+  window.officeModel = { phaseRunsStore, runningRuns, decorate, counts, taskOf, diffEvents, eventText, modelRows, modelAlerts };
 
   // ---- data ----------------------------------------------------------------
   function host() {
@@ -229,7 +256,7 @@
       rows.push([t('office.cli'), (agent.clis || []).join(', ') || t('office.none')]);
     } else {
       rows.push([t('office.role'), agent.role || agent.id]);
-      rows.push([t('office.model'), agent.model || t('office.modelInherited')]);
+      rows.push(...modelRows(agent));
       rows.push([t('office.tramo'), agent.tramo || t('office.none')]);
       rows.push([t('office.phases'), (agent.phases || []).join(', ').replace(/<[^>]*>/g, '') || t('office.none')]);
     }
@@ -238,6 +265,9 @@
         <button type="button" class="office-card__close" data-office-close aria-label="${esc(t('office.close'))}">✕</button>
         <h4>${esc(agent.label)} <span class="office-card__status office-card__status--${esc(s)}">${esc(t(`office.state.${s}`))}</span></h4>
         ${rows.map(([k, v]) => `<p><strong>${esc(k)}:</strong> ${esc(v)}</p>`).join('')}
+        ${(agent.id === 'orchestrator' ? [] : modelAlerts(agent)).map((a) => `<details class="office-card__alert">`
+          + `<summary><span class="badge ${a.badge}">${esc(a.label)}</span> ${esc(a.message)}</summary>`
+          + `<p>${esc(a.suggestion)}</p></details>`).join('')}
         <button type="button" class="office-card__open" data-office-open>${esc(t('office.openConsole'))}</button>
       </div>`;
   }

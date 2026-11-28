@@ -276,14 +276,45 @@ def build_prompt(root: Path, message: str, image_rels: list[str], mode: str,
 # --------------------------------------------------------------------------
 # agent runners
 # --------------------------------------------------------------------------
+#: A model name an agent file may declare: an alias (``sonnet``) or a full id.
+_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\-\[\]]{0,79}")
+
+
+def agent_model(root: Path, profile: Profile) -> str | None:
+    """The ``model:`` the profile's agent file declares in its front matter, if any.
+
+    Only the Claude branch uses it: a Claude alias is not an agy or Pi model slug,
+    so those CLIs keep the model their session runs.
+    """
+    agent = next((rel for rel in profile.doctrine if rel.startswith(".claude/agents/")), None)
+    if agent is None:
+        return None
+    try:
+        lines = Path(root, agent).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    if not lines or lines[0].strip() != "---":
+        return None
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return None
+        key, _, value = line.partition(":")
+        if key == "model":
+            value = value.strip().strip("'\"")
+            return value if _MODEL.fullmatch(value) else None
+    return None
+
+
 def claude_argv(claude: str, system: str, prompt: str, schema: dict[str, Any] | None = None,
-                tools: tuple[str, ...] = ("Read",), deny: tuple[str, ...] = ()) -> list[str]:
+                tools: tuple[str, ...] = ("Read",), deny: tuple[str, ...] = (),
+                model: str | None = None) -> list[str]:
     allowed = ",".join(tools)
     # The CLI splits the list at commas and spaces outside parentheses only, so
     # one comma-joined value keeps a rule whose path holds a space whole.
     refused = ["--disallowedTools", ",".join(deny)] if deny else []
+    chosen = ["--model", model] if model else []
     return [claude, "-p", "--output-format", "json", "--no-session-persistence",
-            "--strict-mcp-config", "--setting-sources", "local",
+            "--strict-mcp-config", "--setting-sources", "local", *chosen,
             "--tools", allowed, "--allowedTools", allowed, *refused,
             "--system-prompt", system, "--json-schema", json.dumps(schema or TURN_SCHEMA), prompt]
 
@@ -303,19 +334,22 @@ def extract_turn(text: str) -> dict[str, Any] | None:
 
 def run_agent(root: Path, system: str, prompt: str, images: list[Path],
               schema: dict[str, Any] | None = None,
-              tools: tuple[str, ...] = ("Read",)) -> tuple[dict[str, Any], str]:
+              tools: tuple[str, ...] = ("Read",),
+              model: str | None = None) -> tuple[dict[str, Any], str]:
     try:
-        return _run_agent(root, system, prompt, images, schema, tools)
+        return _run_agent(root, system, prompt, images, schema, tools, model)
     except OSError as error:
         raise TutorError(f"could not start the agent CLI: {error}") from error
 
 
 def _run_agent(root: Path, system: str, prompt: str, images: list[Path],
-               schema: dict[str, Any] | None, tools: tuple[str, ...]) -> tuple[dict[str, Any], str]:
+               schema: dict[str, Any] | None, tools: tuple[str, ...],
+               model: str | None = None) -> tuple[dict[str, Any], str]:
     claude = find_executable("claude")
     if claude:
         # stdin closed: `claude -p` appends whatever it can read there to the prompt.
-        done = subprocess.run(claude_argv(claude, system, prompt, schema, tools, _deny.get()), cwd=str(root),
+        done = subprocess.run(claude_argv(claude, system, prompt, schema, tools, _deny.get(), model),
+                              cwd=str(root),
                               env=session_env("claude", root), capture_output=True, text=True,
                               stdin=subprocess.DEVNULL, timeout=TIMEOUT_SECONDS, check=False)
         try:
@@ -403,7 +437,8 @@ def converse(profile: Profile, root: Path, record: dict[str, Any],
     with profile.lock:
         thread = load_thread(root, profile)
         prompt = prompt_for(thread)
-        run = runner or partial(run_agent, schema=profile.schema, tools=profile.tools)
+        run = runner or partial(run_agent, schema=profile.schema, tools=profile.tools,
+                                model=agent_model(root, profile))
         token = _deny.set(profile.deny(root) if profile.deny else ())
         try:
             answer, agent = run(root, system_prompt(root, profile), prompt, images)
@@ -434,5 +469,5 @@ MATH = Profile(
 
 
 __all__ = ["TutorError", "save_image", "image_path", "image_type", "load_thread",
-           "reset_thread", "run_turn", "run_agent", "extract_turn", "claude_argv",
+           "reset_thread", "run_turn", "run_agent", "extract_turn", "claude_argv", "agent_model",
            "TURN_SCHEMA", "MODES", "Profile", "MATH", "REPLY_LANGUAGE_RULE", "converse"]

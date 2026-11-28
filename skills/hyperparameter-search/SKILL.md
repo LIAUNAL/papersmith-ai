@@ -1,9 +1,11 @@
 ---
 name: hyperparameter-search
-description: "Trigger: the experimental deliberation judged a hyperparameter search worthwhile and the protocol declares one — validate its plan (one trial budget for every arm, baselines included; a seeded sampler; nested inside each outer fold's training subjects; nothing the experiments test tuned; the importance evaluator named), estimate its cost from a timing probe, and after the search ran, record per arm and outer fold a summary with hyperparameter importance, contour and optimization-history figures, read back for the dashboard. Optuna studies under the target's own venv; a stdlib CLI, no network, no API keys. Never launches a search."
+description: "Trigger: the deliberation judged a hyperparameter search worthwhile (`/hyperparameter-search plan|report|status`). Validates the nested, equal-budget Optuna plan, estimates its cost and reports importance and contour plots. Never launches one."
 ---
 
 # Hyperparameter search
+
+**Scope.** The experimental deliberation judged a hyperparameter search worthwhile and the protocol declares one — validate its plan (one trial budget for every arm, baselines included; a seeded sampler; nested inside each outer fold's training subjects; nothing the experiments test tuned; the importance evaluator named), estimate its cost from a timing probe, and after the search ran, record per arm and outer fold a summary with hyperparameter importance, contour and optimization-history figures, read back for the dashboard. Optuna studies under the target's own venv; a stdlib CLI, no network, no API keys. Never launches a search.
 
 A search for the settings an experiment leaves open, run so that the
 comparison it feeds stays fair, and recorded so that a reader sees what the

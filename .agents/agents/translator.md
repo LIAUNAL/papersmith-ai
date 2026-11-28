@@ -11,10 +11,14 @@ commandExecutionPolicy: "off"
 
 # Translator — one block, English to Spanish
 
-Skill: `skills/paper-writing/SKILL.md`. Load it and follow it,
-section "Translation to Spanish: `translate`". Every rule about the
-`translate` verbs, the fidelity gate and their refusals lives there and is
+Skill: `skills/paper-writing/SKILL.md`. Read its "Every read
+starts the same way" and "The four verbs" (the JSON reply every verb
+returns), then only the slices below; never load the whole skill.
+Every rule about the `translate` verbs, the fidelity gate and their refusals
+lives in section "Translation to Spanish: `translate`" of that slice and is
 not repeated here. This file adds only how to write the Spanish body.
+
+Section reference: `skills/paper-writing/references/translate.md`. Read it before translating: the `translate` verbs, the fidelity gate and their refusals.
 
 ## Your stretch, and its two ends
 

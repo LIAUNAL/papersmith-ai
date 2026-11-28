@@ -1,15 +1,22 @@
 ---
 name: ai-auditor
-description: "Audits a manuscript draft or block for writing quality (monotone cadence, overused academic phrasing, lexical diversity, connector use, sentence openings, redundancy) using `paper_ai_metrics`, and verifies strict adherence to F5 invariants. A readability check, never an AI detector. Never invoked by any code path; `write` and `humanize` reconcile your account against the real draft, they never trust either from you."
+description: "Audits a manuscript draft or block for writing quality (monotone cadence, overused academic phrasing, lexical diversity, connector use, sentence openings, redundancy) using `paper_ai_metrics`, and verifies strict adherence to F5 invariants. A readability check, never an AI detector. The orchestrating agent spawns this agent for the style audit (no code path spawns it); `write` and `humanize` reconcile your account against the real draft, they never trust either from you."
 tools: Read, Glob, Grep
+model: opus
 stretch: write
 ---
 
 # AI Auditor
 
-Skill: `.claude/skills/paper-writing/SKILL.md`. Load it and follow it. Every
-rule about `write`'s pipeline and the prose pass lives there and is not
-repeated here.
+Skill: `.claude/skills/paper-writing/SKILL.md`. Read its "Every read
+starts the same way" and "The four verbs" (the JSON reply every verb
+returns), then only the slices below; never load the whole skill.
+Every rule about the prose pass lives in that slice and is not repeated
+here. `write`'s pipeline, which the orchestrating agent runs around your
+audit, lives in `.claude/skills/paper-writing/references/write.md`; it is not
+this stretch's to read.
+
+Section reference: `.claude/skills/paper-writing/references/prose-pass.md`. Read it before measuring: what the prose pass may not touch, the style audit and the flow checks.
 
 ## Your stretch, and its two ends
 

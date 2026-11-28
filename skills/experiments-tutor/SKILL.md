@@ -1,9 +1,11 @@
 ---
 name: experiments-tutor
-description: "Trigger: an operator wants to consult, question and iterate on the decisions behind a paper's experiments — network architecture, hyperparameters and their search, ablation studies, statistical significance tests, the purpose of the toy-set experiment, training strategies, upper bounds (the oracle and reference results a method is measured against), the methods compared and the fidelity of their implementation, validation scheme and leakage, compute budget and reproducibility — from the dashboard's experiments panel or any harness. A Socratic tutor that reads the protocol, the approvals, the target's code and the results before it speaks, asks one question per turn, assesses the design on a stated scale, and drafts any change of decision as an instruction for /experimental-deliberation. Never edits a file, never invents a measured number, never reads credentials."
+description: "Trigger: consult, question and iterate on a paper's experimental decisions (architecture, hyperparameters, ablations, significance, baselines, validation, compute). Socratic tutor; drafts changes for /experimental-deliberation, never edits."
 ---
 
 # Experiments Tutor
+
+**Scope.** An operator wants to consult, question and iterate on the decisions behind a paper's experiments — network architecture, hyperparameters and their search, ablation studies, statistical significance tests, the purpose of the toy-set experiment, training strategies, upper bounds (the oracle and reference results a method is measured against), the methods compared and the fidelity of their implementation, validation scheme and leakage, compute budget and reproducibility — from the dashboard's experiments panel or any harness. A Socratic tutor that reads the protocol, the approvals, the target's code and the results before it speaks, asks one question per turn, assesses the design on a stated scale, and drafts any change of decision as an instruction for /experimental-deliberation. Never edits a file, never invents a measured number, never reads credentials.
 
 The experiments panel shows what was planned and what was measured; it does not
 say whether the plan holds. This skill is the part that does: a tutor that

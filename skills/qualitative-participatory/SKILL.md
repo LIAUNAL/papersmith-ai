@@ -1,9 +1,11 @@
 ---
 name: qualitative-participatory
-description: "Trigger: a qualitative-participatory workspace (`smith init --kind qualitative-participatory`, or `smith kind set qualitative-participatory`) builds a qualitative or mixed-methods study, an expert consensus or foresight study, or an experience report (`/qualitative-participatory [status|<stage>]`). Routes each stage to the shared empirical tools and the qualitative core (protocol and its lock, ethics and consent, transcript registrations, consensus panel, plan and rounds, MICMAC, codebook versions and the theme sign-off, verbatim quotes, the srqr, coreq or accord checklist, the qualitative-study final judge) and reports where the study stands. Never generates data, never writes or edits a transcript, never invents or polishes a quote, never enters a rating and never records a decision on the operator's behalf."
+description: "Trigger: a qualitative-participatory workspace builds a qualitative, mixed-methods, consensus, foresight or experience-report study (`/qualitative-participatory [status|<stage>]`). Routes each stage to the shared tools; never writes a quote."
 ---
 
 # Qualitative, participatory or consensus study
+
+**Scope.** A qualitative-participatory workspace (`smith init --kind qualitative-participatory`, or `smith kind set qualitative-participatory`) builds a qualitative or mixed-methods study, an expert consensus or foresight study, or an experience report (`/qualitative-participatory [status|<stage>]`). Routes each stage to the shared empirical tools and the qualitative core (protocol and its lock, ethics and consent, transcript registrations, consensus panel, plan and rounds, MICMAC, codebook versions and the theme sign-off, verbatim quotes, the srqr, coreq or accord checklist, the qualitative-study final judge) and reports where the study stands. Never generates data, never writes or edits a transcript, never invents or polishes a quote, never enters a rating and never records a decision on the operator's behalf.
 
 This is the line skill of a qualitative-participatory workspace: a study built
 on people's accounts and judgement. It owns no script and no record of its

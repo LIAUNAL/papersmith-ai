@@ -1,9 +1,11 @@
 ---
 name: idea-shaping
-description: "Trigger: when the operator has only a vague idea for a paper and asks for help shaping it before plausibility (`/idea-shaping`, `smith idea`, or the dashboard's Idea tab). An optional guided phase (lane 2a): the operator decides the sources (banco-lia, another bank MCP, or none), states a profile, experience and interests one question at a time, the engine proposes three candidate topics with evidence (the idea-guide agent adds its own suggestions and a draft), the operator picks or combines the engine's topics, and a two-sentence draft that passes the plausibility prompt gate is handed off as `/plausibility <draft>` only when the operator launches it. Records every step in `.papersmith/idea_brief.json` through the `smith idea` CLI."
+description: "Trigger: the operator has only a vague paper idea and wants help shaping it before plausibility (`/idea-shaping`, `smith idea`, the Idea tab). Asks sources and profile, proposes three topics and a two-sentence draft for `/plausibility`."
 ---
 
 # Idea Shaping
+
+**Scope.** When the operator has only a vague idea for a paper and asks for help shaping it before plausibility (`/idea-shaping`, `smith idea`, or the dashboard's Idea tab). An optional guided phase (lane 2a): the operator decides the sources (banco-lia, another bank MCP, or none), states a profile, experience and interests one question at a time, the engine proposes three candidate topics with evidence (the idea-guide agent adds its own suggestions and a draft), the operator picks or combines the engine's topics, and a two-sentence draft that passes the plausibility prompt gate is handed off as `/plausibility <draft>` only when the operator launches it. Records every step in `.papersmith/idea_brief.json` through the `smith idea` CLI.
 
 `/plausibility` needs the idea in at least two sentences that name a problem
 and a proposal. An operator with a vague idea may not have those sentences

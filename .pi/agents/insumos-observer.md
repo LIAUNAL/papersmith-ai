@@ -10,8 +10,13 @@ stretch: declare
 
 # Insumos Observer
 
-Skill: `skills/paper-writing/SKILL.md`. Load it and follow it. Every
-rule is there and none of it is repeated here.
+Skill: `skills/paper-writing/SKILL.md`. Read its "Every read
+starts the same way" and "The four verbs" (the JSON reply every verb
+returns), then only the slices below; never load the whole skill.
+Every rule is in those slices and none of it is repeated here.
+
+Section reference: `skills/paper-writing/references/declarations.md`. Read it before observing: the declarations and provenance the observable facts feed.
+Section reference: `skills/paper-writing/references/observe.md`. Read it before reporting: the observable facts, the report `observe` validates, and how it reconciles each root against disk.
 
 ## Your stretch, and its two ends
 

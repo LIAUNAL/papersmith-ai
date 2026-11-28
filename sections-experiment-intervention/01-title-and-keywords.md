@@ -107,11 +107,11 @@ No paper of this line has been measured yet: the rules below carry the group's w
 
 ## Disqualifiers
 
-- A title of a trial with people that does not say it is randomised, or a field-experiment title that names no design.
-- A title that states the result (*X improves Y*, *X is effective for Y*).
-- A promotional or evaluative word in the title (*Novel*, *Revolutionizing*, *Comprehensive*).
-- A keyword that repeats a word of the title.
-- An acronym in the title that the abstract does not expand.
+- [block: title] A title of a trial with people that does not say it is randomised, or a field-experiment title that names no design.
+- [block: title] A title that states the result (*X improves Y*, *X is effective for Y*).
+- [block: title] A promotional or evaluative word in the title (*Novel*, *Revolutionizing*, *Comprehensive*).
+- [block: title, keywords] A keyword that repeats a word of the title.
+- [block: title] An acronym in the title that the abstract does not expand.
 
 ## Sources
 

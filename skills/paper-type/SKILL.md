@@ -1,9 +1,11 @@
 ---
 name: paper-type
-description: "Trigger: when the operator accepts the plausibility report (plausibility hands over here), or asks which kind of paper to build (`/paper-type`). Scores the accepted idea against smith's catalogue of paper types (`python -m skills._core.paper_types.registry list`), has the paper-type-advisor agent relate each type to the idea, discusses the suggestion with the operator, and records the type and variant the operator agrees in `.papersmith/paper_type.json`. Never agrees on the operator's behalf and never changes the workspace layout."
+description: "Trigger: the operator accepted the plausibility report or asks which kind of paper to build (`/paper-type`). Scores the idea against smith's paper types, discusses it and records the agreed type in `.papersmith/paper_type.json`."
 ---
 
 # Paper Type
+
+**Scope.** When the operator accepts the plausibility report (plausibility hands over here), or asks which kind of paper to build (`/paper-type`). Scores the accepted idea against smith's catalogue of paper types (`python -m skills._core.paper_types.registry list`), has the paper-type-advisor agent relate each type to the idea, discusses the suggestion with the operator, and records the type and variant the operator agrees in `.papersmith/paper_type.json`. Never agrees on the operator's behalf and never changes the workspace layout.
 
 Plausibility answers whether the idea holds against the state of the art. This
 skill answers the next question: what kind of paper the idea becomes. Smith

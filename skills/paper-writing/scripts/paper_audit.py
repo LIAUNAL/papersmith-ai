@@ -12,10 +12,23 @@ draft, never trusted about either.
 Public surface:
 
     extract_disqualifiers(body_text, source_name=...) -> list[str]  (raises DISQUALIFIERS_ABSENT)
-    reconcile_verdicts(bullets, verdict_entries, draft_latex) -> list[dict]  (raises VERDICT_MISSING, VERDICT_BULLET_UNKNOWN)
+    bullet_blocks(bullet) -> tuple[str, ...] | None
+    bullet_rule(bullet) -> str
+    applicable_disqualifiers(bullets, block_id, declared_blocks=()) -> list[str]
+    unresolved_markers(bullets, declared_blocks) -> list[str]
+    reconcile_verdicts(bullets, verdict_entries, draft_latex, excluded=..., block_id=...) -> list[dict]  (raises VERDICT_MISSING, VERDICT_BULLET_UNKNOWN)
     compute_outcome(reconciled) -> dict
     cross_check_measurable(reconciled, draft_latex) -> list[dict]
-    audit(contract_body, draft_latex, verdict_entries, source_name=...) -> dict
+    audit(contract_body, draft_latex, verdict_entries, source_name=..., block_id=..., declared_blocks=...) -> dict
+
+Block markers (`odd/tasks/efficiency-stage-b.md`, S7): a bullet may open
+with `[block: <id>]` or `[block: <id>, <id>, ...]`, naming the block(s) of
+its own contract the rule is judged on. The marker is part of the bullet's
+verbatim text -- extraction never strips it, the judge sees it and quotes
+it back unchanged. An unmarked bullet applies to every block of the
+section, so a contract with no marker is judged exactly as before. A marker
+that does not parse, or that names any id the contract does not declare,
+never removes a rule: that bullet applies to every block.
     count_table_works(latex) -> int | None
     row_count_finding(latex) -> str | None
 """
@@ -69,13 +82,82 @@ def extract_disqualifiers(body_text: str, *, source_name: str = "<contract>") ->
     return bullets
 
 
-def reconcile_verdicts(bullets: list[str], verdict_entries: list[dict], draft_latex: str) -> list[dict]:
+#: The one marker form: a leading `[block: <id>]`, ids comma-separated, each
+#: in the block-id shape class (`references/safety-net.md`), then one space
+#: before the rule. Anything else is no marker.
+_MARKER_RE = re.compile(r"^\[block: ([A-Za-z0-9._-]+(?:, [A-Za-z0-9._-]+)*)\] (?=\S)")
+_MARKER_PREFIX = "[block"
+
+
+def bullet_blocks(bullet: str) -> tuple[str, ...] | None:
+    """The block ids a bullet's leading marker names, in order; `None` for
+    an unmarked bullet or one whose marker does not parse."""
+    match = _MARKER_RE.match(bullet)
+    if match is None:
+        return None
+    return tuple(match.group(1).split(", "))
+
+
+def bullet_rule(bullet: str) -> str:
+    """The bullet's rule text with a well-formed leading marker dropped.
+    For matching a known rule only (`ROW_COUNT_BULLET`); every account and
+    report carries the bullet verbatim, marker included."""
+    match = _MARKER_RE.match(bullet)
+    return bullet[match.end():] if match else bullet
+
+
+def _bare_block_id(block_id: str) -> str:
+    # `write` hands the qualified `<section>.<block>`; a marker names the
+    # bare id the contract's own header declares. Section ids carry no dot.
+    return block_id.split(".", 1)[1] if "." in block_id else block_id
+
+
+def _resolved_blocks(bullet: str, declared_blocks) -> tuple[str, ...] | None:
+    blocks = bullet_blocks(bullet)
+    if blocks is None or not declared_blocks or not set(blocks) <= set(declared_blocks):
+        return None
+    return blocks
+
+
+def unresolved_markers(bullets: list[str], declared_blocks) -> list[str]:
+    """Bullets that look marked (they open with `[block`, in any case) but
+    whose marker does not parse or names a block outside `declared_blocks`.
+    Each is judged on every block, never on none."""
+    return [
+        bullet for bullet in bullets
+        if bullet[:len(_MARKER_PREFIX)].lower() == _MARKER_PREFIX
+        and _resolved_blocks(bullet, declared_blocks) is None
+    ]
+
+
+def applicable_disqualifiers(bullets: list[str], block_id: str, declared_blocks=()) -> list[str]:
+    """The bullets the contract judge rules on for `block_id`, in contract
+    order: every unmarked bullet, every bullet whose marker names this
+    block, and every bullet whose marker is unresolved against
+    `declared_blocks`. With no `declared_blocks` every marker is inert and
+    every bullet applies, the behavior of a contract read before markers."""
+    bare = _bare_block_id(block_id)
+    applicable = []
+    for bullet in bullets:
+        blocks = _resolved_blocks(bullet, declared_blocks)
+        if blocks is None or bare in blocks:
+            applicable.append(bullet)
+    return applicable
+
+
+def reconcile_verdicts(
+    bullets: list[str], verdict_entries: list[dict], draft_latex: str,
+    *, excluded: list[str] = (), block_id: str | None = None,
+) -> list[dict]:
     """Checks the auditor's account (`verdict_entries`, each
     `{"bullet": ..., "verdict": "fires"|"clear"|"undecidable", "span":
     ...}`) against `bullets`, the real extraction, in both directions:
     refuses `VERDICT_BULLET_UNKNOWN` naming an entry whose `bullet` text
     matches none of `bullets`; refuses `VERDICT_MISSING` naming a bullet
-    with no corresponding entry.
+    with no corresponding entry. `excluded` holds the contract's bullets
+    marked for another block: a verdict on one refuses
+    `VERDICT_BULLET_UNKNOWN` too, naming `block_id`, so the account covers
+    exactly the bullets that apply.
 
     A `fires` verdict citing no span, or citing a span not byte-present in
     `draft_latex`, downgrades to `undecidable` rather than being trusted
@@ -87,7 +169,14 @@ def reconcile_verdicts(bullets: list[str], verdict_entries: list[dict], draft_la
     by_bullet = {entry["bullet"]: entry for entry in verdict_entries}
     bullet_set = set(bullets)
 
+    excluded_set = set(excluded)
     for entry in verdict_entries:
+        if entry["bullet"] in excluded_set and entry["bullet"] not in bullet_set:
+            raise Refused(
+                "VERDICT_BULLET_UNKNOWN",
+                f"verdict names a bullet marked for another block, which does not apply to "
+                f"{block_id}: {entry['bullet']!r}",
+            )
         if entry["bullet"] not in bullet_set:
             raise Refused(
                 "VERDICT_BULLET_UNKNOWN",
@@ -118,11 +207,17 @@ def compute_outcome(reconciled: list[dict]) -> dict:
 
 
 def audit(
-    contract_body: str, draft_latex: str, verdict_entries: list[dict], *, source_name: str = "<contract>"
+    contract_body: str, draft_latex: str, verdict_entries: list[dict], *, source_name: str = "<contract>",
+    block_id: str | None = None, declared_blocks=(),
 ) -> dict:
-    """The whole-file entry point: extract, reconcile, decide."""
+    """The whole-file entry point: extract, select the bullets that apply
+    to `block_id` (every bullet when it is `None`), reconcile, decide."""
     bullets = extract_disqualifiers(contract_body, source_name=source_name)
-    reconciled = reconcile_verdicts(bullets, verdict_entries, draft_latex)
+    applicable = bullets if block_id is None else applicable_disqualifiers(bullets, block_id, declared_blocks)
+    excluded = [bullet for bullet in bullets if bullet not in applicable]
+    reconciled = reconcile_verdicts(
+        applicable, verdict_entries, draft_latex, excluded=excluded, block_id=block_id,
+    )
     return compute_outcome(cross_check_measurable(reconciled, draft_latex))
 
 
@@ -137,7 +232,7 @@ def cross_check_measurable(reconciled: list[dict], draft_latex: str) -> list[dic
     `odd/tasks/manuscript-polish-0-54.md`)."""
     checked: list[dict] = []
     for entry in reconciled:
-        if entry["bullet"] == ROW_COUNT_BULLET and entry["verdict"] == "clear":
+        if bullet_rule(entry["bullet"]) == ROW_COUNT_BULLET and entry["verdict"] == "clear":
             finding = row_count_finding(draft_latex)
             if finding is not None:
                 entry = {**entry, "verdict": "undecidable", "deterministic": finding}

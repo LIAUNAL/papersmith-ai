@@ -201,17 +201,17 @@ acronym appears in the abstract and the body.
 
 ## Disqualifiers
 
-- Under 10 or over 16 words in the title.
+- [block: title] Under 10 or over 16 words in the title.
 - No property adjective, or one that is not first.
 - No mechanism named.
 - No task named.
 - A number, a percentage, or a claim of superiority.
-- An acronym in the title without a colon, or one the abstract does not expand.
+- [block: title] An acronym in the title without a colon, or one the abstract does not expand.
 - A domain or place named when the work is not bound to it.
 - A hyphen where co-equal terms in a series need an en dash.
-- Fewer than 3 or more than 5 keywords, or a count the target journal does not permit.
-- A keyword list that only repeats title terms.
-- A keyword absent from the body.
+- [block: keywords] Fewer than 3 or more than 5 keywords, or a count the target journal does not permit.
+- [block: title, keywords] A keyword list that only repeats title terms.
+- [block: keywords] A keyword absent from the body.
 - A missing classification line when the target journal requires one.
 - Real author names, affiliations, or contact emails populated in the initial drafting before complete manuscript verification with the user.
 - Manuscript typeset in two-column format instead of single-column review mode (`onecolumn`).

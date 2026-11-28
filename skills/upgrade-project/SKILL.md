@@ -1,9 +1,11 @@
 ---
 name: upgrade-project
-description: "Trigger: a workspace created by `smith init` is running an older release and needs the current one — its skills, agents, slash commands, harness wiring and artifact shapes brought up to the installed distribution. Delegates every write to `smith upgrade`, which owns the kit copy, the projections, the orphan sweep and the artifact migrations; this skill never copies a file or edits an artifact itself. Refuses before writing when the directory is not a workspace or the CLI is unreachable, and names the one command that fixes each. Verbs: `plan` previews pending migrations and writes nothing; `apply` performs the upgrade; `status` reports the recorded version against the installed one."
+description: "Trigger: a workspace created by `smith init` runs an older release and needs the current one. Delegates every write to `smith upgrade` (`plan` previews, `apply` upgrades, `status` compares versions); never copies a file itself."
 ---
 
 # Upgrade Project
+
+**Scope.** A workspace created by `smith init` is running an older release and needs the current one — its skills, agents, slash commands, harness wiring and artifact shapes brought up to the installed distribution. Delegates every write to `smith upgrade`, which owns the kit copy, the projections, the orphan sweep and the artifact migrations; this skill never copies a file or edits an artifact itself. Refuses before writing when the directory is not a workspace or the CLI is unreachable, and names the one command that fixes each. Verbs: `plan` previews pending migrations and writes nothing; `apply` performs the upgrade; `status` reports the recorded version against the installed one.
 
 A workspace is not a checkout. `smith init` copies a release's skills,
 renders its slash commands and agents for every harness, and records which

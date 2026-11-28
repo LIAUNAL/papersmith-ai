@@ -604,6 +604,27 @@ interpreter as `PAPERSMITH_CLI_PYTHON` and the tab builds its rows there.
 Exits `0` unless a row is `fail` (a skill without its `SKILL.md`, a missing
 agent file, an unresolvable kit); then it exits `4` (`EXECUTION_ERROR`).
 
+**Which model each agent runs on.** `smith doctor` checks that the agents are
+there; the model they run on is listed by the workspace interpreter, read-only:
+
+```bash
+python -m skills._core.command_center.agent_models .          # readable report
+python -m skills._core.command_center.agent_models . --json   # the dashboard's payload
+```
+
+For every agent and each harness it is projected to (Claude Code, OpenCode,
+Pi, Antigravity) it prints the model it runs on: `pinned` (the Claude Code
+`model:` line, a Pi `subagents.agentOverrides.<name>.model`, or
+`CLAUDE_CODE_SUBAGENT_MODEL` forced with `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`),
+or `inherits` and the model the harness's config files name, else "the
+session's model" and how to see it. A judge (`contract-auditor`,
+`section-grounding-auditor`, `ai-auditor`, `paper-reviewer`) not confirmed on
+a top-tier model (Opus or Fable) prints a `WARNING` with how to pin another
+model in that harness; every inherited model prints a note. See
+[terminals.md](terminals.md#the-agents-office-panel) for where each harness keeps its
+model and which pins survive `smith upgrade`. It reads only the model keys of
+those files, never a credential. Exits `0`.
+
 ### `smith gpu [<dir>]`
 
 ```bash

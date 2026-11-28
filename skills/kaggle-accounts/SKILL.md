@@ -1,9 +1,11 @@
 ---
 name: kaggle-accounts
-description: "Trigger: check that this project's Kaggle accounts actually authenticate, take in new credentials left in kaggle-inbox/, or remove accounts. Two interactive options — validate or remove. A third command, `materialize`, exists for code rather than a human: it writes one worker's stored credential to a plain-text token file and prints back where, never what. Stdlib-only, no venv."
+description: "Trigger: check that this project's Kaggle accounts authenticate, take in new credentials from kaggle-inbox/, or remove accounts (`validate`, `remove`; `materialize` is for code). Stdlib-only, no venv."
 ---
 
 # Kaggle Accounts
+
+**Scope.** Check that this project's Kaggle accounts actually authenticate, take in new credentials left in kaggle-inbox/, or remove accounts. Two interactive options — validate or remove. A third command, `materialize`, exists for code rather than a human: it writes one worker's stored credential to a plain-text token file and prints back where, never what. Stdlib-only, no venv.
 
 Prove the project's Kaggle accounts work, and keep only the ones that do.
 

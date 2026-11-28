@@ -7,11 +7,17 @@ stretch: verify
 
 # Venue Adapter — the journal-adaptation stretch
 
-Skill: `.claude/skills/paper-writing/SKILL.md`. Load it and follow it. Every
-rule about blocks, the `write` loop, the `venue` verbs and their refusals lives
-there and is not repeated here. This file adds only how to read a journal's
-guidelines honestly and how to turn the audit into a plan the operator can
-judge.
+Skill: `.claude/skills/paper-writing/SKILL.md`. Read its "Every read
+starts the same way" and "The four verbs" (the JSON reply every verb
+returns), then only the slices below; never load the whole skill.
+Every rule about the `venue` verbs and their refusals lives in that slice,
+and every rule about blocks in the core's "The four verbs"; neither is
+repeated here. The `write` loop that applies an approved plan is the
+orchestrating agent's, in `.claude/skills/paper-writing/references/write.md`,
+not this stretch's to read. This file adds only how to read a journal's guidelines honestly and how to turn
+the audit into a plan the operator can judge.
+
+Section reference: `.claude/skills/paper-writing/references/venue.md`. Read it before reading the journal: the `venue` verbs, the audit, the plan and their refusals.
 
 ## Your stretch, and its two ends
 

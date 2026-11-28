@@ -625,40 +625,40 @@ es el sujeto de una oración.
 - Una ecuación, una figura o una tabla.
 - Un contexto escrito sobre la familia de métodos en lugar del fenómeno que contiene el conjunto
   de datos.
-- El conjunto de datos nombrado en el bloque 1.
-- Un conjunto de datos nombrado en el bloque 5 y dejado sin referencia donde se describe.
+- [block: block-1] El conjunto de datos nombrado en el bloque 1.
+- [block: block-5] Un conjunto de datos nombrado en el bloque 5 y dejado sin referencia donde se describe.
 - Más de un párrafo de contextualización.
 - Un problema específico al que no responde ni un componente de la propuesta ni un análisis
   en la evaluación.
 - Un problema nombrado con vocabulario propio en lugar de la terminología aceptada del
   campo.
-- El bloque 2 sin su enunciado de cierre de requisitos.
-- Un párrafo del bloque 3 que no termina en una limitación.
-- El bloque 3 sin un cierre de brecha conjunta, o con una brecha enunciada como suma de
+- [block: block-2] El bloque 2 sin su enunciado de cierre de requisitos.
+- [block: block-3] Un párrafo del bloque 3 que no termina en una limitación.
+- [block: block-3] El bloque 3 sin un cierre de brecha conjunta, o con una brecha enunciada como suma de
   limitaciones separadas.
 - La brecha de este bloque y la brecha de cierre de la sección de Trabajos Relacionados en desacuerdo.
-- El bloque 3 en un número de párrafos distinto de dos, o fuera de 260–600 palabras.
-- Una variante o estrategia alternativa nombrada en el bloque 3 cuando existe una sección de Trabajos
+- [block: block-3] El bloque 3 en un número de párrafos distinto de dos, o fuera de 260–600 palabras.
+- [block: block-3] Una variante o estrategia alternativa nombrada en el bloque 3 cuando existe una sección de Trabajos
   Relacionados: estas pertenecen a esa sección.
-- El bloque 3 escrito como resumen de una sección de Trabajos Relacionados que todavía no existe.
+- [block: block-3] El bloque 3 escrito como resumen de una sección de Trabajos Relacionados que todavía no existe.
 - Un párrafo panorámico agregado a la introducción.
-- El conteo anunciado en 4a que no coincide con el número de elementos de 4b.
-- La lista de 4b que difiere en número, orden o denominación de los componentes de la
+- [block: block-4a, block-4b] El conteo anunciado en 4a que no coincide con el número de elementos de 4b.
+- [block: block-4b] La lista de 4b que difiere en número, orden o denominación de los componentes de la
   sección de métodos.
-- Una contribución que no está motivada por ningún problema del bloque 2.
-- Una propiedad declarada en el bloque 4 sin una evaluación nombrada en el bloque 5.
-- Una propiedad nombrada de manera distinta en los bloques 2, 4 y 5 — un sinónimo en lugar de las mismas
+- [block: block-2, block-4a, block-4b] Una contribución que no está motivada por ningún problema del bloque 2.
+- [block: block-4a, block-4b, block-5] Una propiedad declarada en el bloque 4 sin una evaluación nombrada en el bloque 5.
+- [block: block-2, block-4a, block-4b, block-5] Una propiedad nombrada de manera distinta en los bloques 2, 4 y 5 — un sinónimo en lugar de las mismas
   palabras.
-- Una cifra, porcentaje o valor en el bloque 5.
-- Una cita en cualquier parte a partir del bloque 4, distinta de la cita de 4a al trabajo previo que la propuesta extiende.
+- [block: block-5] Una cifra, porcentaje o valor en el bloque 5.
+- [block: block-4a, block-4b, block-5, block-6] Una cita en cualquier parte a partir del bloque 4, distinta de la cita de 4a al trabajo previo que la propuesta extiende.
 - Una cita ubicada en cualquier lugar que no sea el final de la oración que respalda.
 - Una cita usada como frase nominal.
 - El bloque 6 ausente, o que nombra secciones que no existen, o que repite una.
-- Un 4b completado cuyos efectos logrados no se verificaron de vuelta contra el bloque 2 y,
+- [block: block-2, block-3, block-4b] Un 4b completado cuyos efectos logrados no se verificaron de vuelta contra el bloque 2 y,
   a través de él, contra el bloque 3.
-- Viñetas, listas (`itemize`, `enumerate`), resaltados en negrita o preguntas numeradas en el bloque 2 (párrafo 2).
-- El bloque 3 presentando menos de 3 o más de 7 familias metodológicas o alternativas, u omitiendo sus fortalezas y problemas.
-- El bloque 4 presentando menos de 3 o más de 4 elementos de contribución.
+- [block: block-2] Viñetas, listas (`itemize`, `enumerate`), resaltados en negrita o preguntas numeradas en el bloque 2 (párrafo 2).
+- [block: block-3] El bloque 3 presentando menos de 3 o más de 7 familias metodológicas o alternativas, u omitiendo sus fortalezas y problemas.
+- [block: block-4a, block-4b] El bloque 4 presentando menos de 3 o más de 4 elementos de contribución.
 - Un elemento de contribución que abre en negrita o como etiqueta de descripción.
-- El bloque 5 omitiendo los métodos de comparación, los criterios de evaluación o el impacto potencial.
+- [block: block-5] El bloque 5 omitiendo los métodos de comparación, los criterios de evaluación o el impacto potencial.
 - Una introducción que se desvía de la secuencia canónica de siete párrafos.

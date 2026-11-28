@@ -1,9 +1,11 @@
 ---
 name: remote-parallelism
-description: "Trigger: decide whether a proof of concept or an experiment campaign is worth spreading over several remote GPU accounts, and how to keep the split reproducible. Turns measured inputs (a pilot's per-unit duration, a rehearsal's setup overhead, each account's concurrent sessions, session wall-time limit and weekly GPU quota) into serial and parallel makespans, speed-up, quota per account and a verdict with its threshold stated, plus the reproducibility checklist a split must satisfy before any job is generated, estimates a stage's processing time from a timing probe before the pilot and before the full run, and plans where a stage runs (local or cloud, CPU or GPU, processes, accounts, batch and loader settings) from every measured candidate, a GPU never by default. Reuses remote-execution's placement and launch gate; never places, generates or launches anything. Stdlib-only CLI, no network, no credentials."
+description: "Trigger: decide whether a proof of concept or an experiment campaign is worth spreading over several remote GPU accounts, and how to keep the split reproducible. Estimates makespans, quota and stage timing; never launches anything."
 ---
 
 # Remote parallelism
+
+**Scope.** Decide whether a proof of concept or an experiment campaign is worth spreading over several remote GPU accounts, and how to keep the split reproducible. Turns measured inputs (a pilot's per-unit duration, a rehearsal's setup overhead, each account's concurrent sessions, session wall-time limit and weekly GPU quota) into serial and parallel makespans, speed-up, quota per account and a verdict with its threshold stated, plus the reproducibility checklist a split must satisfy before any job is generated, estimates a stage's processing time from a timing probe before the pilot and before the full run, and plans where a stage runs (local or cloud, CPU or GPU, processes, accounts, batch and loader settings) from every measured candidate, a GPU never by default. Reuses remote-execution's placement and launch gate; never places, generates or launches anything. Stdlib-only CLI, no network, no credentials.
 
 Whether spreading one campaign over several remote GPU accounts is worth it,
 and what keeps the result one experiment rather than several.

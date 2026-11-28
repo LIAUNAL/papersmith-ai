@@ -1,9 +1,11 @@
 ---
 name: pixelrag
-description: "Trigger: a paper is already ingested (`/paper-ingestion`) and its figures must become evidence a later session can read and cite, not opaque image files (`/pixelrag <ingested paper folder>`). Keyless and local: calls no model and no network. `facts` reports what can be computed about an extracted figure (path, sha256, pixel size, page, the caption and figure number the ingested Markdown gives it, the text ingestion extracted around it); the session's own agent looks at the image and writes what is visible (axes, units, trends, panels, never speculation); `record` validates that description against the facts and stores it beside the image as `<image>.pixelrag.json` with its provenance, optionally as a marked block under the image in the Markdown; `status` lists figures whose description is current, missing or stale. Never edits an image, never invents a number the image does not show."
+description: "Trigger: turn an ingested paper's figures into citable evidence (`/pixelrag <ingested paper folder>`): `facts` computes what is knowable, the agent describes what is visible, `record` validates and stores it, `status` lists stale ones."
 ---
 
 # pixelrag
+
+**Scope.** A paper is already ingested (`/paper-ingestion`) and its figures must become evidence a later session can read and cite, not opaque image files (`/pixelrag <ingested paper folder>`). Keyless and local: calls no model and no network. `facts` reports what can be computed about an extracted figure (path, sha256, pixel size, page, the caption and figure number the ingested Markdown gives it, the text ingestion extracted around it); the session's own agent looks at the image and writes what is visible (axes, units, trends, panels, never speculation); `record` validates that description against the facts and stores it beside the image as `<image>.pixelrag.json` with its provenance, optionally as a marked block under the image in the Markdown; `status` lists figures whose description is current, missing or stale. Never edits an image, never invents a number the image does not show.
 
 `paper-ingestion` writes a paper's figures as image files the Markdown
 references, and stops there: a figure enters the pipeline as a filename and

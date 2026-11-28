@@ -184,7 +184,7 @@ No paper of this line has been measured yet: the rules below carry the group's w
 - A primary outcome other than the locked protocol's, or a planned outcome silently left out.
 - Missing data not reported per variable.
 - An interpretation, a comparison with other studies or a recommendation: those belong to the discussion.
-- A variant block (`r-diagnostic-accuracy`, `r-measurement-properties`) written in a workspace of another variant.
+- [block: r-diagnostic-accuracy, r-measurement-properties] A variant block (`r-diagnostic-accuracy`, `r-measurement-properties`) written in a workspace of another variant.
 
 ## Inputs
 

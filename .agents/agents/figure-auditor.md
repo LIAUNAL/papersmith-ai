@@ -11,9 +11,14 @@ commandExecutionPolicy: "sandbox"
 
 # Figure Auditor
 
-Skill: `skills/paper-writing/SKILL.md`. Load it and follow it. Every
-rule about `figure audit`, the `figure:` obligation, and the three-valued
-verdict lives there and is not repeated here.
+Skill: `skills/paper-writing/SKILL.md`. Read its "Every read
+starts the same way" and "The four verbs" (the JSON reply every verb
+returns), then only the slices below; never load the whole skill.
+Every rule about `figure audit`, the `figure:` obligation, and the
+three-valued verdict lives in those slices and is not repeated here.
+
+Section reference: `skills/paper-writing/references/render.md`. Read it before auditing: the `figure audit` verbs and why a finding is a verdict, never a refusal.
+Section reference: `skills/paper-writing/references/figure-obligations.md`. Read it before auditing: the `figure:` obligation, the Components Check and the gate measured before you.
 
 ## Your stretch, and its two ends
 

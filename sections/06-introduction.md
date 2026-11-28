@@ -626,40 +626,40 @@ the subject of a sentence.
 - An equation, a figure, or a table.
 - A context written about the family of methods instead of the phenomenon the dataset
   contains.
-- The dataset named in block 1.
-- A dataset named in block 5 and left unreferenced where it is described.
+- [block: block-1] The dataset named in block 1.
+- [block: block-5] A dataset named in block 5 and left unreferenced where it is described.
 - More than one paragraph of contextualization.
 - A specific problem answered by neither a component of the proposal nor an analysis
   in the evaluation.
 - A problem named in private vocabulary instead of the accepted terminology of the
   field.
-- Block 2 without its closing statement of requirements.
-- A paragraph of block 3 that does not end in a limitation.
-- Block 3 without a joint-gap closing, or with a gap stated as a sum of separate
+- [block: block-2] Block 2 without its closing statement of requirements.
+- [block: block-3] A paragraph of block 3 that does not end in a limitation.
+- [block: block-3] Block 3 without a joint-gap closing, or with a gap stated as a sum of separate
   limitations.
 - This block's gap and the Related Work section's closing gap disagreeing.
-- Block 3 in other than two paragraphs, or outside 260–600 words.
-- A variant or alternative strategy named in block 3 when a Related Work section
+- [block: block-3] Block 3 in other than two paragraphs, or outside 260–600 words.
+- [block: block-3] A variant or alternative strategy named in block 3 when a Related Work section
   exists: those belong to that section.
-- Block 3 written as a summary of a Related Work section that does not yet exist.
+- [block: block-3] Block 3 written as a summary of a Related Work section that does not yet exist.
 - A panorama paragraph added to the introduction.
-- The count announced in 4a not matching the number of items in 4b.
-- The list in 4b differing in count, order, or naming from the components of the
+- [block: block-4a, block-4b] The count announced in 4a not matching the number of items in 4b.
+- [block: block-4b] The list in 4b differing in count, order, or naming from the components of the
   methods section.
-- A contribution motivated by no problem in block 2.
-- A property declared in block 4 with no evaluation named in block 5.
-- A property named differently in blocks 2, 4 and 5 — a synonym instead of the same
+- [block: block-2, block-4a, block-4b] A contribution motivated by no problem in block 2.
+- [block: block-4a, block-4b, block-5] A property declared in block 4 with no evaluation named in block 5.
+- [block: block-2, block-4a, block-4b, block-5] A property named differently in blocks 2, 4 and 5 — a synonym instead of the same
   words.
-- A figure, percentage, or value in block 5.
-- A citation anywhere from block 4 onward, other than 4a's citation of the prior work the proposal extends.
+- [block: block-5] A figure, percentage, or value in block 5.
+- [block: block-4a, block-4b, block-5, block-6] A citation anywhere from block 4 onward, other than 4a's citation of the prior work the proposal extends.
 - A citation placed anywhere but at the end of the sentence it supports.
 - A citation used as a noun phrase.
 - Block 6 missing, or naming sections that do not exist, or repeating one.
-- A completed 4b whose achieved effects were not checked back against block 2 and,
+- [block: block-2, block-3, block-4b] A completed 4b whose achieved effects were not checked back against block 2 and,
   through it, block 3.
-- Bullet items, lists (`itemize`, `enumerate`), bold text highlighting, or numbered questions in Block 2 (Paragraph 2).
-- Block 3 presenting fewer than 3 or more than 7 methodological families or alternatives, or omitting their strengths and issues.
-- Block 4 presenting fewer than 3 or more than 4 contribution items.
+- [block: block-2] Bullet items, lists (`itemize`, `enumerate`), bold text highlighting, or numbered questions in Block 2 (Paragraph 2).
+- [block: block-3] Block 3 presenting fewer than 3 or more than 7 methodological families or alternatives, or omitting their strengths and issues.
+- [block: block-4a, block-4b] Block 4 presenting fewer than 3 or more than 4 contribution items.
 - A contribution item that opens in bold or as a description label.
-- Block 5 omitting the comparison methods, evaluation criteria, or potential impact.
+- [block: block-5] Block 5 omitting the comparison methods, evaluation criteria, or potential impact.
 - An introduction deviating from the canonical seven-paragraph sequence.

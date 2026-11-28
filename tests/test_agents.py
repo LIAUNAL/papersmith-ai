@@ -29,7 +29,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from skill_text import stage_references  # noqa: E402  (path set above)
+from skill_text import skill_text, stage_references  # noqa: E402  (path set above)
 
 ROOT = Path(__file__).resolve().parent.parent
 AGENTS = ROOT / ".claude" / "agents"
@@ -49,6 +49,12 @@ NORTHLESS_SKILLS = {"skill-audit", "plausibility", "math-tutor", "experiments-tu
 # writer, a judge or a gate holder keeps the session's model.
 LIGHT_AGENTS = {"math-tutor", "insumos-observer", "style-sampler"}
 LIGHT_MODEL = "sonnet"
+# The judges of a paper's prose run on the strongest model whatever the
+# session runs: the user's rule is that a strong-model judge always verifies
+# the writing's quality, rules and structure. Each one only reads; the
+# final judge keeps Bash for its review CLI and nothing that edits a file.
+JUDGE_AGENTS = {"contract-auditor", "section-grounding-auditor", "ai-auditor", "paper-reviewer"}
+JUDGE_MODEL = "opus"
 WRITE_TOOLS = {"Write", "Edit", "Bash", "NotebookEdit"}
 
 # The projections of `.claude/agents` for the harnesses with no cited per-agent
@@ -361,7 +367,7 @@ class AgentBindingTests(unittest.TestCase):
             if not doc.is_file():
                 continue
             for agent in re.findall(r"delegates to the `([\w-]+)` agent", 
-                                    doc.read_text(encoding="utf-8")):
+                                    skill_text(doc)):
                 named.add((skill.name, agent))
         self.assertTrue(named, "no skill delegates a stretch to any agent")
         for skill, agent in sorted(named):
@@ -380,7 +386,7 @@ class AgentBindingTests(unittest.TestCase):
             doc = skill / "SKILL.md"
             if doc.is_file():
                 invoked.update(re.findall(r"delegates to the `([\w-]+)` agent",
-                                          doc.read_text(encoding="utf-8")))
+                                          skill_text(doc)))
         orphans = sorted(path.stem for path in self.agents()
                          if path.stem not in invoked)
         self.assertEqual(orphans, [],
@@ -407,21 +413,27 @@ class AgentBindingTests(unittest.TestCase):
         self.assertTrue(bound, "no agent binds a skill with stage references")
 
     def test_only_the_read_only_agents_name_a_model(self) -> None:
-        """Omitted is the default and means the session's model. The one value
-        an agent may name is the lighter one, and only a read-only agent may
-        name it."""
+        """Omitted is the default and means the session's model. A read-only
+        light agent names the lighter model; a judge names the strongest one;
+        no other agent names a model."""
         named = {}
         for path in self.agents():
             header = path.read_text(encoding="utf-8").split("---\n", 2)[1]
             models = re.findall(r"^model:[ \t]*(.*?)[ \t]*$", header, re.MULTILINE)
             if models:
                 named[path.stem] = models
-        self.assertEqual(named, {name: [LIGHT_MODEL] for name in LIGHT_AGENTS})
+        self.assertEqual(named, {**{name: [LIGHT_MODEL] for name in LIGHT_AGENTS},
+                                 **{name: [JUDGE_MODEL] for name in JUDGE_AGENTS}})
         for name in sorted(LIGHT_AGENTS):
             with self.subTest(agent=name):
                 tools = {tool.strip() for tool in
                          frontmatter(AGENTS / f"{name}.md")["tools"].split(",")}
                 self.assertEqual(tools & WRITE_TOOLS, set())
+        for name in sorted(JUDGE_AGENTS):
+            with self.subTest(judge=name):
+                tools = {tool.strip() for tool in
+                         frontmatter(AGENTS / f"{name}.md")["tools"].split(",")}
+                self.assertEqual(tools & {"Write", "Edit", "NotebookEdit"}, set())
 
     def test_no_other_harness_projection_names_a_model(self) -> None:
         for directory in PROJECTED_AGENT_DIRS:
@@ -486,11 +498,10 @@ class AgentBindingTests(unittest.TestCase):
         """
         delegating = [skill for skill in sorted(SKILLS.iterdir())
                       if (skill / "SKILL.md").is_file()
-                      and "delegates to the `" in (skill / "SKILL.md").read_text(
-                          encoding="utf-8")]
+                      and "delegates to the `" in skill_text(skill / "SKILL.md")]
         self.assertTrue(delegating)
         for skill in delegating:
-            doc = (skill / "SKILL.md").read_text(encoding="utf-8")
+            doc = skill_text(skill / "SKILL.md")
             self.assertIn("Measure this before delegating", doc,
                           f"{skill.name} delegates a stretch and names no "
                           f"precondition to read first")

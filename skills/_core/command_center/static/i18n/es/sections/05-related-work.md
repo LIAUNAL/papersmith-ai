@@ -427,25 +427,25 @@ mismo a distintas profundidades.
 
 ## Descalificadores
 
-- Un bloque que no corresponde a ningún problema enunciado.
+- [block: rw-problem-blocks] Un bloque que no corresponde a ningún problema enunciado.
 - Un problema enunciado sin bloque.
-- Un preámbulo que revisa una familia, o que lleva una cita.
-- Un panorama que atribuye una limitación a una familia particular.
+- [block: rw-preamble] Un preámbulo que revisa una familia, o que lleva una cita.
+- [block: rw-panorama] Un panorama que atribuye una limitación a una familia particular.
 - Un párrafo que no cierra con una limitación.
-- Un bloque que no cierra con lo que ninguna de sus familias resolvió.
+- [block: rw-problem-blocks] Un bloque que no cierra con lo que ninguna de sus familias resolvió.
 - Un bloque que no parte del cierre del anterior.
 - Una limitación atribuida sin cita.
 - Un párrafo de más de 300 palabras.
 - Bloques de peso groseramente desigual.
 - La ausencia del párrafo de cierre.
-- Frentes nombrados en el cierre que no coinciden con el número de bloques.
+- [block: rw-problem-blocks, rw-closing] Frentes nombrados en el cierre que no coinciden con el número de bloques.
 - La ausencia del artefacto de síntesis.
 - Un artefacto cuyas dimensiones no son las propiedades que declara la propuesta.
 - Dimensiones nombradas solo en el encabezado de la tabla y no en el cuerpo.
-- Menos de 7 o más de 12 trabajos en la tabla de síntesis, sin contar la fila de la propuesta.
-- Una familia de esta sección sin fila en la tabla de síntesis.
-- Una columna de la tabla de síntesis no vinculada a un pilar, contribución o propiedad que declara la propuesta, o una que comparten todas las filas.
-- Una oración o una cláusula como prosa en una celda de la tabla de síntesis, o un símbolo que ni la leyenda ni la nota de la tabla decodifican.
+- [block: rw-problem-blocks, rw-synthesis-artefact] Menos de 7 o más de 12 trabajos en la tabla de síntesis, sin contar la fila de la propuesta.
+- [block: rw-problem-blocks, rw-synthesis-artefact] Una familia de esta sección sin fila en la tabla de síntesis.
+- [block: rw-problem-blocks, rw-synthesis-artefact] Una columna de la tabla de síntesis no vinculada a un pilar, contribución o propiedad que declara la propuesta, o una que comparten todas las filas.
+- [block: rw-problem-blocks, rw-synthesis-artefact] Una oración o una cláusula como prosa en una celda de la tabla de síntesis, o un símbolo que ni la leyenda ni la nota de la tabla decodifican.
 - Un artefacto que aparece antes de cualquier referencia a él, o que nada referencia en
   absoluto.
 - Una cita usada como sintagma nominal.

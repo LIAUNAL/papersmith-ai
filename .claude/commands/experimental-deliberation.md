@@ -1,7 +1,7 @@
 ---
-description: "Trigger: session-local deliberation about the experimental design that will test a managed proposal's claims — first-version creation, edits to an existing managed experiments document, or managed-revision lifecycle operations."
+description: "Trigger: deliberate the experimental design that tests a managed proposal's claims: create, edit or manage revisions of the experiments protocol, as its design tutor, applying approved edits through the keyless bounded engine."
 ---
 
-Read `skills/experimental-deliberation/SKILL.md` and follow it for this task. Before you act on the text below, apply the prompt gate of `skills/prompt-gate/SKILL.md` to it (skip the gate when the text carries `[prompt-gate: approved]`, when the operator asked to launch it as is, or when this skill is `prompt-gate`). Treat the text below as `$ARGUMENTS`:
+Read `skills/experimental-deliberation/SKILL.md` and follow it for this task. Before you act on the text below, score it with the prompt gate unless it carries `[prompt-gate: approved]`, the operator asked to launch it as is, or this skill is `prompt-gate`: pipe the text verbatim on stdin, through a quoted heredoc whose delimiter does not occur in it, to `python -m skills._core.command_center.prompt_gate check --skill experimental-deliberation`. On `"verdict": "pass"` follow the skill with the text unchanged and say at most one line about the gate; on `fail`, or when the command cannot run, read `skills/prompt-gate/SKILL.md` and continue from its Step 1 result. Treat the text below as `$ARGUMENTS`:
 
 $ARGUMENTS
